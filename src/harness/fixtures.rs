@@ -33,7 +33,7 @@ pub(crate) fn temp_root(test_name: &str) -> Result<PathBuf, Box<dyn std::error::
 ///
 /// `CARGO_MANIFEST_DIR` is `<parent>/ramflux-itest`, so its parent is `<parent>`.
 /// Deploy assets therefore resolve as `code_root().join("ramflux/deploy/...")`.
-#[cfg(all(test, feature = "realnet"))]
+#[cfg(test)]
 pub(crate) fn code_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .parent()
