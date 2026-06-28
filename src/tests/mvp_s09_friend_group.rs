@@ -47,7 +47,7 @@ fn mvp_s9_realnet_cross_node_friend_rf_request_accept() -> Result<(), Box<dyn st
         },
     )?;
     let code_root = code_root();
-    let ca_cert = code_root.join("ramflux-deploy/certs/ca.pem");
+    let ca_cert = code_root.join("ramflux/deploy/certs/ca.pem");
     let runtime = tokio::runtime::Builder::new_current_thread().enable_all().build()?;
     runtime.block_on(async {
         realnet_step(
@@ -78,7 +78,7 @@ fn mvp_s9_realnet_group_receive_idempotent() -> Result<(), Box<dyn std::error::E
 
     let realnet = start_realnet_compose()?;
     let code_root = code_root();
-    let ca_cert = code_root.join("ramflux-deploy/certs/ca.pem");
+    let ca_cert = code_root.join("ramflux/deploy/certs/ca.pem");
     let gateway_quic_addr: std::net::SocketAddr = std::env::var("RAMFLUX_ITEST_GATEWAY_QUIC_ADDR")
         .unwrap_or_else(|_| "127.0.0.1:18443".to_owned())
         .parse()?;

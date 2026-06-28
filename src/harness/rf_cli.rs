@@ -117,8 +117,8 @@ pub(crate) fn start_realnet_compose_with_env_and_overrides(
     notify_tokio_concurrent: bool,
 ) -> Result<RealnetCompose, Box<dyn std::error::Error>> {
     let code_root = code_root();
-    let deploy_root = code_root.join("ramflux-deploy");
-    run_deploy_script(&code_root, "ramflux-deploy/scripts/bootstrap-itest.sh")?;
+    let deploy_root = code_root.join("ramflux/deploy");
+    run_deploy_script(&code_root, "ramflux/deploy/scripts/bootstrap-itest.sh")?;
     let mut compose_env = env.to_vec();
     if !compose_env.iter().any(|(key, _value)| key == "RAMFLUX_FEDERATION_NODE_SIGNING_SEED_B64URL")
     {
@@ -288,7 +288,7 @@ pub(crate) async fn mvp_s8_create_rf_account(
 
 #[cfg(all(test, feature = "realnet"))]
 pub(crate) async fn mvp_s4_build_rf_binary() -> Result<PathBuf, Box<dyn std::error::Error>> {
-    let manifest = code_root().join("ramflux-rf/Cargo.toml");
+    let manifest = code_root().join("ramflux/apps/rf/Cargo.toml");
     let status = tokio::task::spawn_blocking(move || {
         std::process::Command::new("cargo")
             .args(["build", "--quiet", "--manifest-path"])
@@ -299,7 +299,7 @@ pub(crate) async fn mvp_s4_build_rf_binary() -> Result<PathBuf, Box<dyn std::err
     if !status.success() {
         return Err("failed to build rf binary".into());
     }
-    Ok(code_root().join("ramflux-rf/target/debug/rf"))
+    Ok(code_root().join("ramflux/target/debug/rf"))
 }
 
 #[cfg(all(test, feature = "realnet"))]

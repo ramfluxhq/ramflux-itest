@@ -771,7 +771,7 @@ pub(crate) fn start_s8_realnet_compose_project_with_env_and_federation_compio(
     federation_compio: bool,
 ) -> Result<S8RealnetNode, Box<dyn std::error::Error>> {
     let code_root = code_root();
-    let deploy_root = code_root.join("ramflux-deploy");
+    let deploy_root = code_root.join("ramflux/deploy");
     let node_id = if project_name.contains("node-b") { "node_b.realnet" } else { "node_a.realnet" }
         .to_owned();
     realnet_step(
@@ -795,12 +795,12 @@ pub(crate) fn start_s8_realnet_compose_project_with_env_and_federation_compio(
         "bootstrap per-node CA",
         format!("project={project_name} node={node_id} dir={}", project_deploy_dir.display()),
     );
-    run_deploy_script_with_env(&code_root, "ramflux-deploy/scripts/bootstrap-ca.sh", &cert_env)?;
+    run_deploy_script_with_env(&code_root, "ramflux/deploy/scripts/bootstrap-ca.sh", &cert_env)?;
     realnet_step(
         "issue per-node service certs",
         format!("project={project_name} node={node_id} dir={}", project_deploy_dir.display()),
     );
-    run_deploy_script_with_env(&code_root, "ramflux-deploy/scripts/issue-certs.sh", &cert_env)?;
+    run_deploy_script_with_env(&code_root, "ramflux/deploy/scripts/issue-certs.sh", &cert_env)?;
     let node_signing_seed = realnet_node_signing_seed(&node_id);
     let node_public_key = ramflux_crypto::public_key_base64url_from_seed(node_signing_seed);
     let federation_dns_alias = federation_dns_alias(project_name);

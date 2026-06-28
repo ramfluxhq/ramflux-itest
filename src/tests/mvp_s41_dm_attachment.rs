@@ -541,7 +541,7 @@ fn mvp_s41_service_file(
         .arg(service)
         .arg("cat")
         .arg(path)
-        .current_dir(code_root().join("ramflux-deploy"))
+        .current_dir(code_root().join("ramflux/deploy"))
         .output()?;
     if !output.status.success() {
         return Err(format!(

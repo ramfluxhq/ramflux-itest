@@ -23,7 +23,7 @@ fn mvp_s13_realnet_push_provider_wake_bridge() -> Result<(), Box<dyn std::error:
 
     let realnet = start_realnet_compose()?;
     let code_root = code_root();
-    let ca_cert = code_root.join("ramflux-deploy/certs/ca.pem");
+    let ca_cert = code_root.join("ramflux/deploy/certs/ca.pem");
     let gateway_quic_addr: std::net::SocketAddr = std::env::var("RAMFLUX_ITEST_GATEWAY_QUIC_ADDR")
         .unwrap_or_else(|_| "127.0.0.1:18443".to_owned())
         .parse()?;
@@ -63,7 +63,7 @@ fn mvp_s13_realnet_compio_notify_push_provider_wake_bridge()
 
     let realnet = start_realnet_compose_with_env_and_notify_compio(&[], true)?;
     let code_root = code_root();
-    let ca_cert = code_root.join("ramflux-deploy/certs/ca.pem");
+    let ca_cert = code_root.join("ramflux/deploy/certs/ca.pem");
     let gateway_quic_addr: std::net::SocketAddr = std::env::var("RAMFLUX_ITEST_GATEWAY_QUIC_ADDR")
         .unwrap_or_else(|_| "127.0.0.1:18443".to_owned())
         .parse()?;
@@ -248,7 +248,7 @@ fn mvp_s27_realnet_notify_shard_wal_crash_recovery() -> Result<(), Box<dyn std::
         // On restart the queue is already non-empty, so workers scan and deliver immediately.
         ("RAMFLUX_NOTIFY_ASYNC_DELIVERY_IDLE_SLEEP_MS".to_owned(), "60000".to_owned()),
     ];
-    let deploy_root = code_root().join("ramflux-deploy");
+    let deploy_root = code_root().join("ramflux/deploy");
     let realnet = start_realnet_compose_with_env(&notify_env)?;
     // Sized for the 2000 recovered wakes (x ROUTE_COUNT) plus the one fresh
     // post-restart wake (x ROUTE_COUNT); the mock stops accepting once it has

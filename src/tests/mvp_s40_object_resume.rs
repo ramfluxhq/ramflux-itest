@@ -397,7 +397,7 @@ fn mvp_s40_relay_file(
         .arg("ramflux-relay")
         .arg("cat")
         .arg(path)
-        .current_dir(code_root().join("ramflux-deploy"))
+        .current_dir(code_root().join("ramflux/deploy"))
         .output()?;
     if !output.status.success() {
         return Err(format!(

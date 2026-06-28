@@ -238,9 +238,9 @@ pub(crate) async fn mvp10_assert_three_backend_real_delivery(
     code_root: &Path,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let tls = ramflux_transport::MeshTlsConfig {
-        ca_cert: code_root.join("ramflux-deploy/certs/ca.pem"),
-        service_cert: code_root.join("ramflux-deploy/certs/gateway/gateway.pem"),
-        service_key: code_root.join("ramflux-deploy/certs/gateway/gateway-key.pem"),
+        ca_cert: code_root.join("ramflux/deploy/certs/ca.pem"),
+        service_cert: code_root.join("ramflux/deploy/certs/gateway/gateway.pem"),
+        service_key: code_root.join("ramflux/deploy/certs/gateway/gateway-key.pem"),
     };
     let root = fixture_root();
     let signed_request = read_typed::<ramflux_protocol::SignedRequest>(
@@ -334,9 +334,9 @@ pub(crate) async fn mvp10_assert_quic_lan_object_sync(
     code_root: &Path,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let tls = ramflux_transport::MeshTlsConfig {
-        ca_cert: code_root.join("ramflux-deploy/certs/ca.pem"),
-        service_cert: code_root.join("ramflux-deploy/certs/gateway/gateway.pem"),
-        service_key: code_root.join("ramflux-deploy/certs/gateway/gateway-key.pem"),
+        ca_cert: code_root.join("ramflux/deploy/certs/ca.pem"),
+        service_cert: code_root.join("ramflux/deploy/certs/gateway/gateway.pem"),
+        service_key: code_root.join("ramflux/deploy/certs/gateway/gateway-key.pem"),
     };
     let plaintext = b"mvp10 real quic lan object sync plaintext; chunk resume must reconstruct this exact object";
     let mut source = ramflux_sync::ObjectStore::new();

@@ -311,7 +311,7 @@ fn run_s8_cross_node_rf_dm_network_forward_with_node_env_and_compio(
     assert_s8_mesh_quic_listener_state(&node_b, expected_transport)?;
     let before_transport = s8_mesh_observability(&node_b)?;
     let code_root = code_root();
-    let ca_cert = code_root.join("ramflux-deploy/certs/ca.pem");
+    let ca_cert = code_root.join("ramflux/deploy/certs/ca.pem");
     let runtime = tokio::runtime::Builder::new_current_thread().enable_all().build()?;
     runtime.block_on(async {
         realnet_step("TEST s8 enter async federation flow", "invitation path");

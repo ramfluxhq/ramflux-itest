@@ -19,11 +19,11 @@ const LOCAL_NODE_B_SEED: [u8; 32] = [0xb2; 32];
 pub(crate) async fn mvp_s8_assert_local_rf_federation_full_chain_no_hang()
 -> Result<(), Box<dyn std::error::Error>> {
     let code_root = code_root();
-    let ca_cert = code_root.join("ramflux-deploy/certs/ca.pem");
+    let ca_cert = code_root.join("ramflux/deploy/certs/ca.pem");
     let gateway_tls = ramflux_transport::MeshTlsConfig {
         ca_cert: ca_cert.clone(),
-        service_cert: code_root.join("ramflux-deploy/certs/gateway/gateway.pem"),
-        service_key: code_root.join("ramflux-deploy/certs/gateway/gateway-key.pem"),
+        service_cert: code_root.join("ramflux/deploy/certs/gateway/gateway.pem"),
+        service_key: code_root.join("ramflux/deploy/certs/gateway/gateway-key.pem"),
     };
     let alice_gateway = LocalGatewayStub::start("alice", &gateway_tls)?;
     let bob_gateway = LocalGatewayStub::start("bob", &gateway_tls)?;
