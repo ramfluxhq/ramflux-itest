@@ -8,10 +8,10 @@ use crate::*;
 pub(crate) fn start_s10_private_node_compose() -> Result<S10PrivateNode, Box<dyn std::error::Error>>
 {
     let code_root = code_root();
-    let deploy_root = code_root.join("ramflux-deploy");
-    run_deploy_script(&code_root, "ramflux-deploy/scripts/bootstrap-ca.sh")?;
-    run_deploy_script(&code_root, "ramflux-deploy/scripts/issue-certs.sh")?;
-    run_deploy_script(&code_root, "ramflux-deploy/scripts/build-prod-images.sh")?;
+    let deploy_root = code_root.join("ramflux/deploy");
+    run_deploy_script(&code_root, "ramflux/deploy/scripts/bootstrap-ca.sh")?;
+    run_deploy_script(&code_root, "ramflux/deploy/scripts/issue-certs.sh")?;
+    run_deploy_script(&code_root, "ramflux/deploy/scripts/build-prod-images.sh")?;
     let env = vec![
         ("RAMFLUX_GATEWAY_TCP_PORT".to_owned(), "54_443".replace('_', "")),
         ("RAMFLUX_GATEWAY_QUIC_PORT".to_owned(), "54_443".replace('_', "")),
@@ -28,7 +28,7 @@ pub(crate) fn start_s10_private_node_compose() -> Result<S10PrivateNode, Box<dyn
         ProductionComposeDownGuard::new(deploy_root, "ramflux-s10-private-node".to_owned(), env);
     Ok(S10PrivateNode {
         gateway_quic_addr: std::net::SocketAddr::from(([127, 0, 0, 1], 54_443)),
-        ca_cert: code_root.join("ramflux-deploy/certs/ca.pem"),
+        ca_cert: code_root.join("ramflux/deploy/certs/ca.pem"),
         _guard: guard,
     })
 }
@@ -40,10 +40,10 @@ pub(crate) fn start_s22_production_node(
     ports: S22ProductionPorts,
 ) -> Result<S22ProductionNode, Box<dyn std::error::Error>> {
     let code_root = code_root();
-    let deploy_root = code_root.join("ramflux-deploy");
-    run_deploy_script(&code_root, "ramflux-deploy/scripts/bootstrap-ca.sh")?;
-    run_deploy_script(&code_root, "ramflux-deploy/scripts/issue-certs.sh")?;
-    run_deploy_script(&code_root, "ramflux-deploy/scripts/build-prod-images.sh")?;
+    let deploy_root = code_root.join("ramflux/deploy");
+    run_deploy_script(&code_root, "ramflux/deploy/scripts/bootstrap-ca.sh")?;
+    run_deploy_script(&code_root, "ramflux/deploy/scripts/issue-certs.sh")?;
+    run_deploy_script(&code_root, "ramflux/deploy/scripts/build-prod-images.sh")?;
     let admin_token = format!("admin-token-{project_name}");
     let node_signing_seed = realnet_node_signing_seed(node_id);
     let env = vec![
@@ -78,7 +78,7 @@ pub(crate) fn start_s22_production_node(
             ports.federation_admin
         ),
         gateway_quic_addr: std::net::SocketAddr::from(([127, 0, 0, 1], ports.gateway)),
-        ca_cert: code_root.join("ramflux-deploy/certs/ca.pem"),
+        ca_cert: code_root.join("ramflux/deploy/certs/ca.pem"),
         admin_token,
         guard,
     })

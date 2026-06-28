@@ -14,8 +14,8 @@ fn mvp0_realnet_signed_envelope_gateway_router_ack_nack_cursor()
     }
 
     let code_root = code_root();
-    let deploy_root = code_root.join("ramflux-deploy");
-    run_deploy_script(&code_root, "ramflux-deploy/scripts/bootstrap-itest.sh")?;
+    let deploy_root = code_root.join("ramflux/deploy");
+    run_deploy_script(&code_root, "ramflux/deploy/scripts/bootstrap-itest.sh")?;
     run_docker_compose(&deploy_root, &["up", "--build", "-d"])?;
     let _guard = ComposeDownGuard::new(deploy_root.clone());
 
@@ -80,8 +80,8 @@ fn mvp1_realnet_identity_register_revoke_prekey() -> Result<(), Box<dyn std::err
     }
 
     let code_root = code_root();
-    let deploy_root = code_root.join("ramflux-deploy");
-    run_deploy_script(&code_root, "ramflux-deploy/scripts/bootstrap-itest.sh")?;
+    let deploy_root = code_root.join("ramflux/deploy");
+    run_deploy_script(&code_root, "ramflux/deploy/scripts/bootstrap-itest.sh")?;
     run_docker_compose(&deploy_root, &["up", "--build", "-d"])?;
     let _guard = ComposeDownGuard::new(deploy_root);
 

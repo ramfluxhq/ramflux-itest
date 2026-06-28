@@ -13,7 +13,7 @@ fn mvp_s35_realnet_multi_device_activation_fanout() -> Result<(), Box<dyn std::e
     }
 
     let realnet = start_realnet_compose()?;
-    let ca_cert = code_root().join("ramflux-deploy/certs/ca.pem");
+    let ca_cert = code_root().join("ramflux/deploy/certs/ca.pem");
     let gateway_quic_addr: std::net::SocketAddr = std::env::var("RAMFLUX_ITEST_GATEWAY_QUIC_ADDR")
         .unwrap_or_else(|_| "127.0.0.1:18443".to_owned())
         .parse()?;

@@ -63,7 +63,7 @@ fn mvp_s12_realnet_federation_discovery_well_known_pinning_rf_dm()
         ),
     );
     let code_root = code_root();
-    let ca_cert = code_root.join("ramflux-deploy/certs/ca.pem");
+    let ca_cert = code_root.join("ramflux/deploy/certs/ca.pem");
     let runtime = tokio::runtime::Builder::new_current_thread().enable_all().build()?;
     runtime.block_on(async {
         realnet_step("TEST s12 enter async federation flow", "well-known discovery path");

@@ -14,7 +14,7 @@ fn mvp_s17_realnet_a2i_a2ui_control_surface() -> Result<(), Box<dyn std::error::
 
     let realnet = start_realnet_compose()?;
     let code_root = code_root();
-    let ca_cert = code_root.join("ramflux-deploy/certs/ca.pem");
+    let ca_cert = code_root.join("ramflux/deploy/certs/ca.pem");
     let gateway_quic_addr: std::net::SocketAddr = std::env::var("RAMFLUX_ITEST_GATEWAY_QUIC_ADDR")
         .unwrap_or_else(|_| "127.0.0.1:18443".to_owned())
         .parse()?;

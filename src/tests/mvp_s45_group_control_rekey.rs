@@ -676,7 +676,7 @@ fn mvp_s45_service_file(
             "cat",
             remote_path,
         ])
-        .current_dir(code_root().join("ramflux-deploy"))
+        .current_dir(code_root().join("ramflux/deploy"))
         .output()?;
     if !output.status.success() {
         return Err(format!(

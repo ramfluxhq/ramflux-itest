@@ -55,7 +55,7 @@ fn mvp5_realnet_quic_gateway_submit_ack_cursor() -> Result<(), Box<dyn std::erro
 
     let realnet = start_realnet_compose()?;
     let code_root = code_root();
-    let ca_cert = code_root.join("ramflux-deploy/certs/ca.pem");
+    let ca_cert = code_root.join("ramflux/deploy/certs/ca.pem");
     let gateway_quic_addr: std::net::SocketAddr = std::env::var("RAMFLUX_ITEST_GATEWAY_QUIC_ADDR")
         .unwrap_or_else(|_| "127.0.0.1:18443".to_owned())
         .parse()?;
@@ -381,7 +381,7 @@ fn mvp5_perf_realnet_gateway_router_submit_ack_baseline() -> Result<(), Box<dyn 
     let router_url = std::env::var("RAMFLUX_ITEST_ROUTER_URL")
         .unwrap_or_else(|_| "http://127.0.0.1:18080".to_owned());
     let plan = Mvp5PerfPlan::from_env()?;
-    let deploy_root = code_root().join("ramflux-deploy");
+    let deploy_root = code_root().join("ramflux/deploy");
     mvp5_perf_reset_metrics(&gateway_url, &router_url)?;
     let sampler = Mvp5ContainerStatsSampler::start(deploy_root);
     let warmup = mvp5_perf_warmup(&gateway_url, plan.warmup_concurrency, plan.warmup_duration);
@@ -457,9 +457,9 @@ fn mvp5_perf_realnet_quic_gateway_router_load() -> Result<(), Box<dyn std::error
     let gateway_quic_addr: std::net::SocketAddr = std::env::var("RAMFLUX_ITEST_GATEWAY_QUIC_ADDR")
         .unwrap_or_else(|_| "127.0.0.1:18443".to_owned())
         .parse()?;
-    let ca_cert = code_root().join("ramflux-deploy/certs/ca.pem");
+    let ca_cert = code_root().join("ramflux/deploy/certs/ca.pem");
     let plan = Mvp5PerfPlan::from_env()?;
-    let deploy_root = code_root().join("ramflux-deploy");
+    let deploy_root = code_root().join("ramflux/deploy");
     mvp5_perf_reset_metrics(&gateway_url, &router_url)?;
     let sampler = Mvp5ContainerStatsSampler::start(deploy_root);
 
@@ -579,7 +579,7 @@ fn mvp_s8_perf_realnet_federation_forward_load() -> Result<(), Box<dyn std::erro
     let node_b_router_url = format!("http://127.0.0.1:{}", destination_ports.router_http);
     let plan = Mvp5PerfPlan::from_env()?;
     mvp5_perf_reset_metrics(&node_a.gateway_url, &node_b_router_url)?;
-    let sampler = Mvp5ContainerStatsSampler::start(code_root().join("ramflux-deploy"));
+    let sampler = Mvp5ContainerStatsSampler::start(code_root().join("ramflux/deploy"));
     let warmup = mvp_s8_perf_federation_warmup(
         &node_a.federation_url,
         &node_a.node_id,
@@ -704,7 +704,7 @@ fn mvp_s8_perf_realnet_federation_envelope_inbound_load() -> Result<(), Box<dyn 
     let node_b_router_url = format!("http://127.0.0.1:{}", destination_ports.router_http);
     let target_cardinality = mvp5_perf_env_usize("RAMFLUX_S8_PERF_TARGET_CARDINALITY", 1)?;
     mvp5_perf_reset_metrics(&node_a.gateway_url, &node_b_router_url)?;
-    let sampler = Mvp5ContainerStatsSampler::start(code_root().join("ramflux-deploy"));
+    let sampler = Mvp5ContainerStatsSampler::start(code_root().join("ramflux/deploy"));
     let endpoint = format!("127.0.0.1:{}", destination_ports.federation_mesh);
     let source_tls = mvp_s8_perf_federation_tls(NODE_A_PROJECT);
     let destination_ca_pem = std::fs::read_to_string(&node_b.ca_cert)?;
@@ -1768,7 +1768,7 @@ fn mvp5_perf_ratio_f64(numerator: f64, denominator: f64) -> Option<f64> {
 #[cfg(feature = "realnet")]
 fn mvp_s8_perf_federation_tls(project_name: &str) -> ramflux_transport::MeshTlsConfig {
     let cert_root =
-        code_root().join("ramflux-deploy/.itest-node-certs").join(project_name).join("certs");
+        code_root().join("ramflux/deploy/.itest-node-certs").join(project_name).join("certs");
     ramflux_transport::MeshTlsConfig {
         ca_cert: cert_root.join("ca.pem"),
         service_cert: cert_root.join("federation/federation.pem"),
@@ -3391,7 +3391,7 @@ fn mvp4_realnet_trusted_zero_directory_cross_node_dm() -> Result<(), Box<dyn std
         ),
     );
     assert_ne!(node_a.federation_node_public_key, node_b.federation_node_public_key);
-    let ca_cert = code_root().join("ramflux-deploy/certs/ca.pem");
+    let ca_cert = code_root().join("ramflux/deploy/certs/ca.pem");
     let runtime = tokio::runtime::Builder::new_current_thread().enable_all().build()?;
     runtime.block_on(async {
         realnet_step("TEST mvp4 enter async federation flow", "zero-directory invitation path");

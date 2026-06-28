@@ -14,7 +14,7 @@ fn mvp_s2_realnet_sdk_session_dm_resume_cursor() -> Result<(), Box<dyn std::erro
 
     let realnet = start_realnet_compose()?;
     let code_root = code_root();
-    let ca_cert = code_root.join("ramflux-deploy/certs/ca.pem");
+    let ca_cert = code_root.join("ramflux/deploy/certs/ca.pem");
     let gateway_quic_addr: std::net::SocketAddr = std::env::var("RAMFLUX_ITEST_GATEWAY_QUIC_ADDR")
         .unwrap_or_else(|_| "127.0.0.1:18443".to_owned())
         .parse()?;
@@ -39,7 +39,7 @@ fn mvp_s2_realnet_sdk_session_dm_resume_cursor_tcp_tls() -> Result<(), Box<dyn s
 
     let realnet = start_realnet_compose()?;
     let code_root = code_root();
-    let ca_cert = code_root.join("ramflux-deploy/certs/ca.pem");
+    let ca_cert = code_root.join("ramflux/deploy/certs/ca.pem");
     let gateway_tcp_addr: std::net::SocketAddr = std::env::var("RAMFLUX_ITEST_GATEWAY_TCP_ADDR")
         .unwrap_or_else(|_| "127.0.0.1:18443".to_owned())
         .parse()?;
@@ -69,7 +69,7 @@ fn mvp_s2_realnet_sdk_session_dm_resume_cursor_auto_prefers_quic()
 
     let realnet = start_realnet_compose()?;
     let code_root = code_root();
-    let ca_cert = code_root.join("ramflux-deploy/certs/ca.pem");
+    let ca_cert = code_root.join("ramflux/deploy/certs/ca.pem");
     let gateway_quic_addr: std::net::SocketAddr = std::env::var("RAMFLUX_ITEST_GATEWAY_QUIC_ADDR")
         .unwrap_or_else(|_| "127.0.0.1:18443".to_owned())
         .parse()?;
@@ -102,7 +102,7 @@ fn mvp_s2_realnet_sdk_session_auto_quic_survives_frame_delay()
         "1800".to_owned(),
     )])?;
     let code_root = code_root();
-    let ca_cert = code_root.join("ramflux-deploy/certs/ca.pem");
+    let ca_cert = code_root.join("ramflux/deploy/certs/ca.pem");
     let gateway_quic_addr: std::net::SocketAddr = std::env::var("RAMFLUX_ITEST_GATEWAY_QUIC_ADDR")
         .unwrap_or_else(|_| "127.0.0.1:18443".to_owned())
         .parse()?;
@@ -132,7 +132,7 @@ fn mvp_s2_realnet_sdk_session_dm_resume_cursor_udp_unreachable_falls_back_tcp_tl
 
     let realnet = start_realnet_compose()?;
     let code_root = code_root();
-    let ca_cert = code_root.join("ramflux-deploy/certs/ca.pem");
+    let ca_cert = code_root.join("ramflux/deploy/certs/ca.pem");
     let blocked_quic_addr: std::net::SocketAddr =
         std::env::var("RAMFLUX_ITEST_GATEWAY_BLOCKED_QUIC_ADDR")
             .unwrap_or_else(|_| "127.0.0.1:9".to_owned())
@@ -171,7 +171,7 @@ fn mvp_s2_realnet_compio_gateway_quic_session_online_push() -> Result<(), Box<dy
 
     let realnet = start_realnet_compose_with_env_and_gateway_compio(&[], true)?;
     let code_root = code_root();
-    let ca_cert = code_root.join("ramflux-deploy/certs/ca.pem");
+    let ca_cert = code_root.join("ramflux/deploy/certs/ca.pem");
     let gateway_quic_addr: std::net::SocketAddr = std::env::var("RAMFLUX_ITEST_GATEWAY_QUIC_ADDR")
         .unwrap_or_else(|_| "127.0.0.1:18443".to_owned())
         .parse()?;

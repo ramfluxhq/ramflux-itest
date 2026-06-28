@@ -14,7 +14,7 @@ fn mvp_s15_realnet_rf_object_put_get() -> Result<(), Box<dyn std::error::Error>>
 
     let realnet = start_realnet_compose()?;
     let code_root = code_root();
-    let ca_cert = code_root.join("ramflux-deploy/certs/ca.pem");
+    let ca_cert = code_root.join("ramflux/deploy/certs/ca.pem");
     let gateway_quic_addr: std::net::SocketAddr = std::env::var("RAMFLUX_ITEST_GATEWAY_QUIC_ADDR")
         .unwrap_or_else(|_| "127.0.0.1:18443".to_owned())
         .parse()?;
@@ -43,7 +43,7 @@ fn mvp_s15_realnet_object_store_persistence_after_daemon_restart()
 
     let realnet = start_realnet_compose()?;
     let code_root = code_root();
-    let ca_cert = code_root.join("ramflux-deploy/certs/ca.pem");
+    let ca_cert = code_root.join("ramflux/deploy/certs/ca.pem");
     let gateway_quic_addr: std::net::SocketAddr = std::env::var("RAMFLUX_ITEST_GATEWAY_QUIC_ADDR")
         .unwrap_or_else(|_| "127.0.0.1:18443".to_owned())
         .parse()?;
@@ -70,7 +70,7 @@ fn mvp_s15_realnet_rf_call_signaling() -> Result<(), Box<dyn std::error::Error>>
 
     let realnet = start_realnet_compose()?;
     let code_root = code_root();
-    let ca_cert = code_root.join("ramflux-deploy/certs/ca.pem");
+    let ca_cert = code_root.join("ramflux/deploy/certs/ca.pem");
     let gateway_quic_addr: std::net::SocketAddr = std::env::var("RAMFLUX_ITEST_GATEWAY_QUIC_ADDR")
         .unwrap_or_else(|_| "127.0.0.1:18443".to_owned())
         .parse()?;
@@ -98,7 +98,7 @@ fn mvp_s15_realnet_rf_bot() -> Result<(), Box<dyn std::error::Error>> {
 
     let realnet = start_realnet_compose()?;
     let code_root = code_root();
-    let ca_cert = code_root.join("ramflux-deploy/certs/ca.pem");
+    let ca_cert = code_root.join("ramflux/deploy/certs/ca.pem");
     let gateway_quic_addr: std::net::SocketAddr = std::env::var("RAMFLUX_ITEST_GATEWAY_QUIC_ADDR")
         .unwrap_or_else(|_| "127.0.0.1:18443".to_owned())
         .parse()?;

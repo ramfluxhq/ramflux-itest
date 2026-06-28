@@ -6,7 +6,7 @@ use crate::*;
 
 #[cfg(test)]
 pub(crate) fn fixture_root() -> PathBuf {
-    Path::new("../ramflux-protocol").to_path_buf()
+    code_root().join("ramflux/crates/ramflux-protocol")
 }
 
 #[cfg(test)]
@@ -24,6 +24,15 @@ pub(crate) fn temp_root(test_name: &str) -> Result<PathBuf, Box<dyn std::error::
     Ok(path)
 }
 
+/// Root of the realnet-clone parent directory that holds the realnet checkouts.
+///
+/// Realnet is driven from two sibling repos checked out under one parent dir:
+///   `<parent>/ramflux/`        the open monorepo (deploy infra at `ramflux/deploy`,
+///                              services at `ramflux/apps/*` + `ramflux/crates/*`)
+///   `<parent>/ramflux-itest/`  this integration-test harness
+///
+/// `CARGO_MANIFEST_DIR` is `<parent>/ramflux-itest`, so its parent is `<parent>`.
+/// Deploy assets therefore resolve as `code_root().join("ramflux/deploy/...")`.
 #[cfg(all(test, feature = "realnet"))]
 pub(crate) fn code_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))

@@ -433,7 +433,7 @@ pub(crate) fn mvp8_invitation(
     expires_at: i64,
 ) -> Result<ramflux_node_core::FederationNodeInvitation, Box<dyn std::error::Error>> {
     let candidate_node_ca_cert_pem =
-        std::fs::read_to_string(code_root().join("ramflux-deploy/certs/federation/ca.pem"))?;
+        std::fs::read_to_string(code_root().join("ramflux/deploy/certs/federation/ca.pem"))?;
     mvp8_invitation_with_ca(
         invitation_id,
         candidate_node_id,
