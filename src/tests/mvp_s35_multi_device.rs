@@ -194,7 +194,7 @@ async fn mvp_s35_assert_multi_device_activation(
                         source_principal_id: "principal_s35_alice".to_owned(),
                         sender_id: "alice_s35".to_owned(),
                         recipient_device_id: Some("bob_device_s35_a".to_owned()),
-                        recipient_principal_commitment: None,
+                        recipient_principal_commitment: Some(bob_commitment.clone()),
                         target_delivery_id: "target_s35_bob_a".to_owned(),
                         encrypted_body_base64: String::new(),
                         plaintext_body_base64: Some(ramflux_protocol::encode_base64url(

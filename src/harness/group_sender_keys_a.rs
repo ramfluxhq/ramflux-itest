@@ -49,7 +49,7 @@ pub(crate) async fn mvp_s21_assert_rf_group_receive_decrypt(
                 "after create",
             )
             .await?;
-            mvp_s10_create_rf_account(
+            let bob_commitment = mvp_s10_create_rf_account(
                 &rf_binary,
                 &bob_socket_arg,
                 "bob_s21_account",
@@ -82,15 +82,36 @@ pub(crate) async fn mvp_s21_assert_rf_group_receive_decrypt(
                     "group_s21",
                     "--creator",
                     "alice_device_s21",
-                    "--member",
-                    "bob_device_s21",
                 ],
                 "s21 group create",
             )
             .await?;
             assert_eq!(created["group_id"], "group_s21");
+            let added = mvp_s10_rf_json(
+                &rf_binary,
+                &[
+                    "--socket",
+                    &alice_socket_arg,
+                    "group",
+                    "member",
+                    "add",
+                    "--account",
+                    "alice_s21_account",
+                    "--group",
+                    "group_s21",
+                    "--member-device",
+                    "bob_device_s21",
+                    "--member-principal-commitment",
+                    &bob_commitment,
+                    "--target-delivery",
+                    "target_s21_bob",
+                ],
+                "s21 group member add",
+            )
+            .await?;
+            assert_eq!(added["roles"]["bob_device_s21"], "member");
             let distribution_payload =
-                created["sender_key_distribution"]["envelope"]["encrypted_payload"]
+                added["sender_key_distribution"]["envelope"]["encrypted_payload"]
                     .as_str()
                     .ok_or("missing S21 sender-key distribution payload")?;
             assert_node_opaque_payload(
@@ -294,7 +315,7 @@ pub(crate) async fn mvp_s23_assert_cross_node_group(
                 "S23 after create",
             )
             .await?;
-            mvp_s8_create_rf_account(
+            let bob_commitment = mvp_s8_create_rf_account(
                 &rf_binary,
                 &bob_socket_arg,
                 "bob_s23_account",
@@ -329,9 +350,28 @@ pub(crate) async fn mvp_s23_assert_cross_node_group(
                     "group_s23_cross_node",
                     "--creator",
                     "alice_device_s23",
-                    "--member",
+                ],
+                "s23 cross-node group create",
+            )
+            .await?;
+            assert_eq!(created["group_id"], "group_s23_cross_node");
+            let added = mvp_s10_rf_json(
+                &rf_binary,
+                &[
+                    "--socket",
+                    &alice_socket_arg,
+                    "group",
+                    "member",
+                    "add",
+                    "--account",
+                    "alice_s23_account",
+                    "--group",
+                    "group_s23_cross_node",
+                    "--member-device",
                     "bob_device_s23",
-                    "--member-target-delivery",
+                    "--member-principal-commitment",
+                    &bob_commitment,
+                    "--target-delivery",
                     "target_s23_bob",
                     "--federation-url",
                     &node_a.admin_url,
@@ -344,11 +384,11 @@ pub(crate) async fn mvp_s23_assert_cross_node_group(
                     "--recipient-prekey-url",
                     &node_b.admin_url,
                 ],
-                "s23 cross-node group create",
+                "s23 cross-node group member add",
             )
             .await?;
-            assert_eq!(created["group_id"], "group_s23_cross_node");
-            assert_eq!(created["sender_key_distribution"]["accepted"], true);
+            assert_eq!(added["roles"]["bob_device_s23"], "member");
+            assert_eq!(added["sender_key_distribution"]["accepted"], true);
             let node_b_mesh_after_group_create = s22_mesh_observability(node_b)?;
             assert_s22_quic_inbound_delta(
                 &node_b_mesh_before_group_create,

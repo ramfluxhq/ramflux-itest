@@ -140,6 +140,19 @@ async fn mvp_s46_assert_group_invite_accept(
                 "66",
             )
             .await?;
+            let dave_commitment = mvp_s46_create_account(
+                &rf_binary,
+                &alice_socket_arg,
+                "dave_s46_account",
+                "principal_s46_dave",
+                "dave_device_s46",
+                "target_s46_dave",
+                &gateway_addr,
+                &ca_cert_arg,
+                "67",
+                "68",
+            )
+            .await?;
             mvp_s46_add_contact_mesh(
                 &rf_binary,
                 &alice_socket_arg,
@@ -173,7 +186,7 @@ async fn mvp_s46_assert_group_invite_accept(
                 &alice_socket_arg,
                 "alice_s46_account",
                 "group_s46",
-                &[("bob_device_s46", "target_s46_bob", &bob_key)],
+                &[("bob_device_s46", &bob_commitment, "target_s46_bob", &bob_key)],
                 &alice_key,
             )
             .await?;
@@ -182,7 +195,7 @@ async fn mvp_s46_assert_group_invite_accept(
                 &bob_socket_arg,
                 "bob_s46_account",
                 "group_s46",
-                &[("bob_device_s46", "target_s46_bob", &bob_key)],
+                &[("bob_device_s46", &bob_commitment, "target_s46_bob", &bob_key)],
                 &alice_key,
             )
             .await?;
@@ -227,6 +240,8 @@ async fn mvp_s46_assert_group_invite_accept(
                     "bob_device_s46",
                     "--invitee-device",
                     "carol_device_s46",
+                    "--invitee-principal-commitment",
+                    &carol_commitment,
                     "--invitee-signing-public-key",
                     &carol_key,
                     "--target-delivery",
@@ -246,6 +261,7 @@ async fn mvp_s46_assert_group_invite_accept(
                 "alice_device_s46",
                 "carol_device_s46",
                 &carol_key,
+                &carol_commitment,
                 "target_s46_carol",
             )
             .await?;
@@ -273,6 +289,8 @@ async fn mvp_s46_assert_group_invite_accept(
                     "bob_device_s46",
                     "--invite-id",
                     &invite_id,
+                    "--member-principal-commitment",
+                    &bob_commitment,
                     "--target-delivery",
                     "target_s46_bob",
                 ],
@@ -291,6 +309,7 @@ async fn mvp_s46_assert_group_invite_accept(
                 "group_s46",
                 "carol_device_s46",
                 &invite_id,
+                &carol_commitment,
                 "target_s46_carol",
             )
             .await?;
@@ -316,6 +335,8 @@ async fn mvp_s46_assert_group_invite_accept(
                     "carol_device_s46",
                     "--invite-id",
                     &invite_id,
+                    "--member-principal-commitment",
+                    &carol_commitment,
                     "--target-delivery",
                     "target_s46_carol",
                 ],
@@ -362,6 +383,8 @@ async fn mvp_s46_assert_group_invite_accept(
                     "group_s46_ban",
                     "--member-device",
                     "dave_device_s46",
+                    "--member-principal-commitment",
+                    &dave_commitment,
                     "--role",
                     "member",
                     "--member-signing-public-key",
@@ -397,6 +420,8 @@ async fn mvp_s46_assert_group_invite_accept(
                     "alice_device_s46",
                     "--invitee-device",
                     "dave_device_s46",
+                    "--invitee-principal-commitment",
+                    &dave_commitment,
                     "--invitee-signing-public-key",
                     &dave_key,
                     "--target-delivery",
@@ -507,7 +532,7 @@ async fn mvp_s46_seed_group(
     socket: &str,
     account: &str,
     group: &str,
-    members: &[(&str, &str, &str)],
+    members: &[(&str, &str, &str, &str)],
     alice_key: &str,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let created = mvp_s10_rf_json(
@@ -532,7 +557,7 @@ async fn mvp_s46_seed_group(
     )
     .await?;
     assert_eq!(created["roles"]["alice_device_s46"], "owner");
-    for (member, target, public_key) in members {
+    for (member, member_commitment, target, public_key) in members {
         let added = mvp_s10_rf_json(
             rf_binary,
             &[
@@ -547,6 +572,8 @@ async fn mvp_s46_seed_group(
                 group,
                 "--member-device",
                 member,
+                "--member-principal-commitment",
+                member_commitment,
                 "--role",
                 "member",
                 "--target-delivery",
@@ -572,6 +599,7 @@ async fn mvp_s46_invite_create(
     actor: &str,
     invitee: &str,
     invitee_key: &str,
+    invitee_commitment: &str,
     target: &str,
 ) -> Result<serde_json::Value, Box<dyn std::error::Error>> {
     mvp_s10_rf_json(
@@ -590,6 +618,8 @@ async fn mvp_s46_invite_create(
             actor,
             "--invitee-device",
             invitee,
+            "--invitee-principal-commitment",
+            invitee_commitment,
             "--invitee-signing-public-key",
             invitee_key,
             "--target-delivery",
@@ -611,6 +641,7 @@ async fn mvp_s46_invite_accept(
     group: &str,
     actor: &str,
     invite_id: &str,
+    member_commitment: &str,
     target: &str,
 ) -> Result<serde_json::Value, Box<dyn std::error::Error>> {
     mvp_s10_rf_json(
@@ -629,6 +660,8 @@ async fn mvp_s46_invite_accept(
             actor,
             "--invite-id",
             invite_id,
+            "--member-principal-commitment",
+            member_commitment,
             "--target-delivery",
             target,
         ],

@@ -163,8 +163,8 @@ async fn mvp_s44_assert_signed_group_role_control(
                 &alice_socket_arg,
                 "alice_s44_account",
                 [
-                    ("bob_device_s44", "target_s44_bob", &bob_key),
-                    ("carol_device_s44", "target_s44_carol", &carol_key),
+                    ("bob_device_s44", &bob_commitment, "target_s44_bob", &bob_key),
+                    ("carol_device_s44", &carol_commitment, "target_s44_carol", &carol_key),
                 ],
                 &alice_key,
             )
@@ -174,8 +174,8 @@ async fn mvp_s44_assert_signed_group_role_control(
                 &bob_socket_arg,
                 "bob_s44_account",
                 [
-                    ("bob_device_s44", "target_s44_bob", &bob_key),
-                    ("carol_device_s44", "target_s44_carol", &carol_key),
+                    ("bob_device_s44", &bob_commitment, "target_s44_bob", &bob_key),
+                    ("carol_device_s44", &carol_commitment, "target_s44_carol", &carol_key),
                 ],
                 &alice_key,
             )
@@ -185,8 +185,8 @@ async fn mvp_s44_assert_signed_group_role_control(
                 &carol_socket_arg,
                 "carol_s44_account",
                 [
-                    ("carol_device_s44", "target_s44_carol", &carol_key),
-                    ("bob_device_s44", "target_s44_bob", &bob_key),
+                    ("carol_device_s44", &carol_commitment, "target_s44_carol", &carol_key),
+                    ("bob_device_s44", &bob_commitment, "target_s44_bob", &bob_key),
                 ],
                 &alice_key,
             )
@@ -400,14 +400,22 @@ async fn mvp_s44_seed_group(
     rf_binary: &Path,
     socket: &str,
     account: &str,
-    members: [(&str, &str, &str); 2],
+    members: [(&str, &str, &str, &str); 2],
     alice_key: &str,
 ) -> Result<(), Box<dyn std::error::Error>> {
     mvp_s44_create_group(rf_binary, socket, account, alice_key).await?;
-    for (member, target, public_key) in members {
+    for (member, commitment, target, public_key) in members {
         mvp_s44_add_member(
             rf_binary,
-            S44MemberAdd { socket, account, member, role: "member", target, public_key },
+            S44MemberAdd {
+                socket,
+                account,
+                member,
+                commitment,
+                role: "member",
+                target,
+                public_key,
+            },
         )
         .await?;
     }
@@ -419,6 +427,7 @@ struct S44MemberAdd<'a> {
     socket: &'a str,
     account: &'a str,
     member: &'a str,
+    commitment: &'a str,
     role: &'a str,
     target: &'a str,
     public_key: &'a str,
@@ -443,6 +452,8 @@ async fn mvp_s44_add_member(
             "group_s44",
             "--member-device",
             add.member,
+            "--member-principal-commitment",
+            add.commitment,
             "--role",
             add.role,
             "--target-delivery",
