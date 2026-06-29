@@ -95,7 +95,7 @@ pub(crate) async fn mvp_s8_assert_local_rf_federation_full_chain_no_hang()
             "82",
         )
         .await?;
-        mvp_s8_create_rf_account(
+        let bob_commitment = mvp_s8_create_rf_account(
             &rf_binary,
             &bob_socket_arg,
             "bob_s8_account",
@@ -129,7 +129,10 @@ pub(crate) async fn mvp_s8_assert_local_rf_federation_full_chain_no_hang()
                 "env_s8_cross_node_dm_1",
                 "--source-principal",
                 "principal_s8_alice",
+                "--sender",
                 "alice_s8",
+                "--recipient-principal-commitment",
+                bob_commitment.as_str(),
                 "--recipient-device",
                 "bob_device_s8",
                 "--target",

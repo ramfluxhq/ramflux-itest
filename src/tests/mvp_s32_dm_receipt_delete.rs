@@ -66,7 +66,7 @@ async fn mvp_s32_assert_dm_receipt_delete(
                 "53",
             )
             .await?;
-            mvp_s10_create_rf_account(
+            let bob_commitment = mvp_s10_create_rf_account(
                 &rf_binary,
                 &bob_socket_arg,
                 "bob_s32_account",
@@ -97,7 +97,10 @@ async fn mvp_s32_assert_dm_receipt_delete(
                     "env_s32_dm_1",
                     "--source-principal",
                     "principal_s32_alice",
+                    "--sender",
                     "alice_s32",
+                    "--recipient-principal-commitment",
+                    bob_commitment.as_str(),
                     "--recipient-device",
                     "bob_device_s32",
                     "--target",

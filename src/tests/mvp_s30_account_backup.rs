@@ -92,7 +92,7 @@ async fn mvp_s30_assert_account_backup_restore(
                 "32",
             )
             .await?;
-            mvp_s8_create_rf_account(
+            let bob_commitment = mvp_s8_create_rf_account(
                 &rf_binary,
                 &bob_socket_arg,
                 "bob_s30_account",
@@ -111,6 +111,7 @@ async fn mvp_s30_assert_account_backup_restore(
                 &rf_binary,
                 &alice_socket_arg,
                 &bob_socket_arg,
+                &bob_commitment,
                 "env_s30_before_backup",
                 "msg_s30_before_backup",
                 "s30 before backup",
@@ -261,6 +262,7 @@ async fn mvp_s30_send_and_read_dm(
     rf_binary: &Path,
     alice_socket: &str,
     bob_socket: &str,
+    bob_commitment: &str,
     envelope_id: &str,
     message_id: &str,
     body: &str,
@@ -282,7 +284,10 @@ async fn mvp_s30_send_and_read_dm(
             envelope_id,
             "--source-principal",
             "principal_s30_alice",
+            "--sender",
             "alice_s30",
+            "--recipient-principal-commitment",
+            bob_commitment,
             "--recipient-device",
             "bob_device_s30",
             "--target",

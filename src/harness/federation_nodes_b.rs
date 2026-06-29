@@ -101,7 +101,7 @@ async fn mvp_s22_assert_prod_peer_cross_node_dm_inner(
                 "after create",
             )
             .await?;
-            mvp_s8_create_rf_account(
+            let bob_commitment = mvp_s8_create_rf_account(
                 &rf_binary,
                 &bob_socket_arg,
                 "bob_s22_account",
@@ -141,7 +141,10 @@ async fn mvp_s22_assert_prod_peer_cross_node_dm_inner(
                     "env_s22_cross_node_dm_1",
                     "--source-principal",
                     "principal_s22_alice",
+                    "--sender",
                     "alice_s22",
+                    "--recipient-principal-commitment",
+                    bob_commitment.as_str(),
                     "--recipient-device",
                     "bob_device_s22",
                     "--target",
@@ -264,7 +267,10 @@ async fn mvp_s22_assert_prod_peer_cross_node_dm_inner(
                         "env_s22_cross_node_dm_after_restart",
                         "--source-principal",
                         "principal_s22_alice",
+                        "--sender",
                         "alice_s22",
+                        "--recipient-principal-commitment",
+                        bob_commitment.as_str(),
                         "--recipient-device",
                         "bob_device_s22",
                         "--target",
@@ -484,6 +490,7 @@ pub(crate) async fn mvp_s8_send_and_read_cross_node_dm(
     rf_binary: &Path,
     alice_socket: &str,
     bob_socket: &str,
+    bob_commitment: &str,
     node_a: &S8RealnetNode,
     node_b: &S8RealnetNode,
 ) -> Result<(), Box<dyn std::error::Error>> {
@@ -512,7 +519,10 @@ pub(crate) async fn mvp_s8_send_and_read_cross_node_dm(
             "env_s8_cross_node_dm_1",
             "--source-principal",
             "principal_s8_alice",
+            "--sender",
             "alice_s8",
+            "--recipient-principal-commitment",
+            bob_commitment,
             "--recipient-device",
             "bob_device_s8",
             "--target",

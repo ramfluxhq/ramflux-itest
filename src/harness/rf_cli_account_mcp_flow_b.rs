@@ -34,7 +34,7 @@ pub(crate) async fn mvp_s4_assert_rf_cli_second_x3dh_bootstrap(
         let alice_socket = mvp_s4_path_arg(&alice_socket);
         let bob_socket = mvp_s4_path_arg(&bob_socket);
 
-        mvp_s4_assert_rf_accounts_and_contact(
+        let bob_commitment = mvp_s4_assert_rf_accounts_and_contact(
             &rf_binary,
             &alice_socket,
             &bob_socket,
@@ -48,6 +48,7 @@ pub(crate) async fn mvp_s4_assert_rf_cli_second_x3dh_bootstrap(
             &rf_binary,
             &alice_socket,
             &bob_socket,
+            &bob_commitment,
             "msg_s4b_x3dh_1",
             "env_s4b_x3dh_1",
             "s4b first x3dh bootstrap plaintext",
@@ -81,6 +82,7 @@ pub(crate) async fn mvp_s4_assert_rf_cli_second_x3dh_bootstrap(
             &rf_binary,
             &alice_socket,
             &bob_socket,
+            &bob_commitment,
             "msg_s4b_x3dh_2",
             "env_s4b_x3dh_2",
             "s4b second x3dh bootstrap plaintext",
@@ -126,6 +128,7 @@ async fn mvp_s4_send_and_read_bootstrap_dm(
     rf_binary: &Path,
     alice_socket: &str,
     bob_socket: &str,
+    bob_commitment: &str,
     message_id: &str,
     envelope_id: &str,
     plaintext: &str,
@@ -148,7 +151,10 @@ async fn mvp_s4_send_and_read_bootstrap_dm(
             envelope_id,
             "--source-principal",
             "principal_s4_alice",
+            "--sender",
             "alice_s4",
+            "--recipient-principal-commitment",
+            bob_commitment,
             "--recipient-device",
             "bob_device_s4",
             "--target",
@@ -475,6 +481,7 @@ pub(crate) async fn mvp_s4_assert_rf_dm_ratchet_second_message(
     rf_binary: &Path,
     alice_socket: &str,
     bob_socket: &str,
+    bob_commitment: &str,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let second = mvp_s4_rf_json(
         rf_binary,
@@ -493,7 +500,10 @@ pub(crate) async fn mvp_s4_assert_rf_dm_ratchet_second_message(
             "env_s4_cli_dm_2",
             "--source-principal",
             "principal_s4_alice",
+            "--sender",
             "alice_s4",
+            "--recipient-principal-commitment",
+            bob_commitment,
             "--recipient-device",
             "bob_device_s4",
             "--target",

@@ -71,7 +71,7 @@ async fn mvp_s19_assert_prod_node_register_prekey_dm(
                 "alice_s19_account",
             )
             .await?;
-            mvp_s10_create_rf_account(
+            let bob_commitment = mvp_s10_create_rf_account(
                 &rf_binary,
                 &bob_socket_arg,
                 "bob_s19_account",
@@ -104,7 +104,10 @@ async fn mvp_s19_assert_prod_node_register_prekey_dm(
                     "env_s19_prod_register_dm",
                     "--source-principal",
                     "principal_s19_alice",
+                    "--sender",
                     "alice_s19",
+                    "--recipient-principal-commitment",
+                    bob_commitment.as_str(),
                     "--recipient-device",
                     "bob_device_s19",
                     "--target",
