@@ -126,7 +126,6 @@ pub(crate) async fn mvp_s2_assert_sdk_session_dm_resume_with_transport(
         &temp_root.join("alice"),
         "alice_s2_account",
         "principal_s2_alice",
-        "alice_s2",
         "alice_device_s2",
         "target_s2_alice",
         [0xA2; 32],
@@ -137,7 +136,6 @@ pub(crate) async fn mvp_s2_assert_sdk_session_dm_resume_with_transport(
         &temp_root.join("bob"),
         "bob_s2_account",
         "principal_s2_bob",
-        "bob_s2",
         "bob_device_s2",
         "target_s2_bob",
         [0xB2; 32],
@@ -246,18 +244,19 @@ pub(crate) fn mvp_s2_registered_sdk_client(
     root: &Path,
     account_id: &str,
     principal_id: &str,
-    principal_commitment: &str,
     device_id: &str,
     target_delivery_id: &str,
     root_seed: [u8; 32],
     device_seed: [u8; 32],
     gateway_url: &str,
 ) -> Result<ramflux_sdk::RamfluxClient, Box<dyn std::error::Error>> {
-    let mut client = mvp_s2_sdk_client(root, account_id, principal_commitment)?;
+    let principal_commitment =
+        ramflux_sdk::identity_root_public_key_commitment_for_seed(principal_id, root_seed);
+    let mut client = mvp_s2_sdk_client(root, account_id, &principal_commitment)?;
     client.create_identity_root(principal_id, root_seed);
     client.create_device_branch(principal_id, device_id, 1, device_seed);
     client.initialize_and_publish_prekey_bundle(
-        principal_commitment,
+        &principal_commitment,
         device_id,
         target_delivery_id,
         device_seed,

@@ -166,8 +166,8 @@ async fn mvp_s45_assert_group_control_rekey(
                 &alice_socket_arg,
                 "alice_s45_account",
                 [
-                    ("bob_device_s45", "target_s45_bob", &bob_key),
-                    ("carol_device_s45", "target_s45_carol", &carol_key),
+                    ("bob_device_s45", &bob_commitment, "target_s45_bob", &bob_key),
+                    ("carol_device_s45", &carol_commitment, "target_s45_carol", &carol_key),
                 ],
                 &alice_key,
             )
@@ -177,8 +177,8 @@ async fn mvp_s45_assert_group_control_rekey(
                 &bob_socket_arg,
                 "bob_s45_account",
                 [
-                    ("bob_device_s45", "target_s45_bob", &bob_key),
-                    ("carol_device_s45", "target_s45_carol", &carol_key),
+                    ("bob_device_s45", &bob_commitment, "target_s45_bob", &bob_key),
+                    ("carol_device_s45", &carol_commitment, "target_s45_carol", &carol_key),
                 ],
                 &alice_key,
             )
@@ -188,8 +188,8 @@ async fn mvp_s45_assert_group_control_rekey(
                 &carol_socket_arg,
                 "carol_s45_account",
                 [
-                    ("carol_device_s45", "target_s45_carol", &carol_key),
-                    ("bob_device_s45", "target_s45_bob", &bob_key),
+                    ("carol_device_s45", &carol_commitment, "target_s45_carol", &carol_key),
+                    ("bob_device_s45", &bob_commitment, "target_s45_bob", &bob_key),
                 ],
                 &alice_key,
             )
@@ -397,7 +397,7 @@ async fn mvp_s45_seed_group(
     rf_binary: &Path,
     socket: &str,
     account: &str,
-    members: [(&str, &str, &str); 2],
+    members: [(&str, &str, &str, &str); 2],
     alice_key: &str,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let created = mvp_s10_rf_json(
@@ -422,7 +422,7 @@ async fn mvp_s45_seed_group(
     )
     .await?;
     assert_eq!(created["roles"]["alice_device_s45"], "owner");
-    for (member, target, public_key) in members {
+    for (member, member_commitment, target, public_key) in members {
         let added = mvp_s10_rf_json(
             rf_binary,
             &[
@@ -437,6 +437,8 @@ async fn mvp_s45_seed_group(
                 "group_s45",
                 "--member-device",
                 member,
+                "--member-principal-commitment",
+                member_commitment,
                 "--role",
                 "member",
                 "--target-delivery",

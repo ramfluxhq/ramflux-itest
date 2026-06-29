@@ -10,7 +10,7 @@ pub(crate) async fn mvp_s15_with_rf_accounts<Fut>(
     gateway_quic_addr: std::net::SocketAddr,
     ca_cert: &Path,
     gateway_url: &str,
-    run: impl FnOnce(PathBuf, String, String, PathBuf) -> Fut,
+    run: impl FnOnce(PathBuf, String, String, String, PathBuf) -> Fut,
 ) -> Result<(), Box<dyn std::error::Error>>
 where
     Fut: std::future::Future<Output = Result<(), Box<dyn std::error::Error>>>,
@@ -34,7 +34,7 @@ where
             let ca_cert_arg = mvp_s4_path_arg(ca_cert);
             let alice_socket_arg = mvp_s4_path_arg(&alice_socket);
             let bob_socket_arg = mvp_s4_path_arg(&bob_socket);
-            mvp_s4_assert_rf_accounts_and_contact(
+            let bob_commitment = mvp_s4_assert_rf_accounts_and_contact(
                 &rf_binary,
                 &alice_socket_arg,
                 &bob_socket_arg,
@@ -51,7 +51,8 @@ where
             .await?;
             mvp_s15_assert_account_transport_quic(&rf_binary, &bob_socket_arg, "bob_s4_account")
                 .await?;
-            run(rf_binary, alice_socket_arg, bob_socket_arg, temp_root.clone()).await
+            run(rf_binary, alice_socket_arg, bob_socket_arg, bob_commitment, temp_root.clone())
+                .await
         }
         .await;
         let _ = alice_shutdown_tx.send(true);
@@ -96,7 +97,7 @@ pub(crate) async fn mvp_s15_assert_rf_object_put_get(
         gateway_quic_addr,
         ca_cert,
         gateway_url,
-        |rf_binary, alice_socket, _bob_socket, temp_root| async move {
+        |rf_binary, alice_socket, _bob_socket, bob_commitment, temp_root| async move {
             let plaintext = b"s15 object plaintext media bytes must stay opaque to nodes";
             let input = temp_root.join("object-input.bin");
             let output = temp_root.join("object-output.bin");
@@ -143,6 +144,8 @@ pub(crate) async fn mvp_s15_assert_rf_object_put_get(
                     "conv_s15_object",
                     "--sender",
                     "alice_device_s4",
+                    "--recipient-principal-commitment",
+                    &bob_commitment,
                     "--recipient-device",
                     "bob_device_s4",
                     "--target",
@@ -338,7 +341,7 @@ pub(crate) async fn mvp_s15_assert_rf_call_signaling(
         gateway_quic_addr,
         ca_cert,
         gateway_url,
-        |rf_binary, alice_socket, _bob_socket, _temp_root| async move {
+        |rf_binary, alice_socket, _bob_socket, _bob_commitment, _temp_root| async move {
             let offer = "v=0\r\na=ice-ufrag:s15\r\na=fingerprint:sha-256 opaque\r\n";
             let media_key = "s15-srtp-media-key-never-node-visible";
             let invite = mvp_s4_rf_json(
@@ -417,7 +420,7 @@ pub(crate) async fn mvp_s15_assert_rf_bot(
         gateway_quic_addr,
         ca_cert,
         gateway_url,
-        |rf_binary, alice_socket, _bob_socket, temp_root| async move {
+        |rf_binary, alice_socket, _bob_socket, _bob_commitment, temp_root| async move {
             let manifest_path = temp_root.join("bot-manifest.json");
             let grant_path = temp_root.join("bot-install-grant.json");
             let attacker_manifest_path = temp_root.join("bot-manifest-attacker.json");
@@ -705,7 +708,7 @@ pub(crate) async fn mvp_s16_assert_object_secret_key_slot_dm(
         gateway_quic_addr,
         ca_cert,
         gateway_url,
-        |rf_binary, alice_socket, bob_socket, temp_root| async move {
+        |rf_binary, alice_socket, bob_socket, bob_commitment, temp_root| async move {
             let plaintext =
                 b"s16 random object key plaintext must not be decryptable from object id";
             let input = temp_root.join("s16-object-input.bin");
@@ -765,6 +768,8 @@ pub(crate) async fn mvp_s16_assert_object_secret_key_slot_dm(
                     "conv_s16_object",
                     "--sender",
                     "alice_device_s4",
+                    "--recipient-principal-commitment",
+                    &bob_commitment,
                     "--recipient-device",
                     "bob_device_s4",
                     "--target",

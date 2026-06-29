@@ -61,7 +61,7 @@ async fn mvp_s31_assert_rf_group_governance(
             let bob_socket_arg = mvp_s4_path_arg(&bob_socket);
             let carol_socket_arg = mvp_s4_path_arg(&carol_socket);
 
-            mvp_s10_create_rf_account(
+            let _alice_commitment = mvp_s10_create_rf_account(
                 &rf_binary,
                 &alice_socket_arg,
                 "alice_s31_account",
@@ -74,7 +74,7 @@ async fn mvp_s31_assert_rf_group_governance(
                 "42",
             )
             .await?;
-            mvp_s10_create_rf_account(
+            let bob_commitment = mvp_s10_create_rf_account(
                 &rf_binary,
                 &bob_socket_arg,
                 "bob_s31_account",
@@ -87,7 +87,7 @@ async fn mvp_s31_assert_rf_group_governance(
                 "44",
             )
             .await?;
-            mvp_s10_create_rf_account(
+            let carol_commitment = mvp_s10_create_rf_account(
                 &rf_binary,
                 &carol_socket_arg,
                 "carol_s31_account",
@@ -123,6 +123,7 @@ async fn mvp_s31_assert_rf_group_governance(
                 &rf_binary,
                 &alice_socket_arg,
                 "bob_device_s31",
+                &bob_commitment,
                 "target_s31_bob",
             )
             .await?;
@@ -130,6 +131,7 @@ async fn mvp_s31_assert_rf_group_governance(
                 &rf_binary,
                 &alice_socket_arg,
                 "carol_device_s31",
+                &carol_commitment,
                 "target_s31_carol",
             )
             .await?;
@@ -316,6 +318,7 @@ async fn mvp_s31_add_group_member(
     rf_binary: &Path,
     alice_socket_arg: &str,
     member_device: &str,
+    member_commitment: &str,
     target_delivery: &str,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let added = mvp_s10_rf_json(
@@ -332,6 +335,8 @@ async fn mvp_s31_add_group_member(
             "group_s31",
             "--member-device",
             member_device,
+            "--member-principal-commitment",
+            member_commitment,
             "--target-delivery",
             target_delivery,
         ],

@@ -52,7 +52,7 @@ async fn mvp_s37_assert_tui_compose_mode(
             mvp_s4_wait_for_socket(&bob_socket).await?;
             let mut alice_setup_bus = ramflux_sdk::LocalBusClient::connect(&alice_socket).await?;
             let mut bob_bus = ramflux_sdk::LocalBusClient::connect(&bob_socket).await?;
-            mvp_s37_create_account(
+            let alice_commitment = mvp_s37_create_account(
                 &mut alice_setup_bus,
                 gateway_quic_addr,
                 ca_cert,
@@ -66,7 +66,7 @@ async fn mvp_s37_assert_tui_compose_mode(
                 },
             )
             .await?;
-            mvp_s37_create_account(
+            let bob_commitment = mvp_s37_create_account(
                 &mut bob_bus,
                 gateway_quic_addr,
                 ca_cert,
@@ -78,6 +78,20 @@ async fn mvp_s37_assert_tui_compose_mode(
                     root_seed: [0x3a; 32],
                     device_seed: [0x3b; 32],
                 },
+            )
+            .await?;
+            mvp_s37_add_contact(
+                &mut alice_setup_bus,
+                "alice_s37_account",
+                &alice_commitment,
+                &bob_commitment,
+            )
+            .await?;
+            mvp_s37_add_contact(
+                &mut bob_bus,
+                "bob_s37_account",
+                &bob_commitment,
+                &alice_commitment,
             )
             .await?;
 
@@ -158,7 +172,7 @@ async fn mvp_s37_create_account(
     gateway_quic_addr: std::net::SocketAddr,
     ca_cert: &Path,
     spec: MvpS37AccountSpec<'_>,
-) -> Result<(), Box<dyn std::error::Error>> {
+) -> Result<String, Box<dyn std::error::Error>> {
     let request = ramflux_sdk::LocalBusAccountCreateRequest {
         local_account_id: spec.local_account_id.to_owned(),
         principal_id: spec.principal_id.to_owned(),
@@ -188,6 +202,29 @@ async fn mvp_s37_create_account(
         transport.starts_with("quic") || transport.starts_with("tcp"),
         "expected established quic*/tcp* transport, got {transport:?}",
     );
+    Ok(response.principal_commitment)
+}
+
+#[cfg(all(test, feature = "realnet"))]
+async fn mvp_s37_add_contact(
+    bus: &mut ramflux_sdk::LocalBusClient,
+    account: &str,
+    requester: &str,
+    target: &str,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let added = bus
+        .request(
+            Some(account.to_owned()),
+            "contact",
+            "contact.add",
+            &ramflux_sdk::LocalBusContactAddRequest {
+                link_id: format!("friend_link_s37_{requester}_{target}"),
+                requester_id: requester.to_owned(),
+                target_id: target.to_owned(),
+            },
+        )
+        .await?;
+    assert_eq!(added["state"], "accepted");
     Ok(())
 }
 

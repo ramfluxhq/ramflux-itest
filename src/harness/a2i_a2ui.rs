@@ -17,7 +17,7 @@ pub(crate) async fn mvp_s17_assert_a2i_a2ui_control_surface(
         gateway_quic_addr,
         ca_cert,
         gateway_url,
-        |rf_binary, alice_socket, bob_socket, temp_root| async move {
+        |rf_binary, alice_socket, bob_socket, _bob_commitment, temp_root| async move {
             let appended = mvp_s4_rf_json(
                 &rf_binary,
                 &[
@@ -249,7 +249,7 @@ pub(crate) async fn mvp_s18_assert_a2i_encrypted_self_device_delivery(
         gateway_quic_addr,
         ca_cert,
         gateway_url,
-        |rf_binary, alice_socket, bob_socket, _temp_root| async move {
+        |rf_binary, alice_socket, bob_socket, _bob_commitment, _temp_root| async move {
             let appended = mvp_s4_rf_json(
                 &rf_binary,
                 &[
