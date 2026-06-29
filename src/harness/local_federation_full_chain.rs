@@ -435,10 +435,10 @@ fn local_federation_server_record(
 struct LocalGatewayState {
     prekeys: Arc<Mutex<BTreeMap<String, ramflux_crypto::PrekeyBundle>>>,
     inbox: Arc<Mutex<Vec<ramflux_sdk::GatewayInboxEntry>>>,
-    // Mirror registrations/prekeys into the real node-core identity registry so the
-    // HTTP stub can serve a crypto-valid /mvp1/device-manifest (the cross-node send
-    // path now resolves the recipient manifest from the recipient prekey url).
-    identities: Arc<Mutex<ramflux_node_core::ItestMvp1IdentityRegistry>>,
+    // The real node-core router core backs the request/response gateway protocol
+    // (`GatewayQuicRequest`): identity register, prekey publish/fetch, and the
+    // crypto-valid `/mvp1/device-manifest` the cross-node send path now resolves.
+    router: Arc<ramflux_node_core::RouterCore>,
 }
 
 #[cfg(all(test, feature = "realnet"))]
@@ -447,7 +447,7 @@ impl LocalGatewayState {
         Self {
             prekeys: Arc::new(Mutex::new(BTreeMap::new())),
             inbox: Arc::new(Mutex::new(Vec::new())),
-            identities: Arc::new(Mutex::new(ramflux_node_core::ItestMvp1IdentityRegistry::new())),
+            router: Arc::new(ramflux_node_core::RouterCore::new()),
         }
     }
 }
@@ -497,8 +497,23 @@ async fn handle_local_gateway_stream(
     mut send: quinn::SendStream,
     mut recv: quinn::RecvStream,
 ) -> Result<(), String> {
-    match ramflux_transport::read_quic_json_frame::<ramflux_sdk::GatewayClientFrame>(&mut recv)
+    // Each bi-stream is either a one-shot request/response (`GatewayQuicRequest`,
+    // used by account register/prekey publish/fetch and device-manifest) or the
+    // start of a persistent session (`Open`/`Auth`). Peek the first frame to route.
+    let first: serde_json::Value = ramflux_transport::read_quic_json_frame(&mut recv)
         .await
+        .map_err(|source| source.to_string())?;
+    if first.get("method").is_some() && first.get("path").is_some() {
+        let request: ramflux_transport::GatewayQuicRequest =
+            serde_json::from_value(first).map_err(|source| source.to_string())?;
+        let response = dispatch_local_gateway_quic_request(&state, request);
+        ramflux_transport::write_quic_json_message(&mut send, &response)
+            .await
+            .map_err(|source| source.to_string())?;
+        let _ = quinn::SendStream::finish(&mut send);
+        return Ok(());
+    }
+    match serde_json::from_value::<ramflux_sdk::GatewayClientFrame>(first)
         .map_err(|source| source.to_string())?
     {
         ramflux_sdk::GatewayClientFrame::Open { .. } => {}
@@ -537,14 +552,6 @@ async fn handle_local_gateway_stream(
                     .get("request")
                     .cloned()
                     .ok_or_else(|| "missing identity_register request".to_owned())?;
-                if let (Ok(register_request), Ok(mut identities)) = (
-                    serde_json::from_value::<ramflux_node_core::ItestMvp1RegisterIdentityRequest>(
-                        request.clone(),
-                    ),
-                    state.identities.lock(),
-                ) {
-                    let _ = identities.register_identity(&register_request);
-                }
                 let target_delivery_id = request
                     .get("target_delivery_id")
                     .and_then(serde_json::Value::as_str)
@@ -602,14 +609,6 @@ async fn handle_local_gateway_stream(
                 )
                 .map_err(|source| source.to_string())?;
                 lock_prekeys(&state)?.insert(device_id.clone(), bundle.clone());
-                if let Ok(mut identities) = state.identities.lock() {
-                    let _ = identities.publish_prekey(
-                        ramflux_node_core::ItestMvp1PublishPrekeyRequest {
-                            device_id: device_id.clone(),
-                            bundle: bundle.clone(),
-                        },
-                    );
-                }
                 ramflux_transport::write_quic_json_message(
                     &mut send,
                     &serde_json::json!({
@@ -769,6 +768,58 @@ async fn handle_local_gateway_stream(
     }
 }
 
+/// Serve the `GatewayQuicRequest` request/response protocol the rf client uses for identity
+/// register, prekey publish/fetch, and device-manifest, backed by the real node-core router core
+/// (mirrors `apps/ramflux-gateway/src/quic_dispatch.rs`).
+#[cfg(all(test, feature = "realnet"))]
+fn dispatch_local_gateway_quic_request(
+    state: &LocalGatewayState,
+    request: ramflux_transport::GatewayQuicRequest,
+) -> ramflux_transport::GatewayQuicResponse {
+    let body = match (request.method.as_str(), request.path.as_str()) {
+        ("POST", "/mvp1/identity/register") => {
+            let Ok(register) = serde_json::from_value::<
+                ramflux_node_core::ItestMvp1RegisterIdentityRequest,
+            >(request.body) else {
+                return quic_error_response(400, "invalid identity register request");
+            };
+            match state.router.mvp1_register_identity(&register) {
+                Ok(response) => serde_json::to_value(response).ok(),
+                Err(error) => return quic_error_response(500, &error.to_string()),
+            }
+        }
+        ("POST", "/mvp1/prekey/publish") => {
+            let Ok(publish) = serde_json::from_value::<
+                ramflux_node_core::ItestMvp1PublishPrekeyRequest,
+            >(request.body) else {
+                return quic_error_response(400, "invalid prekey publish request");
+            };
+            match state.router.mvp1_publish_prekey(publish) {
+                Ok(response) => serde_json::to_value(response).ok(),
+                Err(error) => return quic_error_response(500, &error.to_string()),
+            }
+        }
+        ("GET", path) if path.starts_with("/mvp1/prekey/") => {
+            let device_id = path.trim_start_matches("/mvp1/prekey/");
+            serde_json::to_value(state.router.mvp1_prekey(device_id)).ok()
+        }
+        ("GET", path) if path.starts_with("/mvp1/device-manifest/") => {
+            let commitment = path.trim_start_matches("/mvp1/device-manifest/");
+            serde_json::to_value(state.router.mvp1_device_manifest(commitment)).ok()
+        }
+        _ => return quic_error_response(404, "not found"),
+    };
+    match body {
+        Some(body) => ramflux_transport::GatewayQuicResponse { status: 200, body },
+        None => quic_error_response(500, "failed to serialize gateway response"),
+    }
+}
+
+#[cfg(all(test, feature = "realnet"))]
+fn quic_error_response(status: u16, message: &str) -> ramflux_transport::GatewayQuicResponse {
+    ramflux_transport::GatewayQuicResponse { status, body: serde_json::json!({ "error": message }) }
+}
+
 #[cfg(all(test, feature = "realnet"))]
 struct LocalPrekeyStub {
     url: String,
@@ -800,25 +851,13 @@ fn handle_local_prekey_request(
         return Ok(());
     };
     if let Some(principal_commitment) = request.path.strip_prefix("/mvp1/device-manifest/") {
-        let manifest = state
-            .identities
-            .lock()
-            .map_err(|error| format!("identities mutex poisoned: {error}"))?
-            .device_manifest(principal_commitment);
+        let manifest = state.router.mvp1_device_manifest(principal_commitment);
         ramflux_node_core::write_itest_json_response(stream, "200 OK", &manifest)?;
         return Ok(());
     }
     let device_id = request.path.trim_start_matches("/mvp1/prekey/");
-    let bundle = wait_for_prekey(state, device_id)?;
-    ramflux_node_core::write_itest_json_response(
-        stream,
-        "200 OK",
-        &serde_json::json!({
-            "device_id": device_id,
-            "bundle": bundle,
-            "target_delivery_id": "target_s8_bob",
-        }),
-    )?;
+    let response = state.router.mvp1_prekey(device_id);
+    ramflux_node_core::write_itest_json_response(stream, "200 OK", &response)?;
     Ok(())
 }
 
@@ -1054,27 +1093,6 @@ fn handle_local_router_inbox_request(
         },
     )?;
     Ok(())
-}
-
-#[cfg(all(test, feature = "realnet"))]
-fn wait_for_prekey(
-    state: &LocalGatewayState,
-    device_id: &str,
-) -> Result<ramflux_crypto::PrekeyBundle, Box<dyn std::error::Error>> {
-    let deadline = std::time::Instant::now() + Duration::from_secs(5);
-    loop {
-        if let Some(bundle) = lock_prekeys(state)
-            .map_err(|source| -> Box<dyn std::error::Error> { source.into() })?
-            .get(device_id)
-            .cloned()
-        {
-            return Ok(bundle);
-        }
-        if std::time::Instant::now() >= deadline {
-            return Err(format!("timed out waiting for prekey {device_id}").into());
-        }
-        std::thread::sleep(Duration::from_millis(20));
-    }
 }
 
 #[cfg(all(test, feature = "realnet"))]
