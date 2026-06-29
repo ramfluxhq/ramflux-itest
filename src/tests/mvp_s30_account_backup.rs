@@ -258,6 +258,7 @@ async fn mvp_s30_assert_account_backup_restore(
 }
 
 #[cfg(all(test, feature = "realnet"))]
+#[allow(clippy::too_many_arguments)]
 async fn mvp_s30_send_and_read_dm(
     rf_binary: &Path,
     alice_socket: &str,

@@ -816,6 +816,7 @@ fn s29_envelope_ids(batch: &str, count: usize) -> Vec<String> {
 }
 
 #[cfg(feature = "realnet")]
+#[allow(clippy::too_many_arguments)]
 async fn s29_send_batch(
     rf_binary: &Path,
     alice_socket: &str,

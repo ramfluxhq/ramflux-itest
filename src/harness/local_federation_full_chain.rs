@@ -435,6 +435,10 @@ fn local_federation_server_record(
 struct LocalGatewayState {
     prekeys: Arc<Mutex<BTreeMap<String, ramflux_crypto::PrekeyBundle>>>,
     inbox: Arc<Mutex<Vec<ramflux_sdk::GatewayInboxEntry>>>,
+    // Mirror registrations/prekeys into the real node-core identity registry so the
+    // HTTP stub can serve a crypto-valid /mvp1/device-manifest (the cross-node send
+    // path now resolves the recipient manifest from the recipient prekey url).
+    identities: Arc<Mutex<ramflux_node_core::ItestMvp1IdentityRegistry>>,
 }
 
 #[cfg(all(test, feature = "realnet"))]
@@ -443,6 +447,7 @@ impl LocalGatewayState {
         Self {
             prekeys: Arc::new(Mutex::new(BTreeMap::new())),
             inbox: Arc::new(Mutex::new(Vec::new())),
+            identities: Arc::new(Mutex::new(ramflux_node_core::ItestMvp1IdentityRegistry::new())),
         }
     }
 }
@@ -532,6 +537,14 @@ async fn handle_local_gateway_stream(
                     .get("request")
                     .cloned()
                     .ok_or_else(|| "missing identity_register request".to_owned())?;
+                if let (Ok(register_request), Ok(mut identities)) = (
+                    serde_json::from_value::<ramflux_node_core::ItestMvp1RegisterIdentityRequest>(
+                        request.clone(),
+                    ),
+                    state.identities.lock(),
+                ) {
+                    let _ = identities.register_identity(&register_request);
+                }
                 let target_delivery_id = request
                     .get("target_delivery_id")
                     .and_then(serde_json::Value::as_str)
@@ -589,6 +602,14 @@ async fn handle_local_gateway_stream(
                 )
                 .map_err(|source| source.to_string())?;
                 lock_prekeys(&state)?.insert(device_id.clone(), bundle.clone());
+                if let Ok(mut identities) = state.identities.lock() {
+                    let _ = identities.publish_prekey(
+                        ramflux_node_core::ItestMvp1PublishPrekeyRequest {
+                            device_id: device_id.clone(),
+                            bundle: bundle.clone(),
+                        },
+                    );
+                }
                 ramflux_transport::write_quic_json_message(
                     &mut send,
                     &serde_json::json!({
@@ -759,7 +780,10 @@ impl LocalPrekeyStub {
         let listener = TcpListener::bind("127.0.0.1:0")?;
         let url = format!("http://{}", listener.local_addr()?);
         std::thread::spawn(move || {
-            if let Ok((mut stream, _peer)) = listener.accept() {
+            // The cross-node send path issues two requests to this url per send: a
+            // device-manifest fetch (manifest gate) then a prekey fetch (X3DH), so
+            // the stub must keep accepting connections, not serve a single request.
+            while let Ok((mut stream, _peer)) = listener.accept() {
                 let _ = handle_local_prekey_request(&mut stream, &state);
             }
         });
@@ -775,6 +799,15 @@ fn handle_local_prekey_request(
     let Some(request) = ramflux_node_core::read_itest_http_request(stream)? else {
         return Ok(());
     };
+    if let Some(principal_commitment) = request.path.strip_prefix("/mvp1/device-manifest/") {
+        let manifest = state
+            .identities
+            .lock()
+            .map_err(|error| format!("identities mutex poisoned: {error}"))?
+            .device_manifest(principal_commitment);
+        ramflux_node_core::write_itest_json_response(stream, "200 OK", &manifest)?;
+        return Ok(());
+    }
     let device_id = request.path.trim_start_matches("/mvp1/prekey/");
     let bundle = wait_for_prekey(state, device_id)?;
     ramflux_node_core::write_itest_json_response(
