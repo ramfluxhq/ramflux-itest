@@ -64,7 +64,7 @@ pub(crate) async fn mvp_s10_assert_private_node_rf_dm(
                 Some(ramflux_sdk::GatewaySessionTransportKind::Quic.wire_name()),
                 "S10 alice private-node session must stay on QUIC, status={alice_status}"
             );
-            mvp_s10_create_rf_account(
+            let bob_commitment = mvp_s10_create_rf_account(
                 &rf_binary,
                 &bob_socket_arg,
                 "bob_s10_account",
@@ -106,7 +106,10 @@ pub(crate) async fn mvp_s10_assert_private_node_rf_dm(
                     "env_s10_private_dm",
                     "--source-principal",
                     "principal_s10_alice",
+                    "--sender",
                     "alice_s10",
+                    "--recipient-principal-commitment",
+                    bob_commitment.as_str(),
                     "--recipient-device",
                     "bob_device_s10",
                     "--target",

@@ -134,7 +134,7 @@ pub(crate) async fn mvp_s8_assert_cross_node_rf_dm_after_trust(
                     node_b.node_id, node_b.gateway_url, node_b.gateway_quic_addr, bob_ca_cert_arg
                 ),
             );
-            mvp_s8_create_rf_account(
+            let bob_commitment = mvp_s8_create_rf_account(
                 &rf_binary,
                 &bob_socket_arg,
                 "bob_s8_account",
@@ -162,6 +162,7 @@ pub(crate) async fn mvp_s8_assert_cross_node_rf_dm_after_trust(
                 &rf_binary,
                 &alice_socket_arg,
                 &bob_socket_arg,
+                &bob_commitment,
                 node_a,
                 node_b,
             )
@@ -199,7 +200,10 @@ pub(crate) async fn mvp_s8_assert_cross_node_rf_dm_after_trust(
                     "env_s8_cross_node_rejected",
                     "--source-principal",
                     "principal_s8_alice",
+                    "--sender",
                     "alice_s8",
+                    "--recipient-principal-commitment",
+                    &bob_commitment,
                     "--recipient-device",
                     "bob_device_s8",
                     "--target",

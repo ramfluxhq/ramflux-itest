@@ -467,7 +467,7 @@ async fn run_s26_offline_peer_spool_retry_flow(
                 "82",
             )
             .await?;
-            mvp_s8_create_rf_account(
+            let bob_commitment = mvp_s8_create_rf_account(
                 &rf_binary,
                 &bob_socket_arg,
                 "bob_s8_account",
@@ -502,7 +502,10 @@ async fn run_s26_offline_peer_spool_retry_flow(
                     "env_s26_spooled_dm_1",
                     "--source-principal",
                     "principal_s8_alice",
+                    "--sender",
                     "alice_s8",
+                    "--recipient-principal-commitment",
+                    bob_commitment.as_str(),
                     "--recipient-device",
                     "bob_device_s8",
                     "--target",
@@ -715,18 +718,29 @@ async fn run_s29_partition_failover_chaos_flow(
             mvp_s4_wait_for_socket(&bob_socket).await?;
             let alice_socket_arg = mvp_s4_path_arg(&alice_socket);
             let bob_socket_arg = mvp_s4_path_arg(&bob_socket);
-            s29_create_accounts(&rf_binary, node_a, node_b, &alice_socket_arg, &bob_socket_arg)
-                .await?;
+            let bob_commitment =
+                s29_create_accounts(&rf_binary, node_a, node_b, &alice_socket_arg, &bob_socket_arg)
+                    .await?;
             mvp_s8_accept_local_friend_projection(&rf_binary, &alice_socket_arg, &bob_socket_arg)
                 .await?;
             let batch1 = s29_envelope_ids("batch1", 20);
             let batch2 = s29_envelope_ids("batch2", 20);
-            s29_send_batch(&rf_binary, &alice_socket_arg, node_a, node_b, &batch1, None).await?;
+            s29_send_batch(
+                &rf_binary,
+                &alice_socket_arg,
+                &bob_commitment,
+                node_a,
+                node_b,
+                &batch1,
+                None,
+            )
+            .await?;
             wait_for_s29_delivered_envelopes(&rf_binary, &bob_socket_arg, &batch1, 45).await?;
             let mut partition = S29FederationPartitionGuard::disconnect(node_b)?;
             s29_send_batch(
                 &rf_binary,
                 &alice_socket_arg,
+                &bob_commitment,
                 node_a,
                 node_b,
                 &batch2,
@@ -762,7 +776,7 @@ async fn s29_create_accounts(
     node_b: &S8RealnetNode,
     alice_socket: &str,
     bob_socket: &str,
-) -> Result<(), Box<dyn std::error::Error>> {
+) -> Result<String, Box<dyn std::error::Error>> {
     let alice_ca_cert = mvp_s4_path_arg(&node_a.ca_cert);
     let bob_ca_cert = mvp_s4_path_arg(&node_b.ca_cert);
     mvp_s8_create_rf_account(
@@ -779,7 +793,7 @@ async fn s29_create_accounts(
         "2a",
     )
     .await?;
-    mvp_s8_create_rf_account(
+    let bob_commitment = mvp_s8_create_rf_account(
         rf_binary,
         bob_socket,
         "bob_s8_account",
@@ -793,7 +807,7 @@ async fn s29_create_accounts(
         "2c",
     )
     .await?;
-    Ok(())
+    Ok(bob_commitment)
 }
 
 #[cfg(feature = "realnet")]
@@ -805,6 +819,7 @@ fn s29_envelope_ids(batch: &str, count: usize) -> Vec<String> {
 async fn s29_send_batch(
     rf_binary: &Path,
     alice_socket: &str,
+    bob_commitment: &str,
     node_a: &S8RealnetNode,
     node_b: &S8RealnetNode,
     envelope_ids: &[String],
@@ -830,7 +845,10 @@ async fn s29_send_batch(
                 envelope_id,
                 "--source-principal",
                 "principal_s8_alice",
+                "--sender",
                 "alice_s8",
+                "--recipient-principal-commitment",
+                bob_commitment,
                 "--recipient-device",
                 "bob_device_s8",
                 "--target",

@@ -273,7 +273,7 @@ pub(crate) async fn mvp_s4_run_rf_cli_flow(
     let alice_socket = mvp_s4_path_arg(&config.alice_socket);
     let bob_socket = mvp_s4_path_arg(&config.bob_socket);
 
-    mvp_s4_assert_rf_accounts_and_contact(
+    let bob_commitment = mvp_s4_assert_rf_accounts_and_contact(
         &config.rf_binary,
         &alice_socket,
         &bob_socket,
@@ -282,7 +282,7 @@ pub(crate) async fn mvp_s4_run_rf_cli_flow(
         &ca_cert,
     )
     .await?;
-    mvp_s4_assert_rf_dm(&config.rf_binary, &alice_socket, &bob_socket).await?;
+    mvp_s4_assert_rf_dm(&config.rf_binary, &alice_socket, &bob_socket, &bob_commitment).await?;
     mvp_s4_assert_account_transport_quic(
         &config.rf_binary,
         &alice_socket,
@@ -327,7 +327,7 @@ pub(crate) async fn mvp_s4_assert_rf_accounts_and_contact(
     gateway_addr: &str,
     gateway_url: &str,
     ca_cert: &str,
-) -> Result<(), Box<dyn std::error::Error>> {
+) -> Result<String, Box<dyn std::error::Error>> {
     let alice_created = mvp_s4_rf_json(
         rf_binary,
         &[
@@ -405,6 +405,10 @@ pub(crate) async fn mvp_s4_assert_rf_accounts_and_contact(
         "bob_s4_account",
         "create response",
     )?;
+    let bob_commitment = bob_created["principal_commitment"]
+        .as_str()
+        .ok_or("missing bob_s4 principal_commitment")?
+        .to_owned();
 
     let status = mvp_s4_rf_json(rf_binary, &["--socket", alice_socket, "daemon", "status"]).await?;
     assert_eq!(status["accounts"], 1);
@@ -442,7 +446,7 @@ pub(crate) async fn mvp_s4_assert_rf_accounts_and_contact(
         "after account/contact setup",
     )
     .await?;
-    Ok(())
+    Ok(bob_commitment)
 }
 
 #[cfg(all(test, feature = "realnet"))]
@@ -615,9 +619,12 @@ pub(crate) async fn mvp_s4_assert_rf_dm(
     rf_binary: &Path,
     alice_socket: &str,
     bob_socket: &str,
+    bob_commitment: &str,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    mvp_s4_assert_rf_dm_x3dh_first_message(rf_binary, alice_socket, bob_socket).await?;
-    mvp_s4_assert_rf_dm_ratchet_second_message(rf_binary, alice_socket, bob_socket).await
+    mvp_s4_assert_rf_dm_x3dh_first_message(rf_binary, alice_socket, bob_socket, bob_commitment)
+        .await?;
+    mvp_s4_assert_rf_dm_ratchet_second_message(rf_binary, alice_socket, bob_socket, bob_commitment)
+        .await
 }
 
 #[cfg(all(test, feature = "realnet"))]
@@ -625,6 +632,7 @@ pub(crate) async fn mvp_s4_assert_rf_dm_x3dh_first_message(
     rf_binary: &Path,
     alice_socket: &str,
     bob_socket: &str,
+    bob_commitment: &str,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let submitted = mvp_s4_rf_json(
         rf_binary,
@@ -645,6 +653,8 @@ pub(crate) async fn mvp_s4_assert_rf_dm_x3dh_first_message(
             "principal_s4_alice",
             "--sender",
             "alice_s4",
+            "--recipient-principal-commitment",
+            bob_commitment,
             "--recipient-device",
             "bob_device_s4",
             "--target",

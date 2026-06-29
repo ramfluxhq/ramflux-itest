@@ -48,7 +48,7 @@ pub(crate) async fn mvp_s20_assert_daemon_restart_account_persist(
             "before restart",
         )
         .await?;
-        mvp_s10_create_rf_account(
+        let bob_commitment = mvp_s10_create_rf_account(
             &rf_binary,
             &bob_socket_arg,
             "bob_s20_account",
@@ -86,7 +86,10 @@ pub(crate) async fn mvp_s20_assert_daemon_restart_account_persist(
                 "env_s20_first",
                 "--source-principal",
                 "principal_s20_alice",
+                "--sender",
                 "alice_s20",
+                "--recipient-principal-commitment",
+                bob_commitment.as_str(),
                 "--recipient-device",
                 "bob_device_s20",
                 "--target",
@@ -141,7 +144,10 @@ pub(crate) async fn mvp_s20_assert_daemon_restart_account_persist(
                 "env_s20_second",
                 "--source-principal",
                 "principal_s20_alice",
+                "--sender",
                 "alice_s20",
+                "--recipient-principal-commitment",
+                bob_commitment.as_str(),
                 "--recipient-device",
                 "bob_device_s20",
                 "--target",
