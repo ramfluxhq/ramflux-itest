@@ -357,6 +357,7 @@ pub(crate) async fn mvp_s15_assert_rf_call_signaling(
                     "call_s15",
                     "--to",
                     "principal_s4_bob",
+                    "--offer",
                     offer,
                     "--srtp-key",
                     media_key,
