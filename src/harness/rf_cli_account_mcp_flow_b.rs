@@ -1030,6 +1030,19 @@ pub(crate) fn mvp_s6_signed_approval_grant(
         .map_or_else(|| format!("grant_{approval_id}"), str::to_owned);
     let full_delegation =
         details.get("full_delegation").and_then(serde_json::Value::as_bool).unwrap_or(false);
+    let single_use =
+        details.get("single_use").and_then(serde_json::Value::as_bool).unwrap_or(false);
+    let arguments_hash = if single_use {
+        Some(
+            details
+                .get("arguments_hash")
+                .and_then(serde_json::Value::as_str)
+                .ok_or("missing approval arguments_hash")?
+                .to_owned(),
+        )
+    } else {
+        None
+    };
     let registry_hash = mvp_s6_registry_hash_from_approval(approval)?;
     let tool_manifest_set_hash = mvp_s6_tool_manifest_set_hash_from_approval(approval)?;
     let body = ramflux_sdk::LocalMcpGrantSigningBody {
@@ -1042,6 +1055,8 @@ pub(crate) fn mvp_s6_signed_approval_grant(
         registry_hash,
         tool_manifest_set_hash,
         full_delegation,
+        single_use,
+        arguments_hash,
         // App must sign over the daemon-assigned expires_at (computed once at approval creation),
         // not a hardcoded constant, or the daemon's reconstructed signing body won't match (item 5).
         expires_at: approval["expires_at"].as_i64().ok_or("missing approval expires_at")?,
