@@ -68,6 +68,26 @@ pub(crate) async fn mvp_s20_assert_daemon_restart_account_persist(
             "before restart",
         )
         .await?;
+        let contact = mvp_s10_rf_json(
+            &rf_binary,
+            &[
+                "--socket",
+                &alice_socket_arg,
+                "contact",
+                "add",
+                "--account",
+                "alice_s20_account",
+                "--link",
+                "friend_link_s20_alice_bob",
+                "--requester",
+                "principal_s20_alice",
+                "--target",
+                "principal_s20_bob",
+            ],
+            "s20 contact add alice-to-bob",
+        )
+        .await?;
+        assert_eq!(contact["state"], "accepted");
         let first_plaintext = b"s20 before daemon restart";
         let first = mvp_s10_rf_json(
             &rf_binary,

@@ -47,6 +47,19 @@ pub(crate) fn mvp_s3_submit_request_for(
     target_delivery_id: &str,
     encrypted_body: &[u8],
 ) -> ramflux_sdk::LocalBusMessageSubmitRequest {
+    let recipient_principal_commitment = match target_delivery_id {
+        "target_s3_bob" => Some(ramflux_sdk::identity_root_public_key_commitment_for_seed(
+            "principal_s3_bob",
+            [0xB1; 32],
+        )),
+        "target_s3_carol_offline" => {
+            Some(ramflux_sdk::identity_root_public_key_commitment_for_seed(
+                "principal_s3_carol",
+                [0xC1; 32],
+            ))
+        }
+        _ => None,
+    };
     ramflux_sdk::LocalBusMessageSubmitRequest {
         conversation_id: "conv_s3_bus".to_owned(),
         message_id: message_id.to_owned(),
@@ -54,7 +67,7 @@ pub(crate) fn mvp_s3_submit_request_for(
         source_principal_id: "principal_s3_alice".to_owned(),
         sender_id: "alice_s3".to_owned(),
         recipient_device_id: None,
-        recipient_principal_commitment: None,
+        recipient_principal_commitment,
         target_delivery_id: target_delivery_id.to_owned(),
         encrypted_body_base64: ramflux_protocol::encode_base64url(encrypted_body),
         plaintext_body_base64: None,
@@ -425,9 +438,9 @@ pub(crate) async fn mvp_s4_assert_rf_accounts_and_contact(
             "--link",
             "friend_link_s4_cli",
             "--requester",
-            "alice_s4",
+            "principal_s4_alice",
             "--target",
-            "bob_s4",
+            "principal_s4_bob",
         ],
     )
     .await?;
@@ -604,9 +617,9 @@ pub(crate) async fn mvp_s6_assert_rf_accounts_and_contact_instrumented(
             "--link",
             "friend_link_s4_cli",
             "--requester",
-            "alice_s4",
+            "principal_s4_alice",
             "--target",
-            "bob_s4",
+            "principal_s4_bob",
         ],
     )
     .await?;

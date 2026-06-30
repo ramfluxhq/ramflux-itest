@@ -79,6 +79,25 @@ async fn mvp_s32_assert_dm_receipt_delete(
                 "63",
             )
             .await?;
+            let contact = mvp_s4_rf_json(
+                &rf_binary,
+                &[
+                    "--socket",
+                    &alice_socket_arg,
+                    "contact",
+                    "add",
+                    "--account",
+                    "alice_s32_account",
+                    "--link",
+                    "friend_link_s32_alice_bob",
+                    "--requester",
+                    "principal_s32_alice",
+                    "--target",
+                    "principal_s32_bob",
+                ],
+            )
+            .await?;
+            assert_eq!(contact["state"], "accepted");
 
             let submitted = mvp_s4_rf_json(
                 &rf_binary,

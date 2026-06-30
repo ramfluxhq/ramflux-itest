@@ -77,6 +77,26 @@ pub(crate) async fn mvp_s10_assert_private_node_rf_dm(
                 "b2",
             )
             .await?;
+            let contact = mvp_s10_rf_json(
+                &rf_binary,
+                &[
+                    "--socket",
+                    &alice_socket_arg,
+                    "contact",
+                    "add",
+                    "--account",
+                    "alice_s10_account",
+                    "--link",
+                    "friend_link_s10_alice_bob",
+                    "--requester",
+                    "principal_s10_alice",
+                    "--target",
+                    "principal_s10_bob",
+                ],
+                "s10 contact add alice-to-bob",
+            )
+            .await?;
+            assert_eq!(contact["state"], "accepted");
             let bob_status = mvp_s10_rf_json(
                 &rf_binary,
                 &["--socket", &bob_socket_arg, "account", "status", "--account", "bob_s10_account"],
