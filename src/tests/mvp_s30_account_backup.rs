@@ -106,6 +106,25 @@ async fn mvp_s30_assert_account_backup_restore(
                 "42",
             )
             .await?;
+            let contact = mvp_s4_rf_json(
+                &rf_binary,
+                &[
+                    "--socket",
+                    &alice_socket_arg,
+                    "contact",
+                    "add",
+                    "--account",
+                    "alice_s30_account",
+                    "--link",
+                    "friend_link_s30_alice_bob",
+                    "--requester",
+                    "principal_s30_alice",
+                    "--target",
+                    "principal_s30_bob",
+                ],
+            )
+            .await?;
+            assert_eq!(contact["state"], "accepted");
 
             mvp_s30_send_and_read_dm(
                 &rf_binary,

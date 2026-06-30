@@ -86,6 +86,26 @@ async fn mvp_s19_assert_prod_node_register_prekey_dm(
             .await?;
             mvp_s19_assert_account_transport_quic(&rf_binary, &bob_socket_arg, "bob_s19_account")
                 .await?;
+            let contact = mvp_s10_rf_json(
+                &rf_binary,
+                &[
+                    "--socket",
+                    &alice_socket_arg,
+                    "contact",
+                    "add",
+                    "--account",
+                    "alice_s19_account",
+                    "--link",
+                    "friend_link_s19_alice_bob",
+                    "--requester",
+                    "principal_s19_alice",
+                    "--target",
+                    "principal_s19_bob",
+                ],
+                "s19 contact add alice-to-bob",
+            )
+            .await?;
+            assert_eq!(contact["state"], "accepted");
             let plaintext = b"s19 production register prekey dm";
             let submitted = mvp_s10_rf_json(
                 &rf_binary,

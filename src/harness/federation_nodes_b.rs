@@ -122,6 +122,26 @@ async fn mvp_s22_assert_prod_peer_cross_node_dm_inner(
                 "after create",
             )
             .await?;
+            let contact = mvp_s10_rf_json(
+                &rf_binary,
+                &[
+                    "--socket",
+                    &alice_socket_arg,
+                    "contact",
+                    "add",
+                    "--account",
+                    "alice_s22_account",
+                    "--link",
+                    "friend_link_s22_alice_bob",
+                    "--requester",
+                    "principal_s22_alice",
+                    "--target",
+                    "principal_s22_bob",
+                ],
+                "s22 contact add alice-to-bob",
+            )
+            .await?;
+            assert_eq!(contact["state"], "accepted");
             let plaintext = b"s22 production peered federated rf dm plaintext";
             let node_b_mesh_before_dm = s22_mesh_observability(node_b)?;
             let submitted = mvp_s10_rf_json(
@@ -455,9 +475,9 @@ pub(crate) async fn mvp_s8_accept_local_friend_projection(
             "--link",
             "friend_link_s8_cross_node",
             "--requester",
-            "alice_s8",
+            "principal_s8_alice",
             "--target",
-            "bob_s8",
+            "principal_s8_bob",
         ],
     )
     .await?;
@@ -475,9 +495,9 @@ pub(crate) async fn mvp_s8_accept_local_friend_projection(
             "--link",
             "friend_link_s8_cross_node",
             "--requester",
-            "alice_s8",
+            "principal_s8_alice",
             "--target",
-            "bob_s8",
+            "principal_s8_bob",
         ],
     )
     .await?;

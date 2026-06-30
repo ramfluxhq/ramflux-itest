@@ -170,6 +170,13 @@ async fn mvp_s35_assert_multi_device_activation(
                 &alice_commitment,
             )
             .await?;
+            mvp_s35_add_contact(
+                &mut alice,
+                "alice_s35_account",
+                &alice_commitment,
+                &bob_commitment,
+            )
+            .await?;
             let safety = bob_restored
                 .request(
                     Some("bob_s35_account".to_owned()),

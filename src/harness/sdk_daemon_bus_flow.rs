@@ -407,6 +407,12 @@ pub(crate) async fn mvp_s3_run_bus_client_flow(
     mvp_s3_create_alice_account(&mut alice_bus, &config).await?;
     mvp_s3_assert_account_transport_quic(&mut alice_bus, "alice_s3_account", "after alice create")
         .await?;
+    mvp_s3_add_contact(
+        &mut alice_bus,
+        MvpS3AccountSpec::alice(),
+        MvpS3AccountSpec::carol_offline(),
+    )
+    .await?;
     mvp_s3_assert_offline_resume_catchup(&mut alice_bus, &mut bob_bus, &config).await?;
     mvp_s3_assert_account_transport_quic(
         &mut alice_bus,
@@ -417,6 +423,7 @@ pub(crate) async fn mvp_s3_run_bus_client_flow(
     mvp_s3_create_bob_account(&mut bob_bus, &config).await?;
     mvp_s3_assert_account_transport_quic(&mut bob_bus, "bob_s3_account", "after bob create")
         .await?;
+    mvp_s3_add_contact(&mut alice_bus, MvpS3AccountSpec::alice(), MvpS3AccountSpec::bob()).await?;
     mvp_s3_open_bob_subscription(&mut bob_subscription_bus).await?;
     let plaintext = b"s3 daemon bus e2ee dm plaintext";
     let received_entries = mvp_s3_submit_and_receive(
@@ -437,6 +444,39 @@ pub(crate) async fn mvp_s3_run_bus_client_flow(
     drop(bob_subscription_bus);
     config.alice_shutdown_tx.send(true)?;
     config.bob_shutdown_tx.send(true)?;
+    Ok(())
+}
+
+#[cfg(all(test, feature = "realnet"))]
+async fn mvp_s3_add_contact(
+    bus: &mut ramflux_sdk::LocalBusClient,
+    requester: MvpS3AccountSpec,
+    target: MvpS3AccountSpec,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let requester_commitment = ramflux_sdk::identity_root_public_key_commitment_for_seed(
+        requester.principal_id,
+        requester.root_seed,
+    );
+    let target_commitment = ramflux_sdk::identity_root_public_key_commitment_for_seed(
+        target.principal_id,
+        target.root_seed,
+    );
+    let added = bus
+        .request(
+            Some(requester.local_account_id.to_owned()),
+            "contact",
+            "contact.add",
+            &ramflux_sdk::LocalBusContactAddRequest {
+                link_id: format!(
+                    "friend_link_s3_{}_{}",
+                    requester.principal_id, target.principal_id
+                ),
+                requester_id: requester_commitment,
+                target_id: target_commitment,
+            },
+        )
+        .await?;
+    assert_eq!(added["state"], "accepted");
     Ok(())
 }
 
