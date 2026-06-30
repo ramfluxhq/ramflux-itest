@@ -896,19 +896,24 @@ pub(crate) async fn mvp_s6_assert_rf_mcp_commands(
         )
         .await?;
     assert_eq!(revoked["state"]["revoked"], true);
-    let revoked_call = mvp_s6_bus_failure(
-        &mut bus,
-        "mcp",
-        "mcp.tool.started",
-        serde_json::json!({
-            "server_id": "srv_s6",
-            "tool_name": "summarize",
-            "arguments": {"text": "again"},
-            "operation_origin": "ai_mcp",
-        }),
-    )
-    .await?;
-    assert!(revoked_call.contains("GrantInvalidated"));
+    let revoked_call =
+        mvp_s6_call_tool(&mut bus, "summarize", serde_json::json!({"text": "again"})).await?;
+    assert_eq!(revoked_call["status"], "approval_required");
+    assert_eq!(revoked_call["approval"]["confirmation_mode"], "remote_app");
+    assert_eq!(revoked_call["approval"]["risk_level"], "high");
+    assert_eq!(revoked_call["approval"]["capability"], "external_tool_invoke");
+    assert_eq!(revoked_call["approval"]["tool_name"], "summarize");
+    assert_eq!(revoked_call["approval"]["tool_scope"], "summarize");
+    assert_eq!(revoked_call["approval"]["details"]["single_use"], true);
+    assert_eq!(
+        revoked_call["approval"]["details"]["arguments"],
+        serde_json::json!({"text": "again"})
+    );
+    assert!(
+        revoked_call["approval"]["details"]["arguments_hash"]
+            .as_str()
+            .is_some_and(|hash| !hash.is_empty())
+    );
 
     let grants = bus
         .request(Some("alice_s4_account".to_owned()), "grant", "grant.list", &serde_json::json!({}))
