@@ -713,19 +713,16 @@ pub(crate) async fn mvp_s6_assert_rf_mcp_commands(
         Some("external_tool_invoke")
     );
 
-    let high_risk_echo = mvp_s6_bus_failure(
-        &mut bus,
-        "mcp",
-        "mcp.tool.started",
-        serde_json::json!({
-            "server_id": "srv_s6",
-            "tool_name": "echo",
-            "arguments": {"text": "hello mcp"},
-            "operation_origin": "ai_mcp",
-        }),
-    )
-    .await?;
-    assert!(high_risk_echo.contains("CapabilityDenied"));
+    let high_risk_echo =
+        mvp_s6_call_tool(&mut bus, "echo", serde_json::json!({"text": "hello mcp"})).await?;
+    assert_eq!(high_risk_echo["status"], "ok");
+    assert_eq!(high_risk_echo["output"]["echo"]["text"], "hello mcp");
+    assert_eq!(high_risk_echo["result"], "srv_s6:echo");
+
+    let high_risk_echo_reuse =
+        mvp_s6_call_tool(&mut bus, "echo", serde_json::json!({"text": "hello mcp"})).await?;
+    assert_eq!(high_risk_echo_reuse["status"], "approval_required");
+    assert_eq!(high_risk_echo_reuse["approval"]["confirmation_mode"], "remote_app");
 
     bus.request(
         Some("alice_s4_account".to_owned()),
