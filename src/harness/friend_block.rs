@@ -71,6 +71,30 @@ pub(crate) async fn mvp_s14_assert_friend_block_remove_revoke(
             .await?;
             assert_eq!(link["state"], "accepted");
 
+            // The DM friend-gate checks the *sender's* account DB for an accepted
+            // link to the recipient. Establish the reciprocal accepted link on bob's
+            // side so bob's before-block DM to alice clears the gate; alice's later
+            // block/remove drives the receive-side rejection assertions independently.
+            let bob_link = mvp_s4_rf_json(
+                &rf_binary,
+                &[
+                    "--socket",
+                    &bob_socket_arg,
+                    "contact",
+                    "add",
+                    "--account",
+                    "bob_s4_account",
+                    "--link",
+                    "s14_bob_side_link",
+                    "--requester",
+                    "principal_s4_bob",
+                    "--target",
+                    "principal_s4_alice",
+                ],
+            )
+            .await?;
+            assert_eq!(bob_link["state"], "accepted");
+
             mvp_s14_bob_send(
                 &rf_binary,
                 &bob_socket_arg,
@@ -180,7 +204,10 @@ pub(crate) async fn mvp_s14_assert_friend_block_remove_revoke(
                 )
                 .await?;
                 assert_eq!(removed["state"], "removed");
-                assert!(removed["capability_revoked_at"].is_null());
+                // friend_link_design §6.1: friend.removed revokes the delivery
+                // capability for every scope (not just "both"), so a me/own_devices
+                // removal now stamps capability_revoked_at too.
+                assert!(removed["capability_revoked_at"].is_i64());
             }
 
             let removed_both = mvp_s4_rf_json(
