@@ -10,6 +10,21 @@ const MVP_S1_ROOT_SEED: [u8; 32] = [0x51; 32];
 const MVP_S1_DEVICE_SEED: [u8; 32] = [0x52; 32];
 
 #[cfg(all(test, feature = "realnet"))]
+#[derive(Clone, Copy)]
+pub(crate) struct GatewayFrameIdentitySpec<'a> {
+    pub(crate) principal_id: &'a str,
+    pub(crate) device_id: &'a str,
+    pub(crate) target_delivery_id: &'a str,
+    pub(crate) gateway_id: &'a str,
+    pub(crate) session_id: &'a str,
+    pub(crate) push_alias_hash: Option<&'a str>,
+    pub(crate) source_ip_hash: Option<&'a str>,
+    pub(crate) root_seed: [u8; 32],
+    pub(crate) device_seed: [u8; 32],
+    pub(crate) device_epoch: u64,
+}
+
+#[cfg(all(test, feature = "realnet"))]
 #[allow(clippy::too_many_lines)]
 pub(crate) async fn mvp_s10_assert_private_node_rf_dm(
     gateway_quic_addr: std::net::SocketAddr,
@@ -432,12 +447,38 @@ pub(crate) async fn mvp_s1_expect_resume_entries(
 pub(crate) fn mvp_s1_register_identity(
     gateway_url: &str,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let root = ramflux_crypto::create_identity_root("principal_s1_realnet", MVP_S1_ROOT_SEED);
+    let request = mvp_s1_identity_register_request(GatewayFrameIdentitySpec {
+        principal_id: "principal_s1_realnet",
+        device_id: "device_s1_realnet",
+        target_delivery_id: "target_s1_gateway_session",
+        gateway_id: "ramflux-gateway",
+        session_id: "pre_session_s1_realnet",
+        push_alias_hash: Some("push_alias_s1_realnet"),
+        source_ip_hash: Some("mvp_s1_source"),
+        root_seed: MVP_S1_ROOT_SEED,
+        device_seed: MVP_S1_DEVICE_SEED,
+        device_epoch: 1,
+    })?;
+    let response: ramflux_node_core::ItestMvp1IdentityRegistrationResponse =
+        ramflux_node_core::itest_http_post_json(
+            &format!("{gateway_url}/mvp1/identity/register"),
+            &request,
+        )?;
+    assert_eq!(response.device_id, "device_s1_realnet");
+    assert_eq!(response.target_delivery_id, "target_s1_gateway_session");
+    Ok(())
+}
+
+#[cfg(all(test, feature = "realnet"))]
+pub(crate) fn mvp_s1_identity_register_request(
+    spec: GatewayFrameIdentitySpec<'_>,
+) -> Result<ramflux_node_core::ItestMvp1RegisterIdentityRequest, Box<dyn std::error::Error>> {
+    let root = ramflux_crypto::create_identity_root(spec.principal_id, spec.root_seed);
     let branch = ramflux_crypto::create_device_branch(
-        "principal_s1_realnet",
-        "device_s1_realnet",
-        1,
-        MVP_S1_DEVICE_SEED,
+        spec.principal_id,
+        spec.device_id,
+        spec.device_epoch,
+        spec.device_seed,
     );
     let now = itest_now_unix_seconds();
     let proof = ramflux_crypto::authorize_device_branch(
@@ -451,7 +492,7 @@ pub(crate) fn mvp_s1_register_identity(
     let root_public_key =
         ramflux_protocol::encode_base64url(root.signing_key.verifying_key().to_bytes());
     let root_public_key_bytes = ramflux_protocol::decode_base64url(&root_public_key)?;
-    let request = ramflux_node_core::ItestMvp1RegisterIdentityRequest {
+    Ok(ramflux_node_core::ItestMvp1RegisterIdentityRequest {
         principal_commitment: ramflux_crypto::blake3_256_base64url(
             "ramflux.identity.root_public_key.commitment.v1",
             &root_public_key_bytes,
@@ -461,22 +502,14 @@ pub(crate) fn mvp_s1_register_identity(
             branch.signing_key.verifying_key().to_bytes(),
         ),
         proof,
-        target_delivery_id: "target_s1_gateway_session".to_owned(),
-        gateway_id: "ramflux-gateway".to_owned(),
-        session_id: "pre_session_s1_realnet".to_owned(),
-        push_alias_hash: Some("push_alias_s1_realnet".to_owned()),
+        target_delivery_id: spec.target_delivery_id.to_owned(),
+        gateway_id: spec.gateway_id.to_owned(),
+        session_id: spec.session_id.to_owned(),
+        push_alias_hash: spec.push_alias_hash.map(str::to_owned),
         now,
         registration_pow: None,
-        source_ip_hash: Some("mvp_s1_source".to_owned()),
-    };
-    let response: ramflux_node_core::ItestMvp1IdentityRegistrationResponse =
-        ramflux_node_core::itest_http_post_json(
-            &format!("{gateway_url}/mvp1/identity/register"),
-            &request,
-        )?;
-    assert_eq!(response.device_id, "device_s1_realnet");
-    assert_eq!(response.target_delivery_id, "target_s1_gateway_session");
-    Ok(())
+        source_ip_hash: spec.source_ip_hash.map(str::to_owned),
+    })
 }
 
 #[cfg(all(test, feature = "realnet"))]
@@ -507,6 +540,16 @@ pub(crate) fn mvp_s1_open_frame(
 pub(crate) fn mvp_s1_auth_frame(
     open: &ramflux_node_core::GatewayOpenFrame,
 ) -> Result<ramflux_node_core::GatewayAuthFrame, Box<dyn std::error::Error>> {
+    mvp_s1_auth_frame_for_registered_device(open, "principal_s1_realnet", 1, MVP_S1_DEVICE_SEED)
+}
+
+#[cfg(all(test, feature = "realnet"))]
+pub(crate) fn mvp_s1_auth_frame_for_registered_device(
+    open: &ramflux_node_core::GatewayOpenFrame,
+    principal_id: &str,
+    device_epoch: u64,
+    device_seed: [u8; 32],
+) -> Result<ramflux_node_core::GatewayAuthFrame, Box<dyn std::error::Error>> {
     let now = itest_now_unix_seconds();
     let expires_at = now.saturating_add(i64::from(ITEST_REPLAY_TTL_SECONDS));
     let mut device_proof = ramflux_protocol::DeviceProof {
@@ -514,24 +557,24 @@ pub(crate) fn mvp_s1_auth_frame(
         version: 1,
         domain: "ramflux.device_proof.v1".to_owned(),
         ext: ramflux_protocol::Ext::default(),
-        signed: mvp_s1_signed_fields(""),
-        principal_id: "principal_s1_realnet".to_owned(),
+        signed: mvp_s1_signed_fields_for_device(&open.device_id, ""),
+        principal_id: principal_id.to_owned(),
         device_id: open.device_id.clone(),
-        device_epoch: 1,
+        device_epoch,
         branch_proof_hash: "branch_proof_hash_s1".to_owned(),
         capability_scope: vec!["gateway.session".to_owned()],
         nonce: open.stream_nonce.clone(),
         expires_at,
     };
     device_proof.signed.signature =
-        ramflux_crypto::sign_protocol_object_with_seed(&device_proof, MVP_S1_DEVICE_SEED)?;
+        ramflux_crypto::sign_protocol_object_with_seed(&device_proof, device_seed)?;
     let device_proof_bytes = ramflux_protocol::canonical_json_bytes(&device_proof)?;
     let mut signed_request = ramflux_protocol::SignedRequest {
         schema: "ramflux.signed_request.v1".to_owned(),
         version: 1,
         domain: "ramflux.signed_request.v1".to_owned(),
         ext: ramflux_protocol::Ext::default(),
-        signed: mvp_s1_signed_fields(""),
+        signed: mvp_s1_signed_fields_for_device(&open.device_id, ""),
         source_device_id: open.device_id.clone(),
         request_id: format!("req_s1_{}", open.stream_nonce),
         method: ramflux_protocol::HttpMethod::POST,
@@ -546,7 +589,7 @@ pub(crate) fn mvp_s1_auth_frame(
         expires_at,
     };
     signed_request.signed.signature =
-        ramflux_crypto::sign_protocol_object_with_seed(&signed_request, MVP_S1_DEVICE_SEED)?;
+        ramflux_crypto::sign_protocol_object_with_seed(&signed_request, device_seed)?;
     Ok(ramflux_node_core::GatewayAuthFrame { signed_request, device_proof })
 }
 
@@ -583,8 +626,16 @@ pub(crate) fn mvp_s1_submit_frame(
 
 #[cfg(all(test, feature = "realnet"))]
 pub(crate) fn mvp_s1_signed_fields(signature: &str) -> ramflux_protocol::SignedFields {
+    mvp_s1_signed_fields_for_device("device_s1_realnet", signature)
+}
+
+#[cfg(all(test, feature = "realnet"))]
+fn mvp_s1_signed_fields_for_device(
+    device_id: &str,
+    signature: &str,
+) -> ramflux_protocol::SignedFields {
     ramflux_protocol::SignedFields {
-        signing_key_id: "device:device_s1_realnet".to_owned(),
+        signing_key_id: format!("device:{device_id}"),
         signature_alg: ramflux_protocol::SignatureAlg::Ed25519,
         signature: signature.to_owned(),
     }

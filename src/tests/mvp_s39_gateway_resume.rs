@@ -4,6 +4,11 @@
 #![allow(unused_imports)]
 use super::*;
 
+#[cfg(all(test, feature = "realnet"))]
+const MVP_S39_PRODUCER_ROOT_SEED: [u8; 32] = [0x69; 32];
+#[cfg(all(test, feature = "realnet"))]
+const MVP_S39_PRODUCER_DEVICE_SEED: [u8; 32] = [0x6A; 32];
+
 #[cfg(feature = "realnet")]
 #[test]
 fn mvp_s39_realnet_gateway_session_resume_token_rejoin() -> Result<(), Box<dyn std::error::Error>> {
@@ -30,7 +35,7 @@ fn mvp_s39_realnet_gateway_session_resume_token_rejoin() -> Result<(), Box<dyn s
     let runtime = tokio::runtime::Builder::new_current_thread().enable_all().build()?;
     runtime.block_on(async {
         let cookie = mvp_s1_fetch_pre_auth_cookie(gateway_quic_addr, &ca_cert).await?;
-        mvp_s39_assert_resume_rejoin(gateway_quic_addr, &ca_cert, &router_url, &cookie).await?;
+        mvp_s39_assert_resume_rejoin(gateway_quic_addr, &ca_cert, &cookie).await?;
         Ok::<(), Box<dyn std::error::Error>>(())
     })?;
     drop(realnet);
@@ -41,12 +46,11 @@ fn mvp_s39_realnet_gateway_session_resume_token_rejoin() -> Result<(), Box<dyn s
 async fn mvp_s39_assert_resume_rejoin(
     gateway_quic_addr: std::net::SocketAddr,
     ca_cert: &Path,
-    router_url: &str,
-    cookie: &str,
+    initial_cookie: &str,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let (_endpoint, connection, mut send, mut recv) =
         mvp_s1_open_quic_stream(gateway_quic_addr, ca_cert).await?;
-    let open = mvp_s1_open_frame(Some(cookie.to_owned()), 1_760_000_001, "s39_initial");
+    let open = mvp_s1_open_frame(Some(initial_cookie.to_owned()), 1_760_000_001, "s39_initial");
     let auth = mvp_s1_auth_frame(&open)?;
     mvp_s1_write_client_frame(
         &mut send,
@@ -57,20 +61,18 @@ async fn mvp_s39_assert_resume_rejoin(
         .await?;
     let initial = mvp_s1_expect_session_established(&mut recv).await?;
 
+    mvp_s39_register_producer_device(&mut send, &mut recv).await?;
     mvp_s39_submit_acknowledged(&mut send, &mut recv, &open).await?;
     connection.close(0_u32.into(), b"s39-disconnect-before-resume");
 
-    let queued: ramflux_node_core::ItestMvp0SubmitResponse =
-        ramflux_node_core::itest_http_post_json(
-            &format!("{router_url}/mvp0/envelope"),
-            &itest_envelope("env_s39_offline_resume", "target_s1_gateway_session"),
-        )?;
-    assert!(matches!(queued.outcome.as_str(), "online" | "offline_queued"));
+    let producer_cookie = mvp_s1_fetch_pre_auth_cookie(gateway_quic_addr, ca_cert).await?;
+    mvp_s39_submit_offline_resume_candidate(gateway_quic_addr, ca_cert, &producer_cookie).await?;
 
+    let resume_cookie = mvp_s1_fetch_pre_auth_cookie(gateway_quic_addr, ca_cert).await?;
     let mut resumed = mvp_s39_open_with_resume(
         gateway_quic_addr,
         ca_cert,
-        cookie,
+        &resume_cookie,
         "s39_valid_resume",
         Some((&initial.session_id, &initial.resume_token, 1)),
     )
@@ -99,7 +101,12 @@ async fn mvp_s39_assert_resume_rejoin(
     .await?;
     let cursor = mvp_s1_expect_ack(&mut resumed.recv).await?;
     assert_eq!(cursor.inbox_seq, 2);
-    let _cursor_frame = mvp_s1_expect_cursor(&mut resumed.recv).await?;
+    assert_eq!(cursor.target_delivery_id, "target_s1_gateway_session");
+    assert_eq!(cursor.last_envelope_id.as_deref(), Some("env_s39_offline_resume"));
+    assert!(cursor.acked_envelope_ids.contains(&"env_s39_offline_resume".to_owned()));
+    let cursor_frame =
+        mvp_s1_expect_cursor(&mut resumed.recv).await?.ok_or("missing S39 resume ack cursor")?;
+    assert_eq!(cursor_frame, cursor);
     mvp_s1_write_client_frame(
         &mut resumed.send,
         &ramflux_node_core::GatewayClientFrame::Resume {
@@ -115,10 +122,21 @@ async fn mvp_s39_assert_resume_rejoin(
     assert!(mvp_s1_expect_resume_entries(&mut resumed.recv).await?.is_empty());
     resumed.connection.close(0_u32.into(), b"s39-valid-resume-done");
 
+    mvp_s39_assert_invalid_resume_tokens_are_rejected(gateway_quic_addr, ca_cert, &initial).await?;
+    Ok(())
+}
+
+#[cfg(all(test, feature = "realnet"))]
+async fn mvp_s39_assert_invalid_resume_tokens_are_rejected(
+    gateway_quic_addr: std::net::SocketAddr,
+    ca_cert: &Path,
+    initial: &ramflux_node_core::GatewaySessionEstablishedFrame,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let forged_cookie = mvp_s1_fetch_pre_auth_cookie(gateway_quic_addr, ca_cert).await?;
     let forged = mvp_s39_open_with_forged_resume(
         gateway_quic_addr,
         ca_cert,
-        cookie,
+        &forged_cookie,
         "s39_forged_resume",
         &initial.session_id,
         "forged_resume_token_hash",
@@ -128,16 +146,93 @@ async fn mvp_s39_assert_resume_rejoin(
     forged.connection.close(0_u32.into(), b"s39-forged-resume-done");
 
     tokio::time::sleep(std::time::Duration::from_secs(3)).await;
+    let expired_cookie = mvp_s1_fetch_pre_auth_cookie(gateway_quic_addr, ca_cert).await?;
     let expired = mvp_s39_open_with_resume(
         gateway_quic_addr,
         ca_cert,
-        cookie,
+        &expired_cookie,
         "s39_expired_resume",
         Some((&initial.session_id, &initial.resume_token, 2)),
     )
     .await?;
     assert_ne!(expired.session.session_id, initial.session_id);
     expired.connection.close(0_u32.into(), b"s39-expired-resume-done");
+    Ok(())
+}
+
+#[cfg(all(test, feature = "realnet"))]
+async fn mvp_s39_register_producer_device(
+    send: &mut quinn::SendStream,
+    recv: &mut quinn::RecvStream,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let request = mvp_s1_identity_register_request(GatewayFrameIdentitySpec {
+        principal_id: "principal_s39_producer",
+        device_id: "device_s39_producer",
+        target_delivery_id: "target_s39_producer",
+        gateway_id: "ramflux-gateway",
+        session_id: "pre_session_s39_producer",
+        push_alias_hash: Some("push_alias_s39_producer"),
+        source_ip_hash: Some("mvp_s39_source"),
+        root_seed: MVP_S39_PRODUCER_ROOT_SEED,
+        device_seed: MVP_S39_PRODUCER_DEVICE_SEED,
+        device_epoch: 1,
+    })?;
+    mvp_s1_write_client_frame(
+        send,
+        &ramflux_node_core::GatewayClientFrame::IdentityRegister { request },
+    )
+    .await?;
+    match mvp_s1_read_server_frame(recv).await? {
+        ramflux_node_core::GatewayServerFrame::IdentityRegistered { response } => {
+            assert_eq!(response.device_id, "device_s39_producer");
+            assert_eq!(response.target_delivery_id, "target_s39_producer");
+            Ok(())
+        }
+        other => {
+            Err(format!("expected identity_registered for S39 producer, got {other:?}").into())
+        }
+    }
+}
+
+#[cfg(all(test, feature = "realnet"))]
+async fn mvp_s39_submit_offline_resume_candidate(
+    gateway_quic_addr: std::net::SocketAddr,
+    ca_cert: &Path,
+    cookie: &str,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let mut producer = mvp_s39_open_registered_device(
+        gateway_quic_addr,
+        ca_cert,
+        cookie,
+        S39RegisteredDevice {
+            principal_id: "principal_s39_producer",
+            device_id: "device_s39_producer",
+            target_delivery_id: "target_s39_producer",
+            device_seed: MVP_S39_PRODUCER_DEVICE_SEED,
+            device_epoch: 1,
+            nonce_suffix: "producer_offline_submit",
+        },
+    )
+    .await?;
+    let submit = mvp_s1_submit_frame(
+        &producer.open,
+        itest_envelope("env_s39_offline_resume", "target_s1_gateway_session"),
+    )?;
+    mvp_s1_write_client_frame(
+        &mut producer.send,
+        &ramflux_node_core::GatewayClientFrame::Submit { submit },
+    )
+    .await?;
+    let delivered = mvp_s1_expect_deliver(&mut producer.recv).await?;
+    assert_eq!(delivered.envelope.envelope_id, "env_s39_offline_resume");
+    assert_eq!(delivered.target_delivery_id, "target_s1_gateway_session");
+    assert_eq!(delivered.inbox_seq, 2);
+    let wake = mvp_s1_read_server_frame(&mut producer.recv).await?;
+    assert!(
+        matches!(wake, ramflux_node_core::GatewayServerFrame::InBandWake { ref target_delivery_id, .. } if target_delivery_id == "target_s1_gateway_session"),
+        "expected S39 offline wake after producer submit, got {wake:?}"
+    );
+    producer.connection.close(0_u32.into(), b"s39-producer-done");
     Ok(())
 }
 
@@ -174,7 +269,49 @@ struct S39GatewaySession {
     connection: quinn::Connection,
     send: quinn::SendStream,
     recv: quinn::RecvStream,
+    open: ramflux_node_core::GatewayOpenFrame,
     session: ramflux_node_core::GatewaySessionEstablishedFrame,
+}
+
+#[cfg(all(test, feature = "realnet"))]
+struct S39RegisteredDevice<'a> {
+    principal_id: &'a str,
+    device_id: &'a str,
+    target_delivery_id: &'a str,
+    device_seed: [u8; 32],
+    device_epoch: u64,
+    nonce_suffix: &'a str,
+}
+
+#[cfg(all(test, feature = "realnet"))]
+async fn mvp_s39_open_registered_device(
+    gateway_quic_addr: std::net::SocketAddr,
+    ca_cert: &Path,
+    cookie: &str,
+    device: S39RegisteredDevice<'_>,
+) -> Result<S39GatewaySession, Box<dyn std::error::Error>> {
+    let (endpoint, connection, mut send, mut recv) =
+        mvp_s1_open_quic_stream(gateway_quic_addr, ca_cert).await?;
+    let mut open = mvp_s1_open_frame(Some(cookie.to_owned()), 1_760_000_002, device.nonce_suffix);
+    open.client_instance_id = format!("rf_s39_{}", device.device_id);
+    open.device_id = device.device_id.to_owned();
+    open.target_delivery_id = device.target_delivery_id.to_owned();
+    open.stream_nonce = format!("nonce_s39_{}", device.nonce_suffix);
+    let auth = mvp_s1_auth_frame_for_registered_device(
+        &open,
+        device.principal_id,
+        device.device_epoch,
+        device.device_seed,
+    )?;
+    mvp_s1_write_client_frame(
+        &mut send,
+        &ramflux_node_core::GatewayClientFrame::Open { open: open.clone() },
+    )
+    .await?;
+    mvp_s1_write_client_frame(&mut send, &ramflux_node_core::GatewayClientFrame::Auth { auth })
+        .await?;
+    let session = mvp_s1_expect_session_established(&mut recv).await?;
+    Ok(S39GatewaySession { _endpoint: endpoint, connection, send, recv, open, session })
 }
 
 #[cfg(all(test, feature = "realnet"))]
@@ -194,12 +331,15 @@ async fn mvp_s39_open_with_resume(
         open.last_seen_inbox_seq = Some(last_seen_inbox_seq);
     }
     let auth = mvp_s1_auth_frame(&open)?;
-    mvp_s1_write_client_frame(&mut send, &ramflux_node_core::GatewayClientFrame::Open { open })
-        .await?;
+    mvp_s1_write_client_frame(
+        &mut send,
+        &ramflux_node_core::GatewayClientFrame::Open { open: open.clone() },
+    )
+    .await?;
     mvp_s1_write_client_frame(&mut send, &ramflux_node_core::GatewayClientFrame::Auth { auth })
         .await?;
     let session = mvp_s1_expect_session_established(&mut recv).await?;
-    Ok(S39GatewaySession { _endpoint: endpoint, connection, send, recv, session })
+    Ok(S39GatewaySession { _endpoint: endpoint, connection, send, recv, open, session })
 }
 
 #[cfg(all(test, feature = "realnet"))]
@@ -218,10 +358,13 @@ async fn mvp_s39_open_with_forged_resume(
     open.resume_token_hash = Some(resume_token_hash.to_owned());
     open.last_seen_inbox_seq = Some(1);
     let auth = mvp_s1_auth_frame(&open)?;
-    mvp_s1_write_client_frame(&mut send, &ramflux_node_core::GatewayClientFrame::Open { open })
-        .await?;
+    mvp_s1_write_client_frame(
+        &mut send,
+        &ramflux_node_core::GatewayClientFrame::Open { open: open.clone() },
+    )
+    .await?;
     mvp_s1_write_client_frame(&mut send, &ramflux_node_core::GatewayClientFrame::Auth { auth })
         .await?;
     let session = mvp_s1_expect_session_established(&mut recv).await?;
-    Ok(S39GatewaySession { _endpoint: endpoint, connection, send, recv, session })
+    Ok(S39GatewaySession { _endpoint: endpoint, connection, send, recv, open, session })
 }
