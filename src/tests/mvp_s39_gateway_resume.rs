@@ -183,7 +183,7 @@ async fn mvp_s39_assert_invalid_resume_tokens_are_rejected(
 ) -> Result<(), Box<dyn std::error::Error>> {
     let forged_cookie = mvp_s1_fetch_pre_auth_cookie(gateway_quic_addr, ca_cert).await?;
     eprintln!("S39-STEP: forged resume open before");
-    let forged = mvp_s39_open_with_forged_resume(
+    let mut forged = mvp_s39_open_with_forged_resume(
         gateway_quic_addr,
         ca_cert,
         &forged_cookie,
@@ -192,14 +192,14 @@ async fn mvp_s39_assert_invalid_resume_tokens_are_rejected(
         "forged_resume_token_hash",
     )
     .await?;
-    assert_ne!(forged.session.session_id, initial.session_id);
+    mvp_s39_assert_no_replay_after_invalid_resume(&mut forged, "forged").await?;
     forged.connection.close(0_u32.into(), b"s39-forged-resume-done");
     eprintln!("S39-STEP: forged resume rejected after");
 
     tokio::time::sleep(std::time::Duration::from_secs(3)).await;
     let expired_cookie = mvp_s1_fetch_pre_auth_cookie(gateway_quic_addr, ca_cert).await?;
     eprintln!("S39-STEP: expired resume open before");
-    let expired = mvp_s39_open_with_resume(
+    let mut expired = mvp_s39_open_with_resume(
         gateway_quic_addr,
         ca_cert,
         &expired_cookie,
@@ -207,9 +207,36 @@ async fn mvp_s39_assert_invalid_resume_tokens_are_rejected(
         Some((&initial.session_id, &initial.resume_token, 2)),
     )
     .await?;
-    assert_ne!(expired.session.session_id, initial.session_id);
+    mvp_s39_assert_no_replay_after_invalid_resume(&mut expired, "expired").await?;
     expired.connection.close(0_u32.into(), b"s39-expired-resume-done");
     eprintln!("S39-STEP: expired resume rejected after");
+    Ok(())
+}
+
+#[cfg(all(test, feature = "realnet"))]
+async fn mvp_s39_assert_no_replay_after_invalid_resume(
+    session: &mut S39GatewaySession,
+    label: &str,
+) -> Result<(), Box<dyn std::error::Error>> {
+    eprintln!("S39-STEP: {label} invalid-resume replay probe before");
+    mvp_s1_write_client_frame(
+        &mut session.send,
+        &ramflux_node_core::GatewayClientFrame::Resume {
+            resume: ramflux_node_core::GatewayResumeFrame {
+                target_delivery_id: "target_s1_gateway_session".to_owned(),
+                after_inbox_seq: 1,
+                limit: 10,
+                resume_token: session.session.resume_token.clone(),
+            },
+        },
+    )
+    .await?;
+    let replayed = mvp_s1_expect_resume_entries(&mut session.recv).await?;
+    eprintln!("S39-STEP: {label} invalid-resume replay probe after count={}", replayed.len());
+    assert!(
+        replayed.is_empty(),
+        "{label} invalid resume must not replay acked S39 entries: {replayed:?}"
+    );
     Ok(())
 }
 
