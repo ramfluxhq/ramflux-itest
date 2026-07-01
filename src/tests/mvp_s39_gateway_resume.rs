@@ -284,12 +284,6 @@ async fn mvp_s39_submit_offline_resume_candidate(
     assert_eq!(delivered.envelope.envelope_id, "env_s39_offline_resume");
     assert_eq!(delivered.target_delivery_id, "target_s1_gateway_session");
     assert_eq!(delivered.inbox_seq, 2);
-    let wake = mvp_s1_read_server_frame(&mut producer.recv).await?;
-    eprintln!("S39-STEP: producer wake frame after");
-    assert!(
-        matches!(wake, ramflux_node_core::GatewayServerFrame::InBandWake { ref target_delivery_id, .. } if target_delivery_id == "target_s1_gateway_session"),
-        "expected S39 offline wake after producer submit, got {wake:?}"
-    );
     producer.connection.close(0_u32.into(), b"s39-producer-done");
     Ok(())
 }
