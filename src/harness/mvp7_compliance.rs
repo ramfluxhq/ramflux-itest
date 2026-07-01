@@ -5,6 +5,16 @@
 use crate::*;
 
 #[cfg(all(test, feature = "realnet"))]
+const MVP7_FRANKING_NODE_ID: &str = "localhost";
+#[cfg(all(test, feature = "realnet"))]
+const MVP7_FRANKING_ENVELOPE_ID: &str = "env_mvp7_franking_report";
+#[cfg(all(test, feature = "realnet"))]
+const MVP7_NODE_SERVICE_SIGNING_SEED: [u8; 32] = [
+    1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26,
+    27, 28, 29, 30, 31, 32,
+];
+
+#[cfg(all(test, feature = "realnet"))]
 pub(crate) const fn mvp7_lifecycle_step(
     event_id: &'static str,
     event_type: &'static str,
@@ -160,16 +170,24 @@ pub(crate) fn mvp7_franking_report_fixture() -> Mvp7FrankingReportFixture {
             commitment_key: &commitment_key,
         });
     let franking_timestamp = 1_760_000_500;
-    let franking_tag = ramflux_crypto::franking_node_tag(
+    let node_signing_key = ed25519_dalek::SigningKey::from_bytes(&MVP7_NODE_SERVICE_SIGNING_SEED);
+    let franking_tag = ramflux_crypto::sign_franking_node_tag(
+        MVP7_FRANKING_NODE_ID,
+        MVP7_FRANKING_ENVELOPE_ID,
+        "msg_mvp7_franking_001",
+        sender_device_id_hash,
         &commitment.commitment,
         &commitment.ciphertext_hash,
         franking_timestamp,
+        &node_signing_key,
     );
     Mvp7FrankingReportFixture {
         plaintext,
         opaque_ciphertext: ramflux_protocol::encode_base64url(ciphertext),
-        evidence: ramflux_node_core::SelectedFrankingEvidence {
+        evidence: Mvp7SelectedFrankingEvidence {
             evidence_kind: ramflux_node_core::FrankingEvidenceKind::ReceiverAttestedDm,
+            node_id: MVP7_FRANKING_NODE_ID.to_owned(),
+            envelope_id: MVP7_FRANKING_ENVELOPE_ID.to_owned(),
             plaintext_excerpt: "mvp7 explicitly selected reported excerpt".to_owned(),
             opening_key: ramflux_protocol::encode_base64url(opening_key),
             commitment_key: ramflux_protocol::encode_base64url(commitment_key),
@@ -194,18 +212,19 @@ pub(crate) fn mvp7_franking_report_fixture() -> Mvp7FrankingReportFixture {
 pub(crate) fn mvp7_post_abuse_report(
     gateway_url: &str,
     report_id: &str,
-    selected_evidence: ramflux_node_core::SelectedFrankingEvidence,
+    selected_evidence: &Mvp7SelectedFrankingEvidence,
 ) -> Result<ramflux_node_core::AbuseReportResponse, Box<dyn std::error::Error>> {
+    let reported_node = selected_evidence.node_id.clone();
     Ok(ramflux_node_core::itest_http_post_json(
         &format!("{gateway_url}/mvp7/abuse/report"),
-        &ramflux_node_core::AbuseReportRequest {
-            report_id: report_id.to_owned(),
-            reporter_identity: "bob_mvp7_reporter".to_owned(),
-            reported_identity: "alice_mvp7_reported".to_owned(),
-            reported_node: "node_a.realnet".to_owned(),
-            selected_evidence,
-            submitted_at: 1_760_000_500,
-        },
+        &serde_json::json!({
+            "report_id": report_id,
+            "reporter_identity": "bob_mvp7_reporter",
+            "reported_identity": "alice_mvp7_reported",
+            "reported_node": reported_node,
+            "selected_evidence": selected_evidence,
+            "submitted_at": 1_760_000_500_u64,
+        }),
     )?)
 }
 
