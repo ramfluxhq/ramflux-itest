@@ -256,11 +256,8 @@ pub(super) fn mvp7_assert_franking_report_pipeline(
     assert_eq!(submit.inbox_seq, Some(1));
     assert_node_opaque_payload(&envelope.encrypted_payload, fixture.plaintext.as_bytes());
 
-    let verified = mvp7_post_abuse_report(
-        gateway_url,
-        "report_mvp7_franking_verified",
-        fixture.evidence.clone(),
-    )?;
+    let verified =
+        mvp7_post_abuse_report(gateway_url, "report_mvp7_franking_verified", &fixture.evidence)?;
     assert_eq!(verified.report.status, ramflux_node_core::FrankingReportStatus::Verified);
     assert_eq!(
         verified.report.verified_commitment.as_deref(),
@@ -283,7 +280,7 @@ pub(super) fn mvp7_assert_franking_report_pipeline(
     let rejected_plaintext = mvp7_post_abuse_report(
         gateway_url,
         "report_mvp7_franking_plaintext_forged",
-        forged_plaintext,
+        &forged_plaintext,
     )?;
     assert_eq!(rejected_plaintext.report.status, ramflux_node_core::FrankingReportStatus::Rejected);
     assert!(rejected_plaintext.report.verified_commitment.is_none());
@@ -295,7 +292,7 @@ pub(super) fn mvp7_assert_franking_report_pipeline(
     let rejected_group = mvp7_post_abuse_report(
         gateway_url,
         "report_mvp7_franking_group_unbound",
-        group_without_signature,
+        &group_without_signature,
     )?;
     assert_eq!(rejected_group.report.status, ramflux_node_core::FrankingReportStatus::Rejected);
 

@@ -43,7 +43,31 @@ pub(crate) struct Mvp7DeletedTombstoneFixture {
 pub(crate) struct Mvp7FrankingReportFixture {
     pub(crate) plaintext: String,
     pub(crate) opaque_ciphertext: String,
-    pub(crate) evidence: ramflux_node_core::SelectedFrankingEvidence,
+    pub(crate) evidence: Mvp7SelectedFrankingEvidence,
+}
+
+#[cfg(all(test, feature = "realnet"))]
+#[derive(Clone, serde::Serialize)]
+pub(crate) struct Mvp7SelectedFrankingEvidence {
+    pub(crate) evidence_kind: ramflux_node_core::FrankingEvidenceKind,
+    pub(crate) node_id: String,
+    pub(crate) envelope_id: String,
+    pub(crate) plaintext_excerpt: String,
+    pub(crate) opening_key: String,
+    pub(crate) commitment_key: String,
+    pub(crate) sender_device_id_hash: String,
+    pub(crate) msg_event_id: String,
+    pub(crate) canonical_header_bytes: String,
+    pub(crate) associated_data: String,
+    pub(crate) ciphertext: String,
+    pub(crate) header_hash: String,
+    pub(crate) associated_data_hash: String,
+    pub(crate) ciphertext_hash: String,
+    pub(crate) franking_commitment: String,
+    pub(crate) commitment: String,
+    pub(crate) franking_tag: String,
+    pub(crate) franking_timestamp: u64,
+    pub(crate) group_header_signature: Option<String>,
 }
 
 #[cfg(all(test, feature = "realnet"))]
