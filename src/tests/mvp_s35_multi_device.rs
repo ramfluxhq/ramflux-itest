@@ -278,6 +278,9 @@ async fn mvp_s35_assert_multi_device_activation(
                 "Bob B did not receive own-device fanout entry: {bob_restored_received}",
             );
 
+            mvp_s35_assert_second_device_deliver_frame_transport(gateway_quic_addr, ca_cert)
+                .await?;
+
             drop(bob_primary);
             drop(bob_restored);
             drop(alice);
@@ -301,6 +304,143 @@ async fn mvp_s35_assert_multi_device_activation(
     flow_result?;
     std::fs::remove_dir_all(&temp_root)?;
     Ok(())
+}
+
+#[cfg(all(test, feature = "realnet"))]
+struct MvpS35GatewayFrameSession {
+    _endpoint: quinn::Endpoint,
+    connection: quinn::Connection,
+    send: quinn::SendStream,
+    recv: quinn::RecvStream,
+    open: ramflux_node_core::GatewayOpenFrame,
+    session: ramflux_node_core::GatewaySessionEstablishedFrame,
+}
+
+#[cfg(all(test, feature = "realnet"))]
+struct MvpS35FrameDevice<'a> {
+    principal_id: &'a str,
+    device_id: &'a str,
+    target_delivery_id: &'a str,
+    device_seed: [u8; 32],
+    device_epoch: u64,
+    nonce_suffix: &'a str,
+}
+
+#[cfg(all(test, feature = "realnet"))]
+async fn mvp_s35_assert_second_device_deliver_frame_transport(
+    gateway_quic_addr: std::net::SocketAddr,
+    ca_cert: &Path,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let mut bob_b = mvp_s35_open_registered_gateway_frame_session(
+        gateway_quic_addr,
+        ca_cert,
+        MvpS35FrameDevice {
+            principal_id: "principal_s35_bob",
+            device_id: "bob_device_s35_b",
+            target_delivery_id: "target_s35_bob_b",
+            device_seed: [0x37; 32],
+            device_epoch: 1,
+            nonce_suffix: "bob_b_deliver",
+        },
+    )
+    .await?;
+    assert!(!bob_b.session.resume_token.is_empty());
+    let previous_bob_b_cursor =
+        bob_b.session.accepted_cursor.as_ref().map_or(0, |cursor| cursor.inbox_seq);
+
+    let mut alice = mvp_s35_open_registered_gateway_frame_session(
+        gateway_quic_addr,
+        ca_cert,
+        MvpS35FrameDevice {
+            principal_id: "principal_s35_alice",
+            device_id: "alice_device_s35",
+            target_delivery_id: "target_s35_alice",
+            device_seed: [0x46; 32],
+            device_epoch: 1,
+            nonce_suffix: "alice_submit_to_bob_b",
+        },
+    )
+    .await?;
+
+    let mut envelope = itest_envelope("env_s35_frame_alice_to_bob_b", "target_s35_bob_b");
+    envelope.source_principal_id = "principal_s35_alice".to_owned();
+    envelope.source_device_id = "alice_device_s35".to_owned();
+    envelope.encrypted_payload =
+        ramflux_protocol::encode_base64url(b"s35 direct frame payload for bob b");
+    envelope.payload_hash = ramflux_crypto::blake3_256_base64url(
+        "ramflux.test.s35.second_device_frame.v1",
+        envelope.encrypted_payload.as_bytes(),
+    );
+    let submit = mvp_s1_submit_frame(&alice.open, envelope.clone())?;
+    mvp_s1_write_client_frame(
+        &mut alice.send,
+        &ramflux_node_core::GatewayClientFrame::Submit { submit },
+    )
+    .await?;
+
+    let sender_echo = mvp_s1_expect_deliver(&mut alice.recv).await?;
+    assert_eq!(sender_echo.envelope.envelope_id, "env_s35_frame_alice_to_bob_b");
+    assert_eq!(sender_echo.target_delivery_id, "target_s35_bob_b");
+
+    let delivered = mvp_s1_expect_deliver(&mut bob_b.recv).await?;
+    assert_eq!(delivered.envelope.envelope_id, "env_s35_frame_alice_to_bob_b");
+    assert_eq!(delivered.target_delivery_id, "target_s35_bob_b");
+    assert_eq!(delivered.envelope.encrypted_payload, envelope.encrypted_payload);
+    assert!(
+        delivered.inbox_seq > previous_bob_b_cursor,
+        "Bob B direct frame delivery did not advance beyond cursor {previous_bob_b_cursor}: {delivered:?}"
+    );
+
+    mvp_s1_write_client_frame(
+        &mut bob_b.send,
+        &ramflux_node_core::GatewayClientFrame::Ack {
+            ack: itest_ack("env_s35_frame_alice_to_bob_b"),
+        },
+    )
+    .await?;
+    let ack_cursor = mvp_s1_expect_ack(&mut bob_b.recv).await?;
+    assert_eq!(ack_cursor.target_delivery_id, "target_s35_bob_b");
+    assert_eq!(ack_cursor.inbox_seq, delivered.inbox_seq);
+    assert_eq!(ack_cursor.last_envelope_id.as_deref(), Some("env_s35_frame_alice_to_bob_b"));
+    assert!(ack_cursor.acked_envelope_ids.contains(&"env_s35_frame_alice_to_bob_b".to_owned()));
+    let cursor_frame =
+        mvp_s1_expect_cursor(&mut bob_b.recv).await?.ok_or("missing S35 Bob B ack cursor")?;
+    assert_eq!(cursor_frame, ack_cursor);
+
+    alice.connection.close(0_u32.into(), b"s35-alice-frame-done");
+    bob_b.connection.close(0_u32.into(), b"s35-bob-b-frame-done");
+    Ok(())
+}
+
+#[cfg(all(test, feature = "realnet"))]
+async fn mvp_s35_open_registered_gateway_frame_session(
+    gateway_quic_addr: std::net::SocketAddr,
+    ca_cert: &Path,
+    device: MvpS35FrameDevice<'_>,
+) -> Result<MvpS35GatewayFrameSession, Box<dyn std::error::Error>> {
+    let (endpoint, connection, mut send, mut recv) =
+        mvp_s1_open_quic_stream(gateway_quic_addr, ca_cert).await?;
+    let mut open = mvp_s1_open_frame(None, 1_760_000_035, device.nonce_suffix);
+    open.client_instance_id = format!("rf_s35_{}", device.device_id);
+    open.device_id = device.device_id.to_owned();
+    open.target_delivery_id = device.target_delivery_id.to_owned();
+    open.stream_nonce = format!("nonce_s35_{}", device.nonce_suffix);
+    open.source_ip_hash = Some("mvp_s35_source".to_owned());
+    let auth = mvp_s1_auth_frame_for_registered_device(
+        &open,
+        device.principal_id,
+        device.device_epoch,
+        device.device_seed,
+    )?;
+    mvp_s1_write_client_frame(
+        &mut send,
+        &ramflux_node_core::GatewayClientFrame::Open { open: open.clone() },
+    )
+    .await?;
+    mvp_s1_write_client_frame(&mut send, &ramflux_node_core::GatewayClientFrame::Auth { auth })
+        .await?;
+    let session = mvp_s1_expect_session_established(&mut recv).await?;
+    Ok(MvpS35GatewayFrameSession { _endpoint: endpoint, connection, send, recv, open, session })
 }
 
 #[cfg(all(test, feature = "realnet"))]
