@@ -50,6 +50,7 @@ async fn mvp_s39_assert_resume_rejoin(
 ) -> Result<(), Box<dyn std::error::Error>> {
     let (_endpoint, connection, mut send, mut recv) =
         mvp_s1_open_quic_stream(gateway_quic_addr, ca_cert).await?;
+    eprintln!("S39-STEP: initial open/auth before");
     let open = mvp_s1_open_frame(Some(initial_cookie.to_owned()), 1_760_000_001, "s39_initial");
     let auth = mvp_s1_auth_frame(&open)?;
     mvp_s1_write_client_frame(
@@ -60,15 +61,24 @@ async fn mvp_s39_assert_resume_rejoin(
     mvp_s1_write_client_frame(&mut send, &ramflux_node_core::GatewayClientFrame::Auth { auth })
         .await?;
     let initial = mvp_s1_expect_session_established(&mut recv).await?;
+    eprintln!("S39-STEP: initial session_established after");
 
+    eprintln!("S39-STEP: producer identity register before");
     mvp_s39_register_producer_device(&mut send, &mut recv).await?;
+    eprintln!("S39-STEP: producer identity register after");
+    eprintln!("S39-STEP: initial submit+ack before");
     mvp_s39_submit_acknowledged(&mut send, &mut recv, &open).await?;
-    connection.close(0_u32.into(), b"s39-disconnect-before-resume");
+    eprintln!("S39-STEP: initial submit+ack after");
+    mvp_s39_close_session_and_wait_offline(connection, send, recv).await?;
+    eprintln!("S39-STEP: initial close/drain after");
 
     let producer_cookie = mvp_s1_fetch_pre_auth_cookie(gateway_quic_addr, ca_cert).await?;
+    eprintln!("S39-STEP: producer offline submit before");
     mvp_s39_submit_offline_resume_candidate(gateway_quic_addr, ca_cert, &producer_cookie).await?;
+    eprintln!("S39-STEP: producer offline submit after");
 
     let resume_cookie = mvp_s1_fetch_pre_auth_cookie(gateway_quic_addr, ca_cert).await?;
+    eprintln!("S39-STEP: resume open/auth before");
     let mut resumed = mvp_s39_open_with_resume(
         gateway_quic_addr,
         ca_cert,
@@ -77,8 +87,10 @@ async fn mvp_s39_assert_resume_rejoin(
         Some((&initial.session_id, &initial.resume_token, 1)),
     )
     .await?;
+    eprintln!("S39-STEP: resume session_established after");
     assert_eq!(resumed.session.session_id, initial.session_id);
     assert_eq!(resumed.session.accepted_cursor.as_ref().map(|cursor| cursor.inbox_seq), Some(1));
+    eprintln!("S39-STEP: resume frame before");
     mvp_s1_write_client_frame(
         &mut resumed.send,
         &ramflux_node_core::GatewayClientFrame::Resume {
@@ -92,8 +104,10 @@ async fn mvp_s39_assert_resume_rejoin(
     )
     .await?;
     let entries = mvp_s1_expect_resume_entries(&mut resumed.recv).await?;
+    eprintln!("S39-STEP: resume entries after count={}", entries.len());
     assert_eq!(entries.len(), 1);
     assert_eq!(entries[0].envelope.envelope_id, "env_s39_offline_resume");
+    eprintln!("S39-STEP: resume ack before");
     mvp_s1_write_client_frame(
         &mut resumed.send,
         &ramflux_node_core::GatewayClientFrame::Ack { ack: itest_ack("env_s39_offline_resume") },
@@ -107,6 +121,7 @@ async fn mvp_s39_assert_resume_rejoin(
     let cursor_frame =
         mvp_s1_expect_cursor(&mut resumed.recv).await?.ok_or("missing S39 resume ack cursor")?;
     assert_eq!(cursor_frame, cursor);
+    eprintln!("S39-STEP: resume ack+cursor after");
     mvp_s1_write_client_frame(
         &mut resumed.send,
         &ramflux_node_core::GatewayClientFrame::Resume {
@@ -127,12 +142,47 @@ async fn mvp_s39_assert_resume_rejoin(
 }
 
 #[cfg(all(test, feature = "realnet"))]
+async fn mvp_s39_close_session_and_wait_offline(
+    connection: quinn::Connection,
+    mut send: quinn::SendStream,
+    mut recv: quinn::RecvStream,
+) -> Result<(), Box<dyn std::error::Error>> {
+    eprintln!("S39-STEP: initial close frame before");
+    mvp_s1_write_client_frame(
+        &mut send,
+        &ramflux_node_core::GatewayClientFrame::Close {
+            reason: "s39-disconnect-before-resume".to_owned(),
+        },
+    )
+    .await?;
+    match mvp_s1_read_server_frame(&mut recv).await? {
+        ramflux_node_core::GatewayServerFrame::Drain { reason, .. } => {
+            assert!(
+                reason.starts_with("client_close:s39-disconnect-before-resume"),
+                "unexpected S39 drain reason: {reason}"
+            );
+        }
+        other => return Err(format!("expected S39 drain on close, got {other:?}").into()),
+    }
+    match mvp_s1_read_server_frame(&mut recv).await? {
+        ramflux_node_core::GatewayServerFrame::Close { reason } => {
+            assert_eq!(reason, "s39-disconnect-before-resume");
+        }
+        other => return Err(format!("expected S39 close after drain, got {other:?}").into()),
+    }
+    connection.close(0_u32.into(), b"s39-disconnect-before-resume");
+    tokio::time::sleep(std::time::Duration::from_millis(250)).await;
+    Ok(())
+}
+
+#[cfg(all(test, feature = "realnet"))]
 async fn mvp_s39_assert_invalid_resume_tokens_are_rejected(
     gateway_quic_addr: std::net::SocketAddr,
     ca_cert: &Path,
     initial: &ramflux_node_core::GatewaySessionEstablishedFrame,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let forged_cookie = mvp_s1_fetch_pre_auth_cookie(gateway_quic_addr, ca_cert).await?;
+    eprintln!("S39-STEP: forged resume open before");
     let forged = mvp_s39_open_with_forged_resume(
         gateway_quic_addr,
         ca_cert,
@@ -144,9 +194,11 @@ async fn mvp_s39_assert_invalid_resume_tokens_are_rejected(
     .await?;
     assert_ne!(forged.session.session_id, initial.session_id);
     forged.connection.close(0_u32.into(), b"s39-forged-resume-done");
+    eprintln!("S39-STEP: forged resume rejected after");
 
     tokio::time::sleep(std::time::Duration::from_secs(3)).await;
     let expired_cookie = mvp_s1_fetch_pre_auth_cookie(gateway_quic_addr, ca_cert).await?;
+    eprintln!("S39-STEP: expired resume open before");
     let expired = mvp_s39_open_with_resume(
         gateway_quic_addr,
         ca_cert,
@@ -157,6 +209,7 @@ async fn mvp_s39_assert_invalid_resume_tokens_are_rejected(
     .await?;
     assert_ne!(expired.session.session_id, initial.session_id);
     expired.connection.close(0_u32.into(), b"s39-expired-resume-done");
+    eprintln!("S39-STEP: expired resume rejected after");
     Ok(())
 }
 
@@ -200,6 +253,7 @@ async fn mvp_s39_submit_offline_resume_candidate(
     ca_cert: &Path,
     cookie: &str,
 ) -> Result<(), Box<dyn std::error::Error>> {
+    eprintln!("S39-STEP: producer open/auth before");
     let mut producer = mvp_s39_open_registered_device(
         gateway_quic_addr,
         ca_cert,
@@ -214,6 +268,7 @@ async fn mvp_s39_submit_offline_resume_candidate(
         },
     )
     .await?;
+    eprintln!("S39-STEP: producer session_established after");
     let submit = mvp_s1_submit_frame(
         &producer.open,
         itest_envelope("env_s39_offline_resume", "target_s1_gateway_session"),
@@ -223,11 +278,14 @@ async fn mvp_s39_submit_offline_resume_candidate(
         &ramflux_node_core::GatewayClientFrame::Submit { submit },
     )
     .await?;
+    eprintln!("S39-STEP: producer submit frame written after");
     let delivered = mvp_s1_expect_deliver(&mut producer.recv).await?;
+    eprintln!("S39-STEP: producer deliver echo after");
     assert_eq!(delivered.envelope.envelope_id, "env_s39_offline_resume");
     assert_eq!(delivered.target_delivery_id, "target_s1_gateway_session");
     assert_eq!(delivered.inbox_seq, 2);
     let wake = mvp_s1_read_server_frame(&mut producer.recv).await?;
+    eprintln!("S39-STEP: producer wake frame after");
     assert!(
         matches!(wake, ramflux_node_core::GatewayServerFrame::InBandWake { ref target_delivery_id, .. } if target_delivery_id == "target_s1_gateway_session"),
         "expected S39 offline wake after producer submit, got {wake:?}"
