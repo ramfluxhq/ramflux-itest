@@ -491,17 +491,13 @@ pub(crate) async fn mvp_s15_assert_rf_bot(
                     &grant_arg,
                     "--consent",
                     "principal_s4_alice",
+                    "--consent",
                     "principal_s4_bob",
                 ],
             )
             .await?;
-            // Attacker manifest is identical to the valid one except the signature. The SDK may
-            // surface this through the bot manifest verifier or the bot install-grant binding, but
-            // it must stay in the bot validation path and must not install anything.
             assert!(
-                self_sign_attack.contains("ValidationFailed")
-                    && self_sign_attack.contains("bot")
-                    && self_sign_attack.contains("rejected"),
+                self_sign_attack.contains("ValidationFailed: sync error: bot manifest rejected"),
                 "self-signed bot manifest was not rejected by bot validation: {self_sign_attack}"
             );
             let listed_after_self_sign = mvp_s4_rf_json(
@@ -529,6 +525,7 @@ pub(crate) async fn mvp_s15_assert_rf_bot(
                     &grant_arg,
                     "--consent",
                     "principal_s4_alice",
+                    "--consent",
                     "principal_s4_bob",
                 ],
             )
@@ -573,6 +570,7 @@ pub(crate) async fn mvp_s15_assert_rf_bot(
                     &grant_arg,
                     "--consent",
                     "principal_s4_alice",
+                    "--consent",
                     "principal_s4_bob",
                 ],
             )

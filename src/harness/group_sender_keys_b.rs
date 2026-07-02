@@ -118,8 +118,6 @@ pub(crate) async fn mvp_s24_assert_group_out_of_order_key(
                     "alice_device_s24",
                     "--member",
                     "bob_device_s24",
-                    "--member-target-delivery",
-                    "target_s24_bob",
                 ],
                 "s24 group create without remote key",
             )
