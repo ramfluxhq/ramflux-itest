@@ -29,7 +29,7 @@ pub(crate) const fn mvp7_lifecycle_step(
 pub(crate) fn mvp7_lifecycle_event(
     gateway_url: &str,
     step: Mvp7LifecycleStep,
-) -> Result<ramflux_node_core::ItestMvp7LifecycleResponse, Box<dyn std::error::Error>> {
+) -> Result<ramflux_node_core::LifecycleResponse, Box<dyn std::error::Error>> {
     mvp7_lifecycle_event_for(gateway_url, "mvp7_delete_principal", step)
 }
 
@@ -38,10 +38,10 @@ pub(crate) fn mvp7_lifecycle_event_for(
     gateway_url: &str,
     principal_id: &str,
     step: Mvp7LifecycleStep,
-) -> Result<ramflux_node_core::ItestMvp7LifecycleResponse, Box<dyn std::error::Error>> {
+) -> Result<ramflux_node_core::LifecycleResponse, Box<dyn std::error::Error>> {
     Ok(ramflux_node_core::itest_http_post_json(
         &format!("{gateway_url}/mvp7/lifecycle/event"),
-        &ramflux_node_core::ItestMvp7LifecycleRequest {
+        &ramflux_node_core::LifecycleEventRequest {
             principal_id: principal_id.to_owned(),
             event_id: step.event_id.to_owned(),
             event_type: step.event_type.to_owned(),
@@ -233,13 +233,10 @@ pub(crate) fn mvp7_cancel_delete(
     gateway_url: &str,
     principal_id: &str,
     now: u64,
-) -> Result<ramflux_node_core::ItestMvp7LifecycleResponse, Box<dyn std::error::Error>> {
+) -> Result<ramflux_node_core::LifecycleResponse, Box<dyn std::error::Error>> {
     Ok(ramflux_node_core::itest_http_post_json(
         &format!("{gateway_url}/mvp7/lifecycle/cancel"),
-        &ramflux_node_core::ItestMvp7LifecycleCancelRequest {
-            principal_id: principal_id.to_owned(),
-            now,
-        },
+        &ramflux_node_core::LifecycleCancelRequest { principal_id: principal_id.to_owned(), now },
     )?)
 }
 
@@ -248,13 +245,10 @@ pub(crate) fn mvp7_finalize_delete(
     gateway_url: &str,
     principal_id: &str,
     now: u64,
-) -> Result<ramflux_node_core::ItestMvp7LifecycleResponse, Box<dyn std::error::Error>> {
+) -> Result<ramflux_node_core::LifecycleResponse, Box<dyn std::error::Error>> {
     Ok(ramflux_node_core::itest_http_post_json(
         &format!("{gateway_url}/mvp7/lifecycle/finalize"),
-        &ramflux_node_core::ItestMvp7LifecycleFinalizeRequest {
-            principal_id: principal_id.to_owned(),
-            now,
-        },
+        &ramflux_node_core::LifecycleFinalizeRequest { principal_id: principal_id.to_owned(), now },
     )?)
 }
 
@@ -262,7 +256,7 @@ pub(crate) fn mvp7_finalize_delete(
 pub(crate) fn mvp7_metadata(
     gateway_url: &str,
     principal_id: &str,
-) -> Result<ramflux_node_core::ItestMvp7MetadataSummary, Box<dyn std::error::Error>> {
+) -> Result<ramflux_node_core::LifecycleMetadataSummary, Box<dyn std::error::Error>> {
     Ok(ramflux_node_core::itest_http_get_json(&format!(
         "{gateway_url}/mvp7/metadata/{principal_id}"
     ))?)
@@ -275,7 +269,7 @@ pub(crate) fn mvp7_retention_record(
 ) -> Result<ramflux_node_core::RetentionMetadataRecord, Box<dyn std::error::Error>> {
     Ok(ramflux_node_core::itest_http_post_json(
         &format!("{retention_url}/mvp7/retention/record"),
-        &ramflux_node_core::ItestRetentionRecordRequest { record },
+        &ramflux_node_core::RetentionRecordRequest { record },
     )?)
 }
 
@@ -283,10 +277,10 @@ pub(crate) fn mvp7_retention_record(
 pub(crate) fn mvp7_retention_gc(
     retention_url: &str,
     now: u64,
-) -> Result<ramflux_node_core::ItestRetentionGcResponse, Box<dyn std::error::Error>> {
+) -> Result<ramflux_node_core::RetentionGcResponse, Box<dyn std::error::Error>> {
     Ok(ramflux_node_core::itest_http_post_json(
         &format!("{retention_url}/mvp7/retention/gc"),
-        &ramflux_node_core::ItestRetentionGcRequest { now },
+        &ramflux_node_core::RetentionGcRequest { now },
     )?)
 }
 
@@ -294,10 +288,10 @@ pub(crate) fn mvp7_retention_gc(
 pub(crate) fn mvp7_retention_finalize_identity_delete(
     retention_url: &str,
     subject_hash: &str,
-) -> Result<ramflux_node_core::ItestRetentionGcResponse, Box<dyn std::error::Error>> {
+) -> Result<ramflux_node_core::RetentionGcResponse, Box<dyn std::error::Error>> {
     Ok(ramflux_node_core::itest_http_post_json(
         &format!("{retention_url}/mvp7/retention/finalize_identity_delete"),
-        &ramflux_node_core::ItestRetentionIdentityDeleteRequest {
+        &ramflux_node_core::RetentionIdentityDeleteRequest {
             subject_hash: subject_hash.to_owned(),
             lifecycle_epoch: 1,
             identity_deleted_event_id: format!("identity.deleted:{subject_hash}"),
