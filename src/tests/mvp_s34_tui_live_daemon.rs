@@ -100,6 +100,7 @@ async fn mvp_s34_assert_tui_live_daemon(
             app.state.conversations[0].target_delivery_id = Some("target_s34_bob".to_owned());
 
             app.state.selected_panel = ramflux_cli_pro::Panel::Messages;
+            app.handle_input(&mut tui_bus, ramflux_cli_pro::TuiInput::EnterCompose).await?;
             for value in "s34 tui demo send".chars() {
                 app.handle_input(&mut tui_bus, ramflux_cli_pro::TuiInput::Char(value)).await?;
             }

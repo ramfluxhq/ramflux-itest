@@ -116,11 +116,46 @@ pub(crate) async fn mvp_s24_assert_group_out_of_order_key(
                     "group_s24_out_of_order",
                     "--creator",
                     "alice_device_s24",
+                    "--member",
+                    "bob_device_s24",
+                    "--member-target-delivery",
+                    "target_s24_bob",
                 ],
                 "s24 group create without remote key",
             )
             .await?;
             assert_eq!(created["group_id"], "group_s24_out_of_order");
+            assert!(
+                created["members"]
+                    .as_array()
+                    .is_some_and(|members| members.iter().any(|member| member == "bob_device_s24")),
+                "S24 Alice group fixture did not include Bob as a member: {created}"
+            );
+            let bob_group_created = mvp_s10_rf_json(
+                &rf_binary,
+                &[
+                    "--socket",
+                    &bob_socket_arg,
+                    "group",
+                    "create",
+                    "--account",
+                    "bob_s24_account",
+                    "--group",
+                    "group_s24_out_of_order",
+                    "--creator",
+                    "alice_device_s24",
+                    "--member",
+                    "bob_device_s24",
+                ],
+                "s24 bob group projection before key",
+            )
+            .await?;
+            assert!(
+                bob_group_created["members"]
+                    .as_array()
+                    .is_some_and(|members| members.iter().any(|member| member == "bob_device_s24")),
+                "S24 Bob group fixture did not include Bob as a member: {bob_group_created}"
+            );
 
             let plaintext = b"s24 group message before sender key";
             let node_b_mesh_before_group_send = s22_mesh_observability(node_b)?;
