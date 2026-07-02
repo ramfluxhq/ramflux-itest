@@ -9,7 +9,15 @@ use crate::*;
 pub(crate) struct ItestComposeOverrides {
     pub(crate) federation_compio: bool,
     pub(crate) gateway_compio: bool,
+    pub(crate) notify_mesh: bool,
     pub(crate) notify_runtime: NotifyRuntimeComposeOverride,
+}
+
+#[cfg(all(test, feature = "realnet"))]
+impl ItestComposeOverrides {
+    fn with_env_defaults(self) -> Self {
+        Self { notify_mesh: self.notify_mesh || notify_mesh_compose_enabled(), ..self }
+    }
 }
 
 #[cfg(all(test, feature = "realnet"))]
@@ -211,6 +219,7 @@ impl Drop for ComposeProjectDownGuard {
                 } else {
                     NotifyRuntimeComposeOverride::Current
                 },
+                ..ItestComposeOverrides::default()
             },
         );
         let _status = command
@@ -259,6 +268,7 @@ fn dump_compose_logs(
             } else {
                 NotifyRuntimeComposeOverride::Current
             },
+            ..ItestComposeOverrides::default()
         },
     );
     let _status = command
@@ -365,12 +375,16 @@ pub(crate) fn run_docker_compose_project_with_overrides(
 
 #[cfg(all(test, feature = "realnet"))]
 fn add_itest_compose_files(command: &mut std::process::Command, overrides: ItestComposeOverrides) {
+    let overrides = overrides.with_env_defaults();
     command.arg("-f").arg("docker-compose.itest.yml");
     if overrides.federation_compio {
         command.arg("-f").arg("docker-compose.itest.federation-compio.yml");
     }
     if overrides.gateway_compio {
         command.arg("-f").arg("docker-compose.itest.gateway-compio.yml");
+    }
+    if overrides.notify_mesh {
+        command.arg("-f").arg("docker-compose.itest.notify-mesh.yml");
     }
     match overrides.notify_runtime {
         NotifyRuntimeComposeOverride::Current => {}
@@ -473,6 +487,12 @@ fn notify_compose_override(
     } else {
         NotifyRuntimeComposeOverride::Current
     }
+}
+
+#[cfg(all(test, feature = "realnet"))]
+fn notify_mesh_compose_enabled() -> bool {
+    std::env::var("RAMFLUX_NOTIFY_MESH")
+        .is_ok_and(|value| matches!(value.as_str(), "1" | "true" | "TRUE" | "yes" | "YES"))
 }
 
 #[cfg(all(test, feature = "realnet"))]
