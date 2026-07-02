@@ -388,13 +388,13 @@ pub(crate) fn deliver_mvp3_object_chunk(
         "ramflux.test.object_chunk.v1",
         envelope.encrypted_payload.as_bytes(),
     );
-    let submit: ramflux_node_core::ItestMvp0SubmitResponse =
+    let submit: ramflux_node_core::EnvelopeSubmitResponse =
         ramflux_node_core::itest_http_post_json(
             &format!("{gateway_url}/mvp0/envelope"),
             &envelope,
         )?;
     assert_eq!(submit.outcome, "online");
-    let inbox: ramflux_node_core::ItestMvp1InboxResponse = ramflux_node_core::itest_http_get_json(
+    let inbox: ramflux_node_core::InboxFetchResponse = ramflux_node_core::itest_http_get_json(
         &format!("{gateway_url}/mvp1/inbox/bob_target_mvp1_realnet"),
     )?;
     let delivered = inbox

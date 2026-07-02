@@ -1473,7 +1473,7 @@ impl NotifyPerfKeepAliveClient {
 
     fn read_http_response_by_content_length(
         &mut self,
-    ) -> Result<ramflux_node_core::ItestHttpResponse, NotifyPerfHttpError> {
+    ) -> Result<ramflux_node_core::NodeHttpResponse, NotifyPerfHttpError> {
         let header_end = loop {
             if let Some(header_end) = notify_perf_find_http_header_end(&self.read_buffer) {
                 break header_end;
@@ -1513,7 +1513,7 @@ impl NotifyPerfKeepAliveClient {
         }
         let body = self.read_buffer[body_start..response_end].to_vec();
         self.read_buffer.drain(..response_end);
-        Ok(ramflux_node_core::ItestHttpResponse { status_line, body, keep_alive })
+        Ok(ramflux_node_core::NodeHttpResponse { status_line, body, keep_alive })
     }
 
     fn read_more(&mut self) -> Result<(), NotifyPerfHttpError> {
@@ -1682,7 +1682,7 @@ impl NotifyPerfAsyncClient {
 
     async fn read_http_response_by_content_length(
         &mut self,
-    ) -> Result<ramflux_node_core::ItestHttpResponse, NotifyPerfHttpError> {
+    ) -> Result<ramflux_node_core::NodeHttpResponse, NotifyPerfHttpError> {
         let header_end = loop {
             if let Some(header_end) = notify_perf_find_http_header_end(&self.read_buffer) {
                 break header_end;
@@ -1722,7 +1722,7 @@ impl NotifyPerfAsyncClient {
         }
         let body = self.read_buffer[body_start..response_end].to_vec();
         self.read_buffer.drain(..response_end);
-        Ok(ramflux_node_core::ItestHttpResponse { status_line, body, keep_alive })
+        Ok(ramflux_node_core::NodeHttpResponse { status_line, body, keep_alive })
     }
 
     async fn read_more(&mut self) -> Result<(), NotifyPerfHttpError> {

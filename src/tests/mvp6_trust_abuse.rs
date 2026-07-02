@@ -186,7 +186,7 @@ fn mvp6_realnet_registration_antisybil_pow_tier_budget() -> Result<(), Box<dyn s
     let gateway_url = &realnet.gateway_url;
     mvp6_set_registration_policy(
         gateway_url,
-        &ramflux_node_core::ItestRegistrationPolicy {
+        &ramflux_node_core::RegistrationPolicy {
             challenge_policy: ramflux_node_core::RegistrationChallengePolicy::Pow,
             pow_difficulty_bits: MVP6_REGISTRATION_POW_BITS,
             per_source_ip_registration_limit: 2,
@@ -205,7 +205,7 @@ fn mvp6_realnet_registration_antisybil_pow_tier_budget() -> Result<(), Box<dyn s
 
     mvp6_set_registration_policy(
         gateway_url,
-        &ramflux_node_core::ItestRegistrationPolicy {
+        &ramflux_node_core::RegistrationPolicy {
             challenge_policy: ramflux_node_core::RegistrationChallengePolicy::None,
             pow_difficulty_bits: 0,
             per_source_ip_registration_limit: 100,

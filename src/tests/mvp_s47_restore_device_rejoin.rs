@@ -448,7 +448,7 @@ fn mvp_s47_assert_unauthorized_device_register_rejected(
         now,
         now.saturating_add(3_600),
     )?;
-    let request = ramflux_node_core::ItestMvp1RegisterIdentityRequest {
+    let request = ramflux_node_core::IdentityRegisterRequest {
         root_public_key: ramflux_protocol::encode_base64url(
             wrong_root.signing_key.verifying_key().to_bytes(),
         ),

@@ -16,7 +16,7 @@ fn mvp5_realnet_internal_mtls_gateway_router() -> Result<(), Box<dyn std::error:
     let gateway_url = &realnet.gateway_url;
 
     let envelope = itest_envelope("env_mvp5_mtls_gateway_router", "target_mvp5_mtls");
-    let submit: ramflux_node_core::ItestMvp0SubmitResponse =
+    let submit: ramflux_node_core::EnvelopeSubmitResponse =
         ramflux_node_core::itest_http_post_json(
             &format!("{gateway_url}/mvp0/envelope"),
             &envelope,
@@ -25,7 +25,7 @@ fn mvp5_realnet_internal_mtls_gateway_router() -> Result<(), Box<dyn std::error:
     assert_eq!(submit.target_delivery_id, "target_mvp5_mtls");
     assert_eq!(submit.inbox_seq, Some(1));
 
-    let ack_cursor: ramflux_node_core::ItestMvp0CursorResponse =
+    let ack_cursor: ramflux_node_core::InboxCursorResponse =
         ramflux_node_core::itest_http_post_json(
             &format!("{gateway_url}/mvp0/ack"),
             &itest_ack("env_mvp5_mtls_gateway_router"),
@@ -34,7 +34,7 @@ fn mvp5_realnet_internal_mtls_gateway_router() -> Result<(), Box<dyn std::error:
     assert_eq!(ack_cursor.last_envelope_id.as_deref(), Some("env_mvp5_mtls_gateway_router"));
     assert!(ack_cursor.acked_envelope_ids.contains(&"env_mvp5_mtls_gateway_router".to_owned()));
 
-    let cursor: Option<ramflux_node_core::ItestMvp0CursorResponse> =
+    let cursor: Option<ramflux_node_core::InboxCursorResponse> =
         ramflux_node_core::itest_http_get_json(&format!(
             "{gateway_url}/mvp0/cursor/target_mvp5_mtls"
         ))?;
@@ -72,19 +72,19 @@ fn mvp5_realnet_quic_gateway_submit_ack_cursor() -> Result<(), Box<dyn std::erro
         .await?;
 
         let envelope = itest_envelope("env_mvp5_quic_gateway", "target_mvp5_quic");
-        let submit: ramflux_node_core::ItestMvp0SubmitResponse =
+        let submit: ramflux_node_core::EnvelopeSubmitResponse =
             client.post_json("/mvp0/envelope", &envelope).await?;
         assert_eq!(submit.outcome, "offline_queued");
         assert_eq!(submit.target_delivery_id, "target_mvp5_quic");
         assert_eq!(submit.inbox_seq, Some(1));
 
-        let ack_cursor: ramflux_node_core::ItestMvp0CursorResponse =
+        let ack_cursor: ramflux_node_core::InboxCursorResponse =
             client.post_json("/mvp0/ack", &itest_ack("env_mvp5_quic_gateway")).await?;
         assert_eq!(ack_cursor.inbox_seq, 1);
         assert_eq!(ack_cursor.last_envelope_id.as_deref(), Some("env_mvp5_quic_gateway"));
         assert!(ack_cursor.acked_envelope_ids.contains(&"env_mvp5_quic_gateway".to_owned()));
 
-        let cursor: Option<ramflux_node_core::ItestMvp0CursorResponse> =
+        let cursor: Option<ramflux_node_core::InboxCursorResponse> =
             client.get_json("/mvp0/cursor/target_mvp5_quic").await?;
         let cursor = cursor.ok_or("missing QUIC gateway cursor")?;
         assert_eq!(cursor.inbox_seq, 1);
@@ -279,7 +279,7 @@ fn mvp5_realnet_load_gateway_router_concurrent_submit() -> Result<(), Box<dyn st
                     let envelope_id = format!("env_mvp5_load_{index:04}");
                     let envelope = itest_envelope(&envelope_id, target_delivery_id);
                     let result: Result<
-                        ramflux_node_core::ItestMvp0SubmitResponse,
+                        ramflux_node_core::EnvelopeSubmitResponse,
                         ramflux_node_core::NodeCoreError,
                     > = ramflux_node_core::itest_http_post_json(
                         &format!("{gateway_url}/mvp0/envelope"),
@@ -337,7 +337,7 @@ fn mvp5_realnet_load_gateway_router_concurrent_submit() -> Result<(), Box<dyn st
     );
 
     for (expected_seq, (_submit_seq, envelope_id)) in (1_u64..).zip(submitted.iter()) {
-        let ack_cursor: ramflux_node_core::ItestMvp0CursorResponse =
+        let ack_cursor: ramflux_node_core::InboxCursorResponse =
             ramflux_node_core::itest_http_post_json(
                 &format!("{gateway_url}/mvp0/ack"),
                 &itest_ack(envelope_id),
@@ -346,7 +346,7 @@ fn mvp5_realnet_load_gateway_router_concurrent_submit() -> Result<(), Box<dyn st
         assert!(ack_cursor.acked_envelope_ids.contains(envelope_id));
     }
 
-    let cursor: Option<ramflux_node_core::ItestMvp0CursorResponse> =
+    let cursor: Option<ramflux_node_core::InboxCursorResponse> =
         ramflux_node_core::itest_http_get_json(&format!(
             "{gateway_url}/mvp0/cursor/{target_delivery_id}"
         ))?;
@@ -1087,7 +1087,7 @@ fn mvp5_perf_warmup(
                     let envelope = itest_envelope(&envelope_id, "target_mvp5_perf_warmup");
                     let Ok(submit) = ramflux_node_core::itest_http_post_json::<
                         _,
-                        ramflux_node_core::ItestMvp0SubmitResponse,
+                        ramflux_node_core::EnvelopeSubmitResponse,
                     >(
                         &format!("{gateway_url}/mvp0/envelope"), &envelope
                     ) else {
@@ -1096,7 +1096,7 @@ fn mvp5_perf_warmup(
                     if submit.outcome == "offline_queued" {
                         let _ = ramflux_node_core::itest_http_post_json::<
                             _,
-                            ramflux_node_core::ItestMvp0CursorResponse,
+                            ramflux_node_core::InboxCursorResponse,
                         >(
                             &format!("{gateway_url}/mvp0/ack"), &itest_ack(&envelope_id)
                         );
@@ -1151,7 +1151,7 @@ async fn mvp5_perf_quic_warmup(
                 let envelope_id = format!("env_mvp5_perf_quic_warmup_{worker_id}_{index}");
                 let envelope = itest_envelope(&envelope_id, "target_mvp5_perf_quic_warmup");
                 let Ok(submit) = client
-                    .post_json::<_, ramflux_node_core::ItestMvp0SubmitResponse>(
+                    .post_json::<_, ramflux_node_core::EnvelopeSubmitResponse>(
                         "/mvp0/envelope",
                         &envelope,
                     )
@@ -1161,7 +1161,7 @@ async fn mvp5_perf_quic_warmup(
                 };
                 if submit.outcome == "offline_queued" {
                     let _ = client
-                        .post_json::<_, ramflux_node_core::ItestMvp0CursorResponse>(
+                        .post_json::<_, ramflux_node_core::InboxCursorResponse>(
                             "/mvp0/ack",
                             &itest_ack(&envelope_id),
                         )
@@ -1952,7 +1952,7 @@ fn mvp5_perf_run_stage(
                     let submit_started = std::time::Instant::now();
                     let submit = ramflux_node_core::itest_http_post_json::<
                         _,
-                        ramflux_node_core::ItestMvp0SubmitResponse,
+                        ramflux_node_core::EnvelopeSubmitResponse,
                     >(
                         &format!("{gateway_url}/mvp0/envelope"), &envelope
                     );
@@ -1962,7 +1962,7 @@ fn mvp5_perf_run_stage(
                             let ack_started = std::time::Instant::now();
                             let ack = ramflux_node_core::itest_http_post_json::<
                                 _,
-                                ramflux_node_core::ItestMvp0CursorResponse,
+                                ramflux_node_core::InboxCursorResponse,
                             >(
                                 &format!("{gateway_url}/mvp0/ack"),
                                 &itest_ack(&envelope_id),
@@ -2083,7 +2083,7 @@ fn mvp5_perf_run_stage(
     };
     let expected_acked_len = if degraded_by_transport { results.len() } else { total_envelopes };
     let cursor = match ramflux_node_core::itest_http_get_json::<
-        Option<ramflux_node_core::ItestMvp0CursorResponse>,
+        Option<ramflux_node_core::InboxCursorResponse>,
     >(&format!("{gateway_url}/mvp0/cursor/{target_delivery_id}"))
     {
         Ok(Some(cursor)) => Some(cursor),
@@ -2771,7 +2771,7 @@ async fn mvp5_perf_run_quic_stage(
                 let envelope = itest_envelope(&envelope_id, &target_delivery_id);
                 let submit_started = std::time::Instant::now();
                 let submit = client
-                    .post_json::<_, ramflux_node_core::ItestMvp0SubmitResponse>(
+                    .post_json::<_, ramflux_node_core::EnvelopeSubmitResponse>(
                         "/mvp0/envelope",
                         &envelope,
                     )
@@ -2781,7 +2781,7 @@ async fn mvp5_perf_run_quic_stage(
                     Ok(submit) if submit.outcome == "offline_queued" => {
                         let ack_started = std::time::Instant::now();
                         let ack = client
-                            .post_json::<_, ramflux_node_core::ItestMvp0CursorResponse>(
+                            .post_json::<_, ramflux_node_core::InboxCursorResponse>(
                                 "/mvp0/ack",
                                 &itest_ack(&envelope_id),
                             )
@@ -2899,7 +2899,7 @@ async fn mvp5_perf_run_quic_stage(
     };
     let expected_acked_len = if degraded_by_transport { results.len() } else { total_envelopes };
     let cursor = match clients[0]
-        .get_json::<Option<ramflux_node_core::ItestMvp0CursorResponse>>(&format!(
+        .get_json::<Option<ramflux_node_core::InboxCursorResponse>>(&format!(
             "/mvp0/cursor/{target_delivery_id}"
         ))
         .await
@@ -3423,10 +3423,9 @@ fn mvp4_realnet_home_node_migration_backfill() -> Result<(), Box<dyn std::error:
     register_mvp1_identity(gateway_url, &fixture.alice_register)?;
     register_mvp1_identity(gateway_url, &mvp4_bob_new_device_register()?)?;
 
-    let fetched: ramflux_node_core::ItestMvp1PrekeyResponse =
-        ramflux_node_core::itest_http_get_json(&format!(
-            "{gateway_url}/mvp1/prekey/bob_device_realnet"
-        ))?;
+    let fetched: ramflux_node_core::PrekeyResponse = ramflux_node_core::itest_http_get_json(
+        &format!("{gateway_url}/mvp1/prekey/bob_device_realnet"),
+    )?;
     let bob_bundle = fetched.bundle.ok_or("missing bob prekey bundle")?;
     let (mut alice_session, mut bob_session) = establish_mvp1_dm_sessions(&fixture, &bob_bundle)?;
 

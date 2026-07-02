@@ -34,17 +34,17 @@ pub(crate) fn mvp1_register_request(
     device: &ramflux_crypto::DeviceBranch,
     root_public_key: String,
     session_suffix: u64,
-) -> Result<ramflux_node_core::ItestMvp1RegisterIdentityRequest, Box<dyn std::error::Error>> {
+) -> Result<ramflux_node_core::IdentityRegisterRequest, Box<dyn std::error::Error>> {
     let proof = ramflux_crypto::authorize_device_branch(
         root,
         device,
-        ramflux_node_core::ITEST_MVP1_AUDIENCE,
-        vec![ramflux_node_core::ITEST_MVP1_BIND_CAPABILITY.to_owned()],
+        ramflux_node_core::IDENTITY_BIND_AUDIENCE,
+        vec![ramflux_node_core::IDENTITY_BIND_CAPABILITY.to_owned()],
         1_760_000_000 + i64::try_from(session_suffix)?,
         1_760_003_600 + i64::try_from(session_suffix)?,
     )?;
     let root_public_key_bytes = ramflux_protocol::decode_base64url(&root_public_key)?;
-    Ok(ramflux_node_core::ItestMvp1RegisterIdentityRequest {
+    Ok(ramflux_node_core::IdentityRegisterRequest {
         principal_commitment: ramflux_crypto::blake3_256_base64url(
             "ramflux.identity.root_public_key.commitment.v1",
             &root_public_key_bytes,
@@ -70,7 +70,7 @@ pub(crate) fn mvp1_revoke_request(
     root_seed: [u8; 32],
     device_id: &str,
     revoked_at: i64,
-) -> Result<ramflux_node_core::ItestMvp1RevokeDeviceRequest, Box<dyn std::error::Error>> {
+) -> Result<ramflux_node_core::DeviceRevokeRequest, Box<dyn std::error::Error>> {
     #[derive(serde::Serialize)]
     struct RevokeSigningBody<'a> {
         device_id: &'a str,
@@ -90,7 +90,7 @@ pub(crate) fn mvp1_revoke_request(
         })?,
         root_seed,
     );
-    Ok(ramflux_node_core::ItestMvp1RevokeDeviceRequest {
+    Ok(ramflux_node_core::DeviceRevokeRequest {
         device_id: device_id.to_owned(),
         principal_commitment,
         root_public_key,
@@ -154,19 +154,19 @@ pub(crate) fn mvp1_named_register_request(
     target_delivery_id: &str,
     session_id: &str,
     nonce: i64,
-) -> Result<ramflux_node_core::ItestMvp1RegisterIdentityRequest, Box<dyn std::error::Error>> {
+) -> Result<ramflux_node_core::IdentityRegisterRequest, Box<dyn std::error::Error>> {
     let proof = ramflux_crypto::authorize_device_branch(
         root,
         device,
-        ramflux_node_core::ITEST_MVP1_AUDIENCE,
-        vec![ramflux_node_core::ITEST_MVP1_BIND_CAPABILITY.to_owned()],
+        ramflux_node_core::IDENTITY_BIND_AUDIENCE,
+        vec![ramflux_node_core::IDENTITY_BIND_CAPABILITY.to_owned()],
         1_760_000_000 + nonce,
         1_760_003_600 + nonce,
     )?;
     let root_public_key =
         ramflux_protocol::encode_base64url(root.signing_key.verifying_key().to_bytes());
     let root_public_key_bytes = ramflux_protocol::decode_base64url(&root_public_key)?;
-    Ok(ramflux_node_core::ItestMvp1RegisterIdentityRequest {
+    Ok(ramflux_node_core::IdentityRegisterRequest {
         principal_commitment: ramflux_crypto::blake3_256_base64url(
             "ramflux.identity.root_public_key.commitment.v1",
             &root_public_key_bytes,
@@ -189,8 +189,8 @@ pub(crate) fn mvp1_named_register_request(
 #[cfg(all(test, feature = "realnet"))]
 pub(crate) fn register_mvp1_identity(
     gateway_url: &str,
-    request: &ramflux_node_core::ItestMvp1RegisterIdentityRequest,
-) -> Result<ramflux_node_core::ItestMvp1IdentityRegistrationResponse, Box<dyn std::error::Error>> {
+    request: &ramflux_node_core::IdentityRegisterRequest,
+) -> Result<ramflux_node_core::IdentityRegistrationResponse, Box<dyn std::error::Error>> {
     Ok(ramflux_node_core::itest_http_post_json(
         &format!("{gateway_url}/mvp1/identity/register"),
         request,
@@ -202,10 +202,10 @@ pub(crate) fn publish_mvp1_prekey(
     gateway_url: &str,
     device_id: &str,
     bundle: &ramflux_crypto::PrekeyBundle,
-) -> Result<ramflux_node_core::ItestMvp1PrekeyResponse, Box<dyn std::error::Error>> {
+) -> Result<ramflux_node_core::PrekeyResponse, Box<dyn std::error::Error>> {
     Ok(ramflux_node_core::itest_http_post_json(
         &format!("{gateway_url}/mvp1/prekey/publish"),
-        &ramflux_node_core::ItestMvp1PublishPrekeyRequest {
+        &ramflux_node_core::PrekeyPublishRequest {
             device_id: device_id.to_owned(),
             bundle: bundle.clone(),
         },
@@ -328,13 +328,13 @@ pub(crate) fn deliver_mvp1_dm(
         "ramflux.test.dm_payload.v1",
         envelope.encrypted_payload.as_bytes(),
     );
-    let submit: ramflux_node_core::ItestMvp0SubmitResponse =
+    let submit: ramflux_node_core::EnvelopeSubmitResponse =
         ramflux_node_core::itest_http_post_json(
             &format!("{gateway_url}/mvp0/envelope"),
             &envelope,
         )?;
     assert_eq!(submit.outcome, "online");
-    let inbox: ramflux_node_core::ItestMvp1InboxResponse = ramflux_node_core::itest_http_get_json(
+    let inbox: ramflux_node_core::InboxFetchResponse = ramflux_node_core::itest_http_get_json(
         &format!("{gateway_url}/mvp1/inbox/{target_delivery_id}"),
     )?;
     inbox
@@ -350,7 +350,7 @@ pub(crate) fn mvp1_inbox_entry(
     target_delivery_id: &str,
     envelope_id: &str,
 ) -> Result<ramflux_node_core::InboxEntry, Box<dyn std::error::Error>> {
-    let inbox: ramflux_node_core::ItestMvp1InboxResponse = ramflux_node_core::itest_http_get_json(
+    let inbox: ramflux_node_core::InboxFetchResponse = ramflux_node_core::itest_http_get_json(
         &format!("{gateway_url}/mvp1/inbox/{target_delivery_id}"),
     )?;
     inbox

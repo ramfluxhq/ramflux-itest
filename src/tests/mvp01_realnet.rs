@@ -24,7 +24,7 @@ fn mvp0_realnet_signed_envelope_gateway_router_ack_nack_cursor()
     wait_for_gateway(&gateway_url)?;
 
     let ack_envelope = itest_envelope("env_realnet_ack", "target_realnet");
-    let submit: ramflux_node_core::ItestMvp0SubmitResponse =
+    let submit: ramflux_node_core::EnvelopeSubmitResponse =
         ramflux_node_core::itest_http_post_json(
             &format!("{gateway_url}/mvp0/envelope"),
             &ack_envelope,
@@ -33,7 +33,7 @@ fn mvp0_realnet_signed_envelope_gateway_router_ack_nack_cursor()
     assert_eq!(submit.target_delivery_id, "target_realnet");
     assert_eq!(submit.inbox_seq, Some(1));
 
-    let ack_cursor: ramflux_node_core::ItestMvp0CursorResponse =
+    let ack_cursor: ramflux_node_core::InboxCursorResponse =
         ramflux_node_core::itest_http_post_json(
             &format!("{gateway_url}/mvp0/ack"),
             &itest_ack("env_realnet_ack"),
@@ -43,14 +43,14 @@ fn mvp0_realnet_signed_envelope_gateway_router_ack_nack_cursor()
     assert!(ack_cursor.acked_envelope_ids.contains(&"env_realnet_ack".to_owned()));
 
     let nack_envelope = itest_envelope("env_realnet_nack", "target_realnet");
-    let submit_nack: ramflux_node_core::ItestMvp0SubmitResponse =
+    let submit_nack: ramflux_node_core::EnvelopeSubmitResponse =
         ramflux_node_core::itest_http_post_json(
             &format!("{gateway_url}/mvp0/envelope"),
             &nack_envelope,
         )?;
     assert_eq!(submit_nack.outcome, "offline_queued");
 
-    let nack_cursor: ramflux_node_core::ItestMvp0CursorResponse =
+    let nack_cursor: ramflux_node_core::InboxCursorResponse =
         ramflux_node_core::itest_http_post_json(
             &format!("{gateway_url}/mvp0/nack"),
             &itest_nack("env_realnet_nack"),
@@ -60,7 +60,7 @@ fn mvp0_realnet_signed_envelope_gateway_router_ack_nack_cursor()
         Some(&NackReason::RateLimited)
     );
 
-    let cursor: Option<ramflux_node_core::ItestMvp0CursorResponse> =
+    let cursor: Option<ramflux_node_core::InboxCursorResponse> =
         ramflux_node_core::itest_http_get_json(&format!(
             "{gateway_url}/mvp0/cursor/target_realnet"
         ))?;
@@ -90,7 +90,7 @@ fn mvp1_realnet_identity_register_revoke_prekey() -> Result<(), Box<dyn std::err
     wait_for_gateway(&gateway_url)?;
 
     let fixture = mvp1_realnet_fixture()?;
-    let registered: ramflux_node_core::ItestMvp1IdentityRegistrationResponse =
+    let registered: ramflux_node_core::IdentityRegistrationResponse =
         ramflux_node_core::itest_http_post_json(
             &format!("{gateway_url}/mvp1/identity/register"),
             &fixture.register,
@@ -99,27 +99,24 @@ fn mvp1_realnet_identity_register_revoke_prekey() -> Result<(), Box<dyn std::err
     assert_eq!(registered.device_id, "device_realnet");
     assert!(registered.session_bound);
 
-    let published: ramflux_node_core::ItestMvp1PrekeyResponse =
-        ramflux_node_core::itest_http_post_json(
-            &format!("{gateway_url}/mvp1/prekey/publish"),
-            &ramflux_node_core::ItestMvp1PublishPrekeyRequest {
-                device_id: "device_realnet".to_owned(),
-                bundle: fixture.prekey_bundle.clone(),
-            },
-        )?;
+    let published: ramflux_node_core::PrekeyResponse = ramflux_node_core::itest_http_post_json(
+        &format!("{gateway_url}/mvp1/prekey/publish"),
+        &ramflux_node_core::PrekeyPublishRequest {
+            device_id: "device_realnet".to_owned(),
+            bundle: fixture.prekey_bundle.clone(),
+        },
+    )?;
     assert_eq!(published.bundle, Some(fixture.prekey_bundle.clone()));
 
-    let fetched: ramflux_node_core::ItestMvp1PrekeyResponse =
-        ramflux_node_core::itest_http_get_json(&format!(
-            "{gateway_url}/mvp1/prekey/device_realnet"
-        ))?;
+    let fetched: ramflux_node_core::PrekeyResponse = ramflux_node_core::itest_http_get_json(
+        &format!("{gateway_url}/mvp1/prekey/device_realnet"),
+    )?;
     assert_eq!(fetched.bundle, Some(fixture.prekey_bundle));
 
-    let revoked: ramflux_node_core::ItestMvp1RevokeDeviceResponse =
-        ramflux_node_core::itest_http_post_json(
-            &format!("{gateway_url}/mvp1/device/revoke"),
-            &mvp1_revoke_request("principal_realnet", [0x31; 32], "device_realnet", 1_760_000_100)?,
-        )?;
+    let revoked: ramflux_node_core::DeviceRevokeResponse = ramflux_node_core::itest_http_post_json(
+        &format!("{gateway_url}/mvp1/device/revoke"),
+        &mvp1_revoke_request("principal_realnet", [0x31; 32], "device_realnet", 1_760_000_100)?,
+    )?;
     assert!(revoked.revoked);
 
     let revoked_bind = ramflux_node_core::itest_http_post_json::<_, serde_json::Value>(
@@ -145,10 +142,9 @@ fn mvp1_realnet_dm_e2ee_roundtrip() -> Result<(), Box<dyn std::error::Error>> {
     publish_mvp1_prekey(gateway_url, "bob_device_realnet", &fixture.bob_prekey_bundle)?;
     register_mvp1_identity(gateway_url, &fixture.alice_register)?;
 
-    let fetched: ramflux_node_core::ItestMvp1PrekeyResponse =
-        ramflux_node_core::itest_http_get_json(&format!(
-            "{gateway_url}/mvp1/prekey/bob_device_realnet"
-        ))?;
+    let fetched: ramflux_node_core::PrekeyResponse = ramflux_node_core::itest_http_get_json(
+        &format!("{gateway_url}/mvp1/prekey/bob_device_realnet"),
+    )?;
     let bob_bundle = fetched.bundle.ok_or("missing bob prekey bundle")?;
     let plaintext = b"hello-mvp1-e2ee";
     let (ciphertext, mut bob_session) = encrypt_mvp1_dm(&fixture, &bob_bundle, plaintext)?;
@@ -162,7 +158,7 @@ fn mvp1_realnet_dm_e2ee_roundtrip() -> Result<(), Box<dyn std::error::Error>> {
         "ramflux.test.dm_payload.v1",
         envelope.encrypted_payload.as_bytes(),
     );
-    let submit: ramflux_node_core::ItestMvp0SubmitResponse =
+    let submit: ramflux_node_core::EnvelopeSubmitResponse =
         ramflux_node_core::itest_http_post_json(
             &format!("{gateway_url}/mvp0/envelope"),
             &envelope,
@@ -170,7 +166,7 @@ fn mvp1_realnet_dm_e2ee_roundtrip() -> Result<(), Box<dyn std::error::Error>> {
     assert_eq!(submit.outcome, "online");
     assert_eq!(submit.inbox_seq, Some(1));
 
-    let inbox: ramflux_node_core::ItestMvp1InboxResponse = ramflux_node_core::itest_http_get_json(
+    let inbox: ramflux_node_core::InboxFetchResponse = ramflux_node_core::itest_http_get_json(
         &format!("{gateway_url}/mvp1/inbox/bob_target_mvp1_realnet"),
     )?;
     let delivered = inbox
@@ -187,7 +183,7 @@ fn mvp1_realnet_dm_e2ee_roundtrip() -> Result<(), Box<dyn std::error::Error>> {
     let decrypted = bob_session.decrypt(&delivered_ciphertext, b"alice_device|bob_device")?;
     assert_eq!(decrypted, plaintext);
 
-    let ack: ramflux_node_core::ItestMvp0CursorResponse = ramflux_node_core::itest_http_post_json(
+    let ack: ramflux_node_core::InboxCursorResponse = ramflux_node_core::itest_http_post_json(
         &format!("{gateway_url}/mvp0/ack"),
         &itest_ack("env_mvp1_dm_realnet"),
     )?;
@@ -212,10 +208,9 @@ fn mvp1_realnet_local_db_persist() -> Result<(), Box<dyn std::error::Error>> {
 
     let (local_db, bob_db) = setup_mvp1_local_dbs()?;
 
-    let fetched: ramflux_node_core::ItestMvp1PrekeyResponse =
-        ramflux_node_core::itest_http_get_json(&format!(
-            "{gateway_url}/mvp1/prekey/bob_device_realnet"
-        ))?;
+    let fetched: ramflux_node_core::PrekeyResponse = ramflux_node_core::itest_http_get_json(
+        &format!("{gateway_url}/mvp1/prekey/bob_device_realnet"),
+    )?;
     let bob_bundle = fetched.bundle.ok_or("missing bob prekey bundle")?;
     let (mut alice_session, mut bob_session) = establish_mvp1_dm_sessions(&fixture, &bob_bundle)?;
     let first_plaintext = b"hello-mvp1-e2ee-db";

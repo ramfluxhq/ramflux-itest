@@ -69,7 +69,7 @@ pub(crate) fn mvp7_lifecycle_actor_device_id(principal_id: &str) -> String {
 #[cfg(all(test, feature = "realnet"))]
 pub(crate) fn mvp7_register_lifecycle_actor(
     gateway_url: &str,
-) -> Result<ramflux_node_core::ItestMvp1IdentityRegistrationResponse, Box<dyn std::error::Error>> {
+) -> Result<ramflux_node_core::IdentityRegistrationResponse, Box<dyn std::error::Error>> {
     let root = ramflux_crypto::create_identity_root("mvp7_delete_principal", [0x91; 32]);
     let device = ramflux_crypto::create_device_branch(
         "mvp7_delete_principal",
@@ -92,7 +92,7 @@ pub(crate) fn mvp7_register_lifecycle_actor_for(
     gateway_url: &str,
     principal_id: &str,
     nonce: i64,
-) -> Result<ramflux_node_core::ItestMvp1IdentityRegistrationResponse, Box<dyn std::error::Error>> {
+) -> Result<ramflux_node_core::IdentityRegistrationResponse, Box<dyn std::error::Error>> {
     let root_seed = ramflux_crypto::blake3_256(
         "ramflux.itest.mvp7.lifecycle_actor.root_seed.v1",
         principal_id.as_bytes(),

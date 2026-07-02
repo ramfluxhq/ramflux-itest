@@ -9,7 +9,7 @@ pub(super) fn mvp7_assert_federated_deleted_tombstone(
     gateway_url: &str,
     federation_url: &str,
 ) -> Result<Mvp7DeletedTombstoneFixture, Box<dyn std::error::Error>> {
-    let before: ramflux_node_core::ItestMvp0SubmitResponse =
+    let before: ramflux_node_core::EnvelopeSubmitResponse =
         ramflux_node_core::itest_http_post_json(
             &format!("{gateway_url}/mvp0/envelope"),
             &itest_envelope("env_mvp7_fed_before", "target_mvp7_fed_remote"),
@@ -33,7 +33,7 @@ pub(super) fn mvp7_assert_federated_deleted_tombstone(
             "{federation_url}/mvp7/federation/tombstone/target_mvp7_fed_remote"
         ))?;
     assert_eq!(stored, Some(propagated));
-    let rejected: ramflux_node_core::ItestMvp0SubmitResponse =
+    let rejected: ramflux_node_core::EnvelopeSubmitResponse =
         ramflux_node_core::itest_http_post_json(
             &format!("{gateway_url}/mvp0/envelope"),
             &itest_envelope("env_mvp7_fed_after_delete", "target_mvp7_fed_remote"),
@@ -61,7 +61,7 @@ pub(super) fn mvp7_assert_invalid_federated_tombstone_is_rejected(
         },
     );
     assert!(invalid.is_err());
-    let still_open: ramflux_node_core::ItestMvp0SubmitResponse =
+    let still_open: ramflux_node_core::EnvelopeSubmitResponse =
         ramflux_node_core::itest_http_post_json(
             &format!("{gateway_url}/mvp0/envelope"),
             &itest_envelope("env_mvp7_invalid_still_open", "target_mvp7_invalid_remote"),
@@ -95,7 +95,7 @@ pub(super) fn mvp7_assert_federated_deactivate_reactivate(
         deletion_proof: None,
     };
     mvp7_post_federated_tombstone(federation_url, &deactivate_request)?;
-    let paused: ramflux_node_core::ItestMvp0SubmitResponse =
+    let paused: ramflux_node_core::EnvelopeSubmitResponse =
         ramflux_node_core::itest_http_post_json(
             &format!("{gateway_url}/mvp0/envelope"),
             &itest_envelope("env_mvp7_paused", "target_mvp7_deactivated_remote"),
@@ -109,7 +109,7 @@ pub(super) fn mvp7_assert_federated_deactivate_reactivate(
         deletion_proof: None,
     };
     mvp7_post_federated_tombstone(federation_url, &reactivate_request)?;
-    let resumed: ramflux_node_core::ItestMvp0SubmitResponse =
+    let resumed: ramflux_node_core::EnvelopeSubmitResponse =
         ramflux_node_core::itest_http_post_json(
             &format!("{gateway_url}/mvp0/envelope"),
             &itest_envelope("env_mvp7_resumed", "target_mvp7_deactivated_remote"),
@@ -122,7 +122,7 @@ pub(super) fn mvp7_assert_federated_deactivate_reactivate(
 pub(super) fn mvp7_assert_lifecycle_delete_path(
     gateway_url: &str,
 ) -> Result<ramflux_node_core::IdentityDeletionProof, Box<dyn std::error::Error>> {
-    let queued: ramflux_node_core::ItestMvp0SubmitResponse =
+    let queued: ramflux_node_core::EnvelopeSubmitResponse =
         ramflux_node_core::itest_http_post_json(
             &format!("{gateway_url}/mvp0/envelope"),
             &itest_envelope("env_mvp7_before_delete", "target_mvp7_delete"),
@@ -198,7 +198,7 @@ pub(super) fn mvp7_assert_lifecycle_delete_path(
     assert_eq!(metadata.pending_inbox_count, 0);
     assert_eq!(metadata.tombstone_hash, Some(tombstone_hash));
     assert_eq!(metadata.deletion_proof_hash, Some(proof.proof_hash.clone()));
-    let rejected: ramflux_node_core::ItestMvp0SubmitResponse =
+    let rejected: ramflux_node_core::EnvelopeSubmitResponse =
         ramflux_node_core::itest_http_post_json(
             &format!("{gateway_url}/mvp0/envelope"),
             &itest_envelope("env_mvp7_after_delete", "target_mvp7_delete"),
@@ -247,7 +247,7 @@ pub(super) fn mvp7_assert_franking_report_pipeline(
         ramflux_protocol::domain::ENVELOPE,
         envelope.encrypted_payload.as_bytes(),
     );
-    let submit: ramflux_node_core::ItestMvp0SubmitResponse =
+    let submit: ramflux_node_core::EnvelopeSubmitResponse =
         ramflux_node_core::itest_http_post_json(
             &format!("{gateway_url}/mvp0/envelope"),
             &envelope,
