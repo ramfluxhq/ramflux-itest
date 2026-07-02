@@ -214,6 +214,8 @@ pub(crate) fn itest_nack(envelope_id: &str) -> ramflux_protocol::Nack {
         reason: ramflux_protocol::NackReason::RateLimited,
         received_at: itest_now_unix_seconds(),
         retry_after: Some(30),
+        proof_hash: None,
+        new_home_node_hint: None,
     }
 }
 
