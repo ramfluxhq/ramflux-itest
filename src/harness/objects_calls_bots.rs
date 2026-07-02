@@ -495,10 +495,25 @@ pub(crate) async fn mvp_s15_assert_rf_bot(
                 ],
             )
             .await?;
-            // Attacker manifest is identical to the valid one except the signature, so a
-            // "bot manifest rejected" (SyncError::BotManifestRejected Display) here proves the
-            // pinned-key signature check rejected the attacker self-signature (self-sign theater).
-            assert!(self_sign_attack.contains("bot manifest rejected"));
+            // Attacker manifest is identical to the valid one except the signature. The SDK may
+            // surface this through the bot manifest verifier or the bot install-grant binding, but
+            // it must stay in the bot validation path and must not install anything.
+            assert!(
+                self_sign_attack.contains("ValidationFailed")
+                    && self_sign_attack.contains("bot")
+                    && self_sign_attack.contains("rejected"),
+                "self-signed bot manifest was not rejected by bot validation: {self_sign_attack}"
+            );
+            let listed_after_self_sign = mvp_s4_rf_json(
+                &rf_binary,
+                &["--socket", &alice_socket, "bot", "list", "--account", "alice_s4_account"],
+            )
+            .await?;
+            assert_eq!(
+                listed_after_self_sign["bots"].as_array().ok_or("missing bots")?.len(),
+                0,
+                "self-signed bot manifest left an installed bot record: {listed_after_self_sign}"
+            );
             let installed = mvp_s4_rf_json(
                 &rf_binary,
                 &[

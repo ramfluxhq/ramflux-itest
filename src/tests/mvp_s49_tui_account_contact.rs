@@ -178,6 +178,7 @@ async fn mvp_s49_type_and_submit(
     bus: &mut ramflux_cli_pro::SdkLocalBus,
     command: &str,
 ) -> Result<(), Box<dyn std::error::Error>> {
+    app.handle_input(bus, ramflux_cli_pro::TuiInput::EnterCompose).await?;
     for value in command.chars() {
         app.handle_input(bus, ramflux_cli_pro::TuiInput::Char(value)).await?;
     }

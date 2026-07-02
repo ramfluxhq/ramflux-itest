@@ -237,6 +237,8 @@ pub(crate) fn mvp1_inbox(
 pub(crate) async fn mvp10_assert_three_backend_real_delivery(
     code_root: &Path,
 ) -> Result<(), Box<dyn std::error::Error>> {
+    run_deploy_script(code_root, "ramflux/deploy/scripts/bootstrap-ca.sh")?;
+    run_deploy_script(code_root, "ramflux/deploy/scripts/issue-certs.sh")?;
     let tls = ramflux_transport::MeshTlsConfig {
         ca_cert: code_root.join("ramflux/deploy/certs/ca.pem"),
         service_cert: code_root.join("ramflux/deploy/certs/gateway/gateway.pem"),
@@ -333,6 +335,8 @@ pub(crate) async fn mvp10_assert_three_backend_real_delivery(
 pub(crate) async fn mvp10_assert_quic_lan_object_sync(
     code_root: &Path,
 ) -> Result<(), Box<dyn std::error::Error>> {
+    run_deploy_script(code_root, "ramflux/deploy/scripts/bootstrap-ca.sh")?;
+    run_deploy_script(code_root, "ramflux/deploy/scripts/issue-certs.sh")?;
     let tls = ramflux_transport::MeshTlsConfig {
         ca_cert: code_root.join("ramflux/deploy/certs/ca.pem"),
         service_cert: code_root.join("ramflux/deploy/certs/gateway/gateway.pem"),
