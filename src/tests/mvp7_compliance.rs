@@ -46,8 +46,8 @@ fn mvp7_local_two_node_federated_tombstone_actor_must_be_registered_on_origin()
 fn local_mvp7_lifecycle_request(
     principal_id: &str,
     actor_device_id: &str,
-) -> ramflux_node_core::ItestMvp7LifecycleRequest {
-    ramflux_node_core::ItestMvp7LifecycleRequest {
+) -> ramflux_node_core::LifecycleEventRequest {
+    ramflux_node_core::LifecycleEventRequest {
         principal_id: principal_id.to_owned(),
         event_id: format!("evt_{principal_id}_deactivated"),
         event_type: "identity.deactivated".to_owned(),

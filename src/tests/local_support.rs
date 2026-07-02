@@ -157,7 +157,7 @@ pub(super) fn mvp7_assert_lifecycle_delete_path(
     assert!(pending.metadata_present);
     let early_finalize = ramflux_node_core::itest_http_post_json::<_, serde_json::Value>(
         &format!("{gateway_url}/mvp7/lifecycle/finalize"),
-        &ramflux_node_core::ItestMvp7LifecycleFinalizeRequest {
+        &ramflux_node_core::LifecycleFinalizeRequest {
             principal_id: "mvp7_delete_principal".to_owned(),
             now: 1_760_000_025,
         },

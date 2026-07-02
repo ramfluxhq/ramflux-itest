@@ -182,7 +182,7 @@ fn assert_recovery_negative_cases(
 #[cfg(feature = "realnet")]
 fn assert_recovery_is_rejected(
     gateway_url: &str,
-    request: &ramflux_node_core::ItestMvp7LifecycleRequest,
+    request: &ramflux_node_core::LifecycleEventRequest,
 ) {
     assert!(post_lifecycle(gateway_url, request).is_err());
 }
@@ -215,8 +215,8 @@ fn guardian_only_quorum()
 #[cfg(feature = "realnet")]
 fn post_lifecycle(
     gateway_url: &str,
-    request: &ramflux_node_core::ItestMvp7LifecycleRequest,
-) -> Result<ramflux_node_core::ItestMvp7LifecycleResponse, Box<dyn std::error::Error>> {
+    request: &ramflux_node_core::LifecycleEventRequest,
+) -> Result<ramflux_node_core::LifecycleResponse, Box<dyn std::error::Error>> {
     Ok(ramflux_node_core::itest_http_post_json(
         &format!("{gateway_url}/mvp7/lifecycle/event"),
         request,
@@ -230,8 +230,8 @@ fn recovery_request(
     now: u64,
     recovery_quorum: ramflux_protocol::RecoveryQuorumConfigured,
     recovery_quorum_proof: ramflux_protocol::RecoveryQuorumProof,
-) -> ramflux_node_core::ItestMvp7LifecycleRequest {
-    ramflux_node_core::ItestMvp7LifecycleRequest {
+) -> ramflux_node_core::LifecycleEventRequest {
+    ramflux_node_core::LifecycleEventRequest {
         principal_id: PRINCIPAL_ID.to_owned(),
         event_id: event_id.to_owned(),
         event_type: "identity.reactivated".to_owned(),
