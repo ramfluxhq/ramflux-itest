@@ -10,8 +10,7 @@ fn fixture_canonical() -> Result<(), Box<dyn std::error::Error>> {
     for object in FIXTURE_OBJECTS {
         let json = read_json(&root, fixture_json_path(object))?;
         parse_fixture_value(object, json.clone())?;
-        let canonical_value = signed_value(&json)?;
-        let canonical = ramflux_protocol::canonical_json_bytes(&canonical_value)?;
+        let canonical = fixture_signed_bytes(object, &json)?;
         let expected_canonical = fs::read(root.join(fixture_canonical_path(object)))?;
         assert_eq!(canonical, expected_canonical, "canonical mismatch for {}", object.dir);
 
@@ -53,8 +52,7 @@ fn fixture_signature() -> Result<(), Box<dyn std::error::Error>> {
         }
 
         let invalid_json = read_json(&root, fixture_invalid_signature_path(object))?;
-        let invalid_canonical =
-            ramflux_protocol::canonical_json_bytes(&signed_value(&invalid_json)?)?;
+        let invalid_canonical = fixture_signed_bytes(object, &invalid_json)?;
         let invalid_signature = if object.signed {
             required_str(&invalid_json, "signature")?
         } else {
@@ -101,7 +99,7 @@ fn fixture_smoke() -> Result<(), Box<dyn std::error::Error>> {
     for object in FIXTURE_OBJECTS {
         let json = read_json(&root, fixture_json_path(object))?;
         parse_fixture_value(object, json.clone())?;
-        let canonical = ramflux_protocol::canonical_json_bytes(&signed_value(&json)?)?;
+        let canonical = fixture_signed_bytes(object, &json)?;
         let expected_canonical = fs::read(root.join(fixture_canonical_path(object)))?;
         let expected_hash = read_trimmed(&root, fixture_hash_path(object))?;
         assert_eq!(canonical, expected_canonical, "canonical mismatch for {}", object.dir);
@@ -110,6 +108,18 @@ fn fixture_smoke() -> Result<(), Box<dyn std::error::Error>> {
     }
     assert_eq!(object_count, FIXTURE_OBJECTS.len());
     Ok(())
+}
+
+fn fixture_signed_bytes(
+    object: ramflux_protocol::FixtureObject,
+    value: &Value,
+) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
+    if object.dir == "home_node_migration_proof" {
+        let proof: ramflux_protocol::HomeNodeMigrationProof =
+            serde_json::from_value(value.clone())?;
+        return Ok(ramflux_protocol::home_node_migration_proof_signed_bytes(&proof)?);
+    }
+    Ok(ramflux_protocol::canonical_json_bytes(&signed_value(value)?)?)
 }
 
 #[test]
