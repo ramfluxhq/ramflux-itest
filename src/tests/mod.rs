@@ -141,6 +141,8 @@ mod mvp_s47_restore_device_rejoin;
 mod mvp_s48_own_device_sync;
 #[path = "mvp_s49_tui_account_contact.rs"]
 mod mvp_s49_tui_account_contact;
+#[path = "mvp_s50_cross_gateway.rs"]
+mod mvp_s50_cross_gateway;
 #[path = "objects.rs"]
 mod objects;
 #[path = "transport_node_store.rs"]
