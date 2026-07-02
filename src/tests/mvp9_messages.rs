@@ -19,10 +19,9 @@ fn mvp9_realnet_message_features_disappearing_reply_mention_forward_projection()
     register_mvp1_identity(gateway_url, &fixture.bob_register)?;
     publish_mvp1_prekey(gateway_url, "bob_device_realnet", &fixture.bob_prekey_bundle)?;
     register_mvp1_identity(gateway_url, &fixture.alice_register)?;
-    let fetched: ramflux_node_core::ItestMvp1PrekeyResponse =
-        ramflux_node_core::itest_http_get_json(&format!(
-            "{gateway_url}/mvp1/prekey/bob_device_realnet"
-        ))?;
+    let fetched: ramflux_node_core::PrekeyResponse = ramflux_node_core::itest_http_get_json(
+        &format!("{gateway_url}/mvp1/prekey/bob_device_realnet"),
+    )?;
     let bob_bundle = fetched.bundle.ok_or("missing bob prekey bundle")?;
     let (mut alice_session, mut bob_session) = establish_mvp1_dm_sessions(&fixture, &bob_bundle)?;
     let clients = setup_mvp9_local_clients()?;
@@ -57,10 +56,9 @@ fn mvp9_realnet_transient_typing_presence_delivered_receipt()
     register_mvp1_identity(gateway_url, &fixture.bob_register)?;
     publish_mvp1_prekey(gateway_url, "bob_device_realnet", &fixture.bob_prekey_bundle)?;
     register_mvp1_identity(gateway_url, &fixture.alice_register)?;
-    let fetched: ramflux_node_core::ItestMvp1PrekeyResponse =
-        ramflux_node_core::itest_http_get_json(&format!(
-            "{gateway_url}/mvp1/prekey/bob_device_realnet"
-        ))?;
+    let fetched: ramflux_node_core::PrekeyResponse = ramflux_node_core::itest_http_get_json(
+        &format!("{gateway_url}/mvp1/prekey/bob_device_realnet"),
+    )?;
     let bob_bundle = fetched.bundle.ok_or("missing bob prekey bundle")?;
     let (mut alice_session, mut bob_session) = establish_mvp1_dm_sessions(&fixture, &bob_bundle)?;
     let clients = setup_mvp9_local_clients()?;

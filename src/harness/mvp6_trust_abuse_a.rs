@@ -7,8 +7,8 @@ use crate::*;
 #[cfg(all(test, feature = "realnet"))]
 pub(crate) fn mvp6_set_registration_policy(
     gateway_url: &str,
-    policy: &ramflux_node_core::ItestRegistrationPolicy,
-) -> Result<ramflux_node_core::ItestRegistrationPolicy, Box<dyn std::error::Error>> {
+    policy: &ramflux_node_core::RegistrationPolicy,
+) -> Result<ramflux_node_core::RegistrationPolicy, Box<dyn std::error::Error>> {
     Ok(ramflux_node_core::itest_http_post_json(
         &format!("{gateway_url}/mvp6/registration/policy"),
         policy,
@@ -121,7 +121,7 @@ pub(crate) fn mvp6_raw_http_json<T: serde::Serialize>(
 
 #[cfg(all(test, feature = "realnet"))]
 pub(crate) fn mvp6_parse_raw_http_response(
-    response: ramflux_node_core::ItestHttpResponse,
+    response: ramflux_node_core::NodeHttpResponse,
 ) -> Result<Mvp6RawHttpResponse, Box<dyn std::error::Error>> {
     let status = response
         .status_line
@@ -151,7 +151,7 @@ pub(crate) fn mvp6_assert_pow_registration_policy(
     let bad_pow = mvp6_realnet_register_request(
         "mvp6_bad_pow",
         82,
-        Some(ramflux_node_core::ItestRegistrationPowProof { nonce: 0, difficulty_bits: 0 }),
+        Some(ramflux_node_core::RegistrationPowProof { nonce: 0, difficulty_bits: 0 }),
     )?;
     assert!(register_mvp1_identity(gateway_url, &bad_pow).is_err());
 
@@ -215,10 +215,10 @@ pub(crate) fn mvp6_submit_friend_request(
     source_principal_id: &str,
     target_principal_id: &str,
     now: i64,
-) -> Result<ramflux_node_core::ItestMvp6FriendRequestBudgetResponse, Box<dyn std::error::Error>> {
+) -> Result<ramflux_node_core::FriendRequestBudgetResponse, Box<dyn std::error::Error>> {
     Ok(ramflux_node_core::itest_http_post_json(
         &format!("{gateway_url}/mvp6/friend/request"),
-        &ramflux_node_core::ItestMvp6FriendRequestBudgetRequest {
+        &ramflux_node_core::FriendRequestBudgetRequest {
             source_principal_id: source_principal_id.to_owned(),
             target_principal_id: target_principal_id.to_owned(),
             now,
@@ -230,8 +230,8 @@ pub(crate) fn mvp6_submit_friend_request(
 pub(crate) fn mvp6_registration_pow(
     principal_id: &str,
     difficulty_bits: u8,
-) -> ramflux_node_core::ItestRegistrationPowProof {
-    ramflux_node_core::ItestRegistrationPowProof {
+) -> ramflux_node_core::RegistrationPowProof {
+    ramflux_node_core::RegistrationPowProof {
         nonce: ramflux_crypto::solve_registration_pow(principal_id, difficulty_bits),
         difficulty_bits,
     }
@@ -241,8 +241,8 @@ pub(crate) fn mvp6_registration_pow(
 pub(crate) fn mvp6_realnet_register_request(
     principal_id: &str,
     nonce: i64,
-    registration_pow: Option<ramflux_node_core::ItestRegistrationPowProof>,
-) -> Result<ramflux_node_core::ItestMvp1RegisterIdentityRequest, Box<dyn std::error::Error>> {
+    registration_pow: Option<ramflux_node_core::RegistrationPowProof>,
+) -> Result<ramflux_node_core::IdentityRegisterRequest, Box<dyn std::error::Error>> {
     let root = ramflux_crypto::create_identity_root(principal_id, mvp6_seed(0xb1, nonce)?);
     let device = ramflux_crypto::create_device_branch(
         principal_id,

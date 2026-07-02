@@ -65,7 +65,7 @@ fn local_mvp7_actor_registration(
     principal_id: &str,
     actor_device_id: &str,
     nonce: i64,
-) -> Result<ramflux_node_core::ItestMvp1RegisterIdentityRequest, Box<dyn std::error::Error>> {
+) -> Result<ramflux_node_core::IdentityRegisterRequest, Box<dyn std::error::Error>> {
     let root_seed = ramflux_crypto::blake3_256(
         "ramflux.itest.mvp7.local_two_node.root_seed.v1",
         principal_id.as_bytes(),
@@ -80,15 +80,15 @@ fn local_mvp7_actor_registration(
     let proof = ramflux_crypto::authorize_device_branch(
         &root,
         &device,
-        ramflux_node_core::ITEST_MVP1_AUDIENCE,
-        vec![ramflux_node_core::ITEST_MVP1_BIND_CAPABILITY.to_owned()],
+        ramflux_node_core::IDENTITY_BIND_AUDIENCE,
+        vec![ramflux_node_core::IDENTITY_BIND_CAPABILITY.to_owned()],
         1_760_000_000 + nonce,
         1_760_003_600 + nonce,
     )?;
     let root_public_key =
         ramflux_protocol::encode_base64url(root.signing_key.verifying_key().to_bytes());
     let root_public_key_bytes = ramflux_protocol::decode_base64url(&root_public_key)?;
-    Ok(ramflux_node_core::ItestMvp1RegisterIdentityRequest {
+    Ok(ramflux_node_core::IdentityRegisterRequest {
         principal_commitment: ramflux_crypto::blake3_256_base64url(
             "ramflux.identity.root_public_key.commitment.v1",
             &root_public_key_bytes,

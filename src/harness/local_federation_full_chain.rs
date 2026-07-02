@@ -778,9 +778,9 @@ fn dispatch_local_gateway_quic_request(
 ) -> ramflux_transport::GatewayQuicResponse {
     let body = match (request.method.as_str(), request.path.as_str()) {
         ("POST", "/mvp1/identity/register") => {
-            let Ok(register) = serde_json::from_value::<
-                ramflux_node_core::ItestMvp1RegisterIdentityRequest,
-            >(request.body) else {
+            let Ok(register) =
+                serde_json::from_value::<ramflux_node_core::IdentityRegisterRequest>(request.body)
+            else {
                 return quic_error_response(400, "invalid identity register request");
             };
             match state.router.mvp1_register_identity(&register) {
@@ -789,9 +789,9 @@ fn dispatch_local_gateway_quic_request(
             }
         }
         ("POST", "/mvp1/prekey/publish") => {
-            let Ok(publish) = serde_json::from_value::<
-                ramflux_node_core::ItestMvp1PublishPrekeyRequest,
-            >(request.body) else {
+            let Ok(publish) =
+                serde_json::from_value::<ramflux_node_core::PrekeyPublishRequest>(request.body)
+            else {
                 return quic_error_response(400, "invalid prekey publish request");
             };
             match state.router.mvp1_publish_prekey(publish) {

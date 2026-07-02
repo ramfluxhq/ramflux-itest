@@ -72,16 +72,15 @@ pub(crate) fn mvp10_assert_own_devices_sync(
     for request in [&fixture.phone_register, &fixture.laptop_register, &fixture.revoked_register] {
         register_mvp1_identity(gateway_url, request)?;
     }
-    let revoked: ramflux_node_core::ItestMvp1RevokeDeviceResponse =
-        ramflux_node_core::itest_http_post_json(
-            &format!("{gateway_url}/mvp1/device/revoke"),
-            &mvp1_revoke_request(
-                "alice_mvp10_own",
-                [0xb1; 32],
-                "alice_revoked_mvp10_own",
-                1_760_010_001,
-            )?,
-        )?;
+    let revoked: ramflux_node_core::DeviceRevokeResponse = ramflux_node_core::itest_http_post_json(
+        &format!("{gateway_url}/mvp1/device/revoke"),
+        &mvp1_revoke_request(
+            "alice_mvp10_own",
+            [0xb1; 32],
+            "alice_revoked_mvp10_own",
+            1_760_010_001,
+        )?,
+    )?;
     assert!(revoked.revoked);
 
     let plaintext =
@@ -227,7 +226,7 @@ pub(crate) fn mvp1_inbox(
     target_delivery_id: &str,
     after_inbox_seq: u64,
     limit: usize,
-) -> Result<ramflux_node_core::ItestMvp1InboxResponse, Box<dyn std::error::Error>> {
+) -> Result<ramflux_node_core::InboxFetchResponse, Box<dyn std::error::Error>> {
     Ok(ramflux_node_core::itest_http_get_json(&format!(
         "{gateway_url}/mvp1/inbox/{target_delivery_id}?after={after_inbox_seq}&limit={limit}"
     ))?)

@@ -95,7 +95,7 @@ pub(crate) fn mvp4_can_deliver(
 
 #[cfg(all(test, feature = "realnet"))]
 pub(crate) fn mvp4_bob_new_device_register()
--> Result<ramflux_node_core::ItestMvp1RegisterIdentityRequest, Box<dyn std::error::Error>> {
+-> Result<ramflux_node_core::IdentityRegisterRequest, Box<dyn std::error::Error>> {
     let bob_root = ramflux_crypto::create_identity_root("bob_realnet", [0x43; 32]);
     let bob_new_device = ramflux_crypto::create_device_branch(
         "bob_realnet",
@@ -155,16 +155,14 @@ pub(crate) fn mvp4_partition_realnet_context(
     register_mvp1_identity(gateway_url, &carol.register)?;
     publish_mvp1_prekey(gateway_url, "carol_device_mvp4_realnet", &carol.prekey_bundle)?;
 
-    let fetched_bob: ramflux_node_core::ItestMvp1PrekeyResponse =
-        ramflux_node_core::itest_http_get_json(&format!(
-            "{gateway_url}/mvp1/prekey/bob_device_realnet"
-        ))?;
+    let fetched_bob: ramflux_node_core::PrekeyResponse = ramflux_node_core::itest_http_get_json(
+        &format!("{gateway_url}/mvp1/prekey/bob_device_realnet"),
+    )?;
     let bob_bundle = fetched_bob.bundle.ok_or("missing bob prekey bundle")?;
     let (alice_to_bob, bob_receiver) = establish_mvp1_dm_sessions(&fixture, &bob_bundle)?;
-    let fetched_carol: ramflux_node_core::ItestMvp1PrekeyResponse =
-        ramflux_node_core::itest_http_get_json(&format!(
-            "{gateway_url}/mvp1/prekey/carol_device_mvp4_realnet"
-        ))?;
+    let fetched_carol: ramflux_node_core::PrekeyResponse = ramflux_node_core::itest_http_get_json(
+        &format!("{gateway_url}/mvp1/prekey/carol_device_mvp4_realnet"),
+    )?;
     let carol_bundle = fetched_carol.bundle.ok_or("missing carol prekey bundle")?;
     let (alice_to_carol, carol_receiver) =
         establish_mvp3_pairwise_sessions(Mvp3PairwiseSessionInput {

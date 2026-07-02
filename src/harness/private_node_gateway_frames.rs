@@ -416,7 +416,7 @@ pub(crate) async fn mvp_s1_expect_deliver(
 #[cfg(all(test, feature = "realnet"))]
 pub(crate) async fn mvp_s1_expect_ack(
     recv: &mut quinn::RecvStream,
-) -> Result<ramflux_node_core::ItestMvp0CursorResponse, Box<dyn std::error::Error>> {
+) -> Result<ramflux_node_core::InboxCursorResponse, Box<dyn std::error::Error>> {
     match mvp_s1_read_server_frame(recv).await? {
         ramflux_node_core::GatewayServerFrame::Ack { cursor } => Ok(cursor),
         other => Err(format!("expected ack, got {other:?}").into()),
@@ -426,7 +426,7 @@ pub(crate) async fn mvp_s1_expect_ack(
 #[cfg(all(test, feature = "realnet"))]
 pub(crate) async fn mvp_s1_expect_cursor(
     recv: &mut quinn::RecvStream,
-) -> Result<Option<ramflux_node_core::ItestMvp0CursorResponse>, Box<dyn std::error::Error>> {
+) -> Result<Option<ramflux_node_core::InboxCursorResponse>, Box<dyn std::error::Error>> {
     match mvp_s1_read_server_frame(recv).await? {
         ramflux_node_core::GatewayServerFrame::Cursor { cursor } => Ok(cursor),
         other => Err(format!("expected cursor, got {other:?}").into()),
@@ -459,7 +459,7 @@ pub(crate) fn mvp_s1_register_identity(
         device_seed: MVP_S1_DEVICE_SEED,
         device_epoch: 1,
     })?;
-    let response: ramflux_node_core::ItestMvp1IdentityRegistrationResponse =
+    let response: ramflux_node_core::IdentityRegistrationResponse =
         ramflux_node_core::itest_http_post_json(
             &format!("{gateway_url}/mvp1/identity/register"),
             &request,
@@ -472,7 +472,7 @@ pub(crate) fn mvp_s1_register_identity(
 #[cfg(all(test, feature = "realnet"))]
 pub(crate) fn mvp_s1_identity_register_request(
     spec: GatewayFrameIdentitySpec<'_>,
-) -> Result<ramflux_node_core::ItestMvp1RegisterIdentityRequest, Box<dyn std::error::Error>> {
+) -> Result<ramflux_node_core::IdentityRegisterRequest, Box<dyn std::error::Error>> {
     let root = ramflux_crypto::create_identity_root(spec.principal_id, spec.root_seed);
     let branch = ramflux_crypto::create_device_branch(
         spec.principal_id,
@@ -484,15 +484,15 @@ pub(crate) fn mvp_s1_identity_register_request(
     let proof = ramflux_crypto::authorize_device_branch(
         &root,
         &branch,
-        ramflux_node_core::ITEST_MVP1_AUDIENCE,
-        vec![ramflux_node_core::ITEST_MVP1_BIND_CAPABILITY.to_owned()],
+        ramflux_node_core::IDENTITY_BIND_AUDIENCE,
+        vec![ramflux_node_core::IDENTITY_BIND_CAPABILITY.to_owned()],
         now,
         now.saturating_add(i64::from(ITEST_REPLAY_TTL_SECONDS)),
     )?;
     let root_public_key =
         ramflux_protocol::encode_base64url(root.signing_key.verifying_key().to_bytes());
     let root_public_key_bytes = ramflux_protocol::decode_base64url(&root_public_key)?;
-    Ok(ramflux_node_core::ItestMvp1RegisterIdentityRequest {
+    Ok(ramflux_node_core::IdentityRegisterRequest {
         principal_commitment: ramflux_crypto::blake3_256_base64url(
             "ramflux.identity.root_public_key.commitment.v1",
             &root_public_key_bytes,

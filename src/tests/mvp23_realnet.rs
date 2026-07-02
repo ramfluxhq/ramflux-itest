@@ -20,10 +20,9 @@ fn mvp2_realnet_friend_message_projection() -> Result<(), Box<dyn std::error::Er
     register_mvp1_identity(gateway_url, &fixture.alice_register)?;
     let clients = setup_mvp2_local_clients()?;
 
-    let fetched: ramflux_node_core::ItestMvp1PrekeyResponse =
-        ramflux_node_core::itest_http_get_json(&format!(
-            "{gateway_url}/mvp1/prekey/bob_device_realnet"
-        ))?;
+    let fetched: ramflux_node_core::PrekeyResponse = ramflux_node_core::itest_http_get_json(
+        &format!("{gateway_url}/mvp1/prekey/bob_device_realnet"),
+    )?;
     let bob_bundle = fetched.bundle.ok_or("missing bob prekey bundle")?;
     let (mut alice_session, mut bob_session) = establish_mvp1_dm_sessions(&fixture, &bob_bundle)?;
 
@@ -66,10 +65,9 @@ fn mvp2_realnet_group_sender_keys_fanout_bot_consent() -> Result<(), Box<dyn std
     clients.bob_db.add_group_member("group_mvp2_realnet", "bob", "member")?;
     assert_mvp2_bot_consent_gate(&clients.bob_db)?;
 
-    let fetched: ramflux_node_core::ItestMvp1PrekeyResponse =
-        ramflux_node_core::itest_http_get_json(&format!(
-            "{gateway_url}/mvp1/prekey/bob_device_realnet"
-        ))?;
+    let fetched: ramflux_node_core::PrekeyResponse = ramflux_node_core::itest_http_get_json(
+        &format!("{gateway_url}/mvp1/prekey/bob_device_realnet"),
+    )?;
     let bob_bundle = fetched.bundle.ok_or("missing bob prekey bundle")?;
     let (mut alice_session, mut bob_session) = establish_mvp1_dm_sessions(&fixture, &bob_bundle)?;
     let mut group_epoch =
@@ -114,10 +112,9 @@ fn mvp3_realnet_object_sync_chunk_resume_tombstone() -> Result<(), Box<dyn std::
     publish_mvp1_prekey(gateway_url, "bob_device_realnet", &fixture.bob_prekey_bundle)?;
     register_mvp1_identity(gateway_url, &fixture.alice_register)?;
 
-    let fetched: ramflux_node_core::ItestMvp1PrekeyResponse =
-        ramflux_node_core::itest_http_get_json(&format!(
-            "{gateway_url}/mvp1/prekey/bob_device_realnet"
-        ))?;
+    let fetched: ramflux_node_core::PrekeyResponse = ramflux_node_core::itest_http_get_json(
+        &format!("{gateway_url}/mvp1/prekey/bob_device_realnet"),
+    )?;
     let bob_bundle = fetched.bundle.ok_or("missing bob prekey bundle")?;
     let (mut alice_session, mut bob_session) = establish_mvp1_dm_sessions(&fixture, &bob_bundle)?;
 
@@ -522,10 +519,9 @@ fn mvp3_realnet_webrtc_opaque_signaling_turn_no_media_key() -> Result<(), Box<dy
     publish_mvp1_prekey(gateway_url, "bob_device_realnet", &fixture.bob_prekey_bundle)?;
     register_mvp1_identity(gateway_url, &fixture.alice_register)?;
 
-    let fetched: ramflux_node_core::ItestMvp1PrekeyResponse =
-        ramflux_node_core::itest_http_get_json(&format!(
-            "{gateway_url}/mvp1/prekey/bob_device_realnet"
-        ))?;
+    let fetched: ramflux_node_core::PrekeyResponse = ramflux_node_core::itest_http_get_json(
+        &format!("{gateway_url}/mvp1/prekey/bob_device_realnet"),
+    )?;
     let bob_bundle = fetched.bundle.ok_or("missing bob prekey bundle")?;
     let (mut alice_session, mut bob_session) = establish_mvp1_dm_sessions(&fixture, &bob_bundle)?;
 

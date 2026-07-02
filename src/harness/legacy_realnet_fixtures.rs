@@ -6,15 +6,15 @@ use crate::*;
 
 #[cfg(all(test, feature = "realnet"))]
 pub(crate) struct Mvp1RealnetFixture {
-    pub(crate) register: ramflux_node_core::ItestMvp1RegisterIdentityRequest,
-    pub(crate) revoked_register: ramflux_node_core::ItestMvp1RegisterIdentityRequest,
+    pub(crate) register: ramflux_node_core::IdentityRegisterRequest,
+    pub(crate) revoked_register: ramflux_node_core::IdentityRegisterRequest,
     pub(crate) prekey_bundle: ramflux_crypto::PrekeyBundle,
 }
 
 #[cfg(all(test, feature = "realnet"))]
 pub(crate) struct Mvp1DmRealnetFixture {
-    pub(crate) alice_register: ramflux_node_core::ItestMvp1RegisterIdentityRequest,
-    pub(crate) bob_register: ramflux_node_core::ItestMvp1RegisterIdentityRequest,
+    pub(crate) alice_register: ramflux_node_core::IdentityRegisterRequest,
+    pub(crate) bob_register: ramflux_node_core::IdentityRegisterRequest,
     pub(crate) alice_identity: ramflux_crypto::X25519KeyPair,
     pub(crate) alice_ephemeral: ramflux_crypto::X25519KeyPair,
     pub(crate) bob_identity: ramflux_crypto::X25519KeyPair,
@@ -110,8 +110,8 @@ pub(crate) struct Mvp2GroupFanoutContext<'a> {
 
 #[cfg(all(test, feature = "realnet"))]
 pub(crate) struct Mvp3McpA2uiFixture {
-    pub(crate) app_register: ramflux_node_core::ItestMvp1RegisterIdentityRequest,
-    pub(crate) cli_register: ramflux_node_core::ItestMvp1RegisterIdentityRequest,
+    pub(crate) app_register: ramflux_node_core::IdentityRegisterRequest,
+    pub(crate) cli_register: ramflux_node_core::IdentityRegisterRequest,
     pub(crate) app_identity: ramflux_crypto::X25519KeyPair,
     pub(crate) app_signed_prekey: ramflux_crypto::X25519KeyPair,
     pub(crate) app_prekey_bundle: ramflux_crypto::PrekeyBundle,
@@ -220,7 +220,7 @@ pub(crate) struct Mvp4DeliveredDm {
 
 #[cfg(all(test, feature = "realnet"))]
 pub(crate) struct Mvp4PartitionMemberFixture {
-    pub(crate) register: ramflux_node_core::ItestMvp1RegisterIdentityRequest,
+    pub(crate) register: ramflux_node_core::IdentityRegisterRequest,
     pub(crate) identity: ramflux_crypto::X25519KeyPair,
     pub(crate) signed_prekey: ramflux_crypto::X25519KeyPair,
     pub(crate) prekey_bundle: ramflux_crypto::PrekeyBundle,
@@ -345,7 +345,7 @@ pub(crate) struct Mvp4FederationTrustStatusRequest {
 
 #[cfg(all(test, feature = "realnet"))]
 pub(crate) struct Mvp9DeliveredDm {
-    pub(crate) submit: ramflux_node_core::ItestMvp0SubmitResponse,
+    pub(crate) submit: ramflux_node_core::EnvelopeSubmitResponse,
     pub(crate) entry: ramflux_node_core::InboxEntry,
 }
 
@@ -387,7 +387,7 @@ pub(crate) fn deliver_mvp9_dm(
         "ramflux.test.dm_payload.v1",
         envelope.encrypted_payload.as_bytes(),
     );
-    let submit: ramflux_node_core::ItestMvp0SubmitResponse =
+    let submit: ramflux_node_core::EnvelopeSubmitResponse =
         ramflux_node_core::itest_http_post_json(
             &format!("{gateway_url}/mvp0/envelope"),
             &envelope,
@@ -437,9 +437,9 @@ pub(crate) fn assert_mvp9_history_has_no_transient_events(
 
 #[cfg(all(test, feature = "realnet"))]
 pub(crate) struct Mvp10OwnDevicesFixture {
-    pub(crate) phone_register: ramflux_node_core::ItestMvp1RegisterIdentityRequest,
-    pub(crate) laptop_register: ramflux_node_core::ItestMvp1RegisterIdentityRequest,
-    pub(crate) revoked_register: ramflux_node_core::ItestMvp1RegisterIdentityRequest,
+    pub(crate) phone_register: ramflux_node_core::IdentityRegisterRequest,
+    pub(crate) laptop_register: ramflux_node_core::IdentityRegisterRequest,
+    pub(crate) revoked_register: ramflux_node_core::IdentityRegisterRequest,
     pub(crate) phone_db: ramflux_storage::AccountDb,
     pub(crate) laptop_db: ramflux_storage::AccountDb,
 }
