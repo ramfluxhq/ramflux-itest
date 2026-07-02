@@ -383,6 +383,9 @@ fn add_itest_compose_files(command: &mut std::process::Command, overrides: Itest
     if overrides.gateway_compio {
         command.arg("-f").arg("docker-compose.itest.gateway-compio.yml");
     }
+    if cross_gateway_compose_enabled() {
+        command.arg("-f").arg("docker-compose.itest.cross-gateway.yml");
+    }
     if overrides.notify_mesh {
         command.arg("-f").arg("docker-compose.itest.notify-mesh.yml");
     }
@@ -490,9 +493,20 @@ fn notify_compose_override(
 }
 
 #[cfg(all(test, feature = "realnet"))]
+fn cross_gateway_compose_enabled() -> bool {
+    compose_bool_env("RAMFLUX_CROSS_GATEWAY")
+}
+
+#[cfg(all(test, feature = "realnet"))]
 fn notify_mesh_compose_enabled() -> bool {
-    std::env::var("RAMFLUX_NOTIFY_MESH")
-        .is_ok_and(|value| matches!(value.as_str(), "1" | "true" | "TRUE" | "yes" | "YES"))
+    compose_bool_env("RAMFLUX_NOTIFY_MESH")
+}
+
+#[cfg(all(test, feature = "realnet"))]
+fn compose_bool_env(name: &str) -> bool {
+    std::env::var(name).is_ok_and(|value| {
+        matches!(value.trim().to_ascii_lowercase().as_str(), "1" | "true" | "yes" | "on")
+    })
 }
 
 #[cfg(all(test, feature = "realnet"))]
