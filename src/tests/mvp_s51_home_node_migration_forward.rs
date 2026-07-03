@@ -202,7 +202,7 @@ fn s51_migration_fixture(
         route_record_hash: route_record_hash.clone(),
         effective_at: now.saturating_sub(1),
         expires_at,
-        issued_at: now,
+        issued_at: now.saturating_sub(2),
         nonce: ramflux_protocol::encode_base64url(b"nonce_s51_migration"),
         branch_proof_hash: ramflux_crypto::branch_proof_document_hash(&identity.register.proof)?,
         previous_home_node_binding_hash: None,
@@ -226,7 +226,7 @@ fn s51_migration_fixture(
         node_endpoint: node_b.federation_mesh_endpoint.clone(),
         route_record_hash,
         migration_proof_hash,
-        issued_at: now.saturating_add(1),
+        issued_at: now,
         expires_at,
     };
     route_signer.sign_home_node_route_update_proof(&mut route_update)?;
