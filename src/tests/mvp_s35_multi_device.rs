@@ -327,6 +327,7 @@ struct MvpS35FrameDevice<'a> {
 }
 
 #[cfg(all(test, feature = "realnet"))]
+#[allow(clippy::too_many_lines)]
 async fn mvp_s35_assert_second_device_deliver_frame_transport(
     gateway_quic_addr: std::net::SocketAddr,
     ca_cert: &Path,
@@ -407,7 +408,86 @@ async fn mvp_s35_assert_second_device_deliver_frame_transport(
         mvp_s1_expect_cursor(&mut bob_b.recv).await?.ok_or("missing S35 Bob B ack cursor")?;
     assert_eq!(cursor_frame, ack_cursor);
 
+    let mut bob_a = mvp_s35_open_registered_gateway_frame_session(
+        gateway_quic_addr,
+        ca_cert,
+        MvpS35FrameDevice {
+            principal_id: "principal_s35_bob",
+            device_id: "bob_device_s35_a",
+            target_delivery_id: "target_s35_bob_a",
+            device_seed: [0x36; 32],
+            device_epoch: 1,
+            nonce_suffix: "bob_a_fanout",
+        },
+    )
+    .await?;
+    let mut fanout_envelope =
+        itest_envelope("env_s35_frame_own_device_fanout", "fanout-placeholder");
+    fanout_envelope.source_principal_id = "principal_s35_bob".to_owned();
+    fanout_envelope.source_device_id = "bob_device_s35_a".to_owned();
+    fanout_envelope.delivery_class = ramflux_protocol::DeliveryClass::SelfDeviceControl;
+    fanout_envelope.encrypted_payload =
+        ramflux_protocol::encode_base64url(b"s35 true own-device fanout payload");
+    fanout_envelope.payload_hash = ramflux_crypto::blake3_256_base64url(
+        "ramflux.test.s35.own_device_frame_fanout.v1",
+        fanout_envelope.encrypted_payload.as_bytes(),
+    );
+    let fanout = mvp_s35_own_device_fanout_frame(
+        &bob_a.open,
+        "principal_s35_bob",
+        "bob_device_s35_a",
+        fanout_envelope.clone(),
+        [0x36; 32],
+    )?;
+    mvp_s1_write_client_frame(
+        &mut bob_a.send,
+        &ramflux_node_core::GatewayClientFrame::OwnDeviceFanout { fanout },
+    )
+    .await?;
+    let fanout_delivered = mvp_s1_expect_deliver(&mut bob_b.recv).await?;
+    let expected_fanout_envelope_id = ramflux_node_core::mvp10_fanout_envelope_id(
+        "env_s35_frame_own_device_fanout",
+        "bob_device_s35_b",
+    );
+    assert_eq!(fanout_delivered.envelope.envelope_id, expected_fanout_envelope_id);
+    assert_eq!(fanout_delivered.target_delivery_id, "target_s35_bob_b");
+    assert_eq!(fanout_delivered.envelope.encrypted_payload, fanout_envelope.encrypted_payload);
+    assert!(
+        fanout_delivered.inbox_seq > ack_cursor.inbox_seq,
+        "Bob B own-device fanout delivery did not advance beyond cursor {}: {fanout_delivered:?}",
+        ack_cursor.inbox_seq,
+    );
+    let fanout_response = mvp_s35_expect_own_device_fanout_response(&mut bob_a.recv).await?;
+    assert_eq!(fanout_response.principal_id, "principal_s35_bob");
+    assert_eq!(fanout_response.source_device_id, "bob_device_s35_a");
+    assert_eq!(fanout_response.delivered.len(), 1);
+    assert_eq!(fanout_response.delivered[0].device_id, "bob_device_s35_b");
+    assert_eq!(fanout_response.delivered[0].target_delivery_id, "target_s35_bob_b");
+    assert_eq!(fanout_response.delivered[0].outcome, "online");
+    assert_eq!(fanout_response.delivered[0].inbox_seq, Some(fanout_delivered.inbox_seq));
+
+    mvp_s1_write_client_frame(
+        &mut bob_b.send,
+        &ramflux_node_core::GatewayClientFrame::Ack {
+            ack: itest_ack(&expected_fanout_envelope_id),
+        },
+    )
+    .await?;
+    let fanout_ack_cursor = mvp_s1_expect_ack(&mut bob_b.recv).await?;
+    assert_eq!(fanout_ack_cursor.target_delivery_id, "target_s35_bob_b");
+    assert_eq!(fanout_ack_cursor.inbox_seq, fanout_delivered.inbox_seq);
+    assert_eq!(
+        fanout_ack_cursor.last_envelope_id.as_deref(),
+        Some(expected_fanout_envelope_id.as_str())
+    );
+    assert!(fanout_ack_cursor.acked_envelope_ids.contains(&expected_fanout_envelope_id));
+    let fanout_cursor_frame = mvp_s1_expect_cursor(&mut bob_b.recv)
+        .await?
+        .ok_or("missing S35 Bob B fanout ack cursor")?;
+    assert_eq!(fanout_cursor_frame, fanout_ack_cursor);
+
     alice.connection.close(0_u32.into(), b"s35-alice-frame-done");
+    bob_a.connection.close(0_u32.into(), b"s35-bob-a-frame-done");
     bob_b.connection.close(0_u32.into(), b"s35-bob-b-frame-done");
     Ok(())
 }
@@ -441,6 +521,76 @@ async fn mvp_s35_open_registered_gateway_frame_session(
         .await?;
     let session = mvp_s1_expect_session_established(&mut recv).await?;
     Ok(MvpS35GatewayFrameSession { _endpoint: endpoint, connection, send, recv, open, session })
+}
+
+#[cfg(all(test, feature = "realnet"))]
+fn mvp_s35_own_device_fanout_frame(
+    open: &ramflux_node_core::GatewayOpenFrame,
+    principal_id: &str,
+    source_device_id: &str,
+    envelope: ramflux_protocol::Envelope,
+    device_seed: [u8; 32],
+) -> Result<ramflux_node_core::GatewayOwnDeviceFanoutFrame, Box<dyn std::error::Error>> {
+    let now = itest_now_unix_seconds();
+    let signed_body = serde_json::json!({
+        "principal_id": principal_id,
+        "source_device_id": source_device_id,
+        "envelope": &envelope,
+    });
+    let mut signed_request = ramflux_protocol::SignedRequest {
+        schema: "ramflux.signed_request.v1".to_owned(),
+        version: 1,
+        domain: "ramflux.signed_request.v1".to_owned(),
+        ext: ramflux_protocol::Ext::default(),
+        signed: ramflux_protocol::SignedFields {
+            signing_key_id: format!("device:{}", open.device_id),
+            signature_alg: ramflux_protocol::SignatureAlg::Ed25519,
+            signature: String::new(),
+        },
+        source_device_id: open.device_id.clone(),
+        request_id: format!("req_fanout_{}", envelope.envelope_id),
+        method: ramflux_protocol::HttpMethod::POST,
+        path: "/gateway/session/own-device-fanout".to_owned(),
+        device_proof_hash: "already_authed".to_owned(),
+        body_hash: ramflux_crypto::blake3_256_base64url(
+            ramflux_protocol::domain::ENVELOPE,
+            &ramflux_protocol::canonical_json_bytes(&signed_body)?,
+        ),
+        nonce: format!("{}:fanout:{}", open.stream_nonce, envelope.envelope_id),
+        created_at: now,
+        expires_at: now.saturating_add(i64::from(ITEST_REPLAY_TTL_SECONDS)),
+    };
+    signed_request.signed.signature =
+        ramflux_crypto::sign_protocol_object_with_seed(&signed_request, device_seed)?;
+    Ok(ramflux_node_core::GatewayOwnDeviceFanoutFrame {
+        signed_request,
+        principal_id: principal_id.to_owned(),
+        source_device_id: source_device_id.to_owned(),
+        envelope,
+    })
+}
+
+#[cfg(all(test, feature = "realnet"))]
+async fn mvp_s35_expect_own_device_fanout_response(
+    recv: &mut quinn::RecvStream,
+) -> Result<ramflux_node_core::GatewayOwnDeviceFanoutResponse, Box<dyn std::error::Error>> {
+    loop {
+        match tokio::time::timeout(
+            std::time::Duration::from_secs(10),
+            ramflux_transport::read_quic_json_frame::<ramflux_node_core::GatewayServerFrame>(recv),
+        )
+        .await
+        .map_err(|_| "timed out waiting for S35 own-device fanout response")??
+        {
+            ramflux_node_core::GatewayServerFrame::OwnDeviceFanout { response } => {
+                return Ok(response);
+            }
+            ramflux_node_core::GatewayServerFrame::InBandWake { .. } => {}
+            other => {
+                return Err(format!("expected own-device fanout response, got {other:?}").into());
+            }
+        }
+    }
 }
 
 #[cfg(all(test, feature = "realnet"))]
