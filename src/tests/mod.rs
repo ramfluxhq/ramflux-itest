@@ -143,6 +143,8 @@ mod mvp_s48_own_device_sync;
 mod mvp_s49_tui_account_contact;
 #[path = "mvp_s50_cross_gateway.rs"]
 mod mvp_s50_cross_gateway;
+#[path = "mvp_s51_home_node_migration_forward.rs"]
+mod mvp_s51_home_node_migration_forward;
 #[path = "objects.rs"]
 mod objects;
 #[path = "transport_node_store.rs"]
