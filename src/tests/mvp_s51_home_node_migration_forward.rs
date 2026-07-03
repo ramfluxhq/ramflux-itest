@@ -87,10 +87,12 @@ fn mvp_s51_realnet_home_node_migration_forwards_within_window()
         )?;
     assert_eq!(submit.outcome, "forwarded_home_node_migrated");
     assert!(submit.nack.is_none(), "migration window forward must not return a NACK");
+    assert!(
+        submit.inbox_seq.is_some(),
+        "migration window forward returned forwarded outcome without node-b inbox_seq: {submit:?}"
+    );
 
-    let inbox: ramflux_node_core::InboxFetchResponse = ramflux_node_core::itest_http_get_json(
-        &format!("{}/mvp1/inbox/{}", node_b.gateway_url, fixture.target_delivery_id),
-    )?;
+    let inbox = s51_wait_for_forwarded_inbox_entry(&node_b.gateway_url, &fixture, envelope_id)?;
     assert!(
         inbox.entries.iter().any(|entry| entry.envelope.envelope_id == envelope_id),
         "new home node-b inbox did not receive forwarded envelope {envelope_id}: {inbox:?}"
@@ -267,4 +269,27 @@ fn s51_apply_route_update(
             "now": realnet_now_i64(),
         }),
     )?)
+}
+
+#[cfg(feature = "realnet")]
+fn s51_wait_for_forwarded_inbox_entry(
+    gateway_url: &str,
+    fixture: &S51MigrationFixture,
+    envelope_id: &str,
+) -> Result<ramflux_node_core::InboxFetchResponse, Box<dyn std::error::Error>> {
+    let url = format!("{gateway_url}/mvp1/inbox/{}", fixture.target_delivery_id);
+    let mut last: Option<ramflux_node_core::InboxFetchResponse> = None;
+    for _attempt in 0..20 {
+        let inbox: ramflux_node_core::InboxFetchResponse =
+            ramflux_node_core::itest_http_get_json(&url)?;
+        if inbox.entries.iter().any(|entry| entry.envelope.envelope_id == envelope_id) {
+            return Ok(inbox);
+        }
+        last = Some(inbox);
+        std::thread::sleep(std::time::Duration::from_millis(250));
+    }
+    Ok(last.unwrap_or(ramflux_node_core::InboxFetchResponse {
+        target_delivery_id: fixture.target_delivery_id.clone(),
+        entries: Vec::new(),
+    }))
 }
