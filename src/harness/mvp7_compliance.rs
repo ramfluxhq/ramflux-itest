@@ -5,16 +5,6 @@
 use crate::*;
 
 #[cfg(all(test, feature = "realnet"))]
-const MVP7_FRANKING_NODE_ID: &str = "localhost";
-#[cfg(all(test, feature = "realnet"))]
-const MVP7_FRANKING_ENVELOPE_ID: &str = "env_mvp7_franking_report";
-#[cfg(all(test, feature = "realnet"))]
-const MVP7_NODE_SERVICE_SIGNING_SEED: [u8; 32] = [
-    1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26,
-    27, 28, 29, 30, 31, 32,
-];
-
-#[cfg(all(test, feature = "realnet"))]
 pub(crate) const fn mvp7_lifecycle_step(
     event_id: &'static str,
     event_type: &'static str,
@@ -147,65 +137,6 @@ pub(crate) fn mvp7_post_federated_tombstone(
         &format!("{federation_url}/mvp7/federation/tombstone"),
         request,
     )?)
-}
-
-#[cfg(all(test, feature = "realnet"))]
-pub(crate) fn mvp7_franking_report_fixture() -> Mvp7FrankingReportFixture {
-    let plaintext = "mvp7 explicitly selected reported excerpt".to_owned();
-    let sender_device_id_hash = b"sender-device-hash-mvp7";
-    let canonical_header_bytes = br#"{"conversation_id":"dm_mvp7","counter":7,"sender":"alice"}"#;
-    let associated_data = b"dm_mvp7:alice:bob";
-    let ciphertext = b"opaque-ciphertext-mvp7-franking";
-    let opening_key = [0x72; 32];
-    let commitment_key = [0x73; 32];
-    let commitment =
-        ramflux_crypto::franking_commitment(&ramflux_crypto::FrankingCommitmentInput {
-            plaintext: plaintext.as_bytes(),
-            sender_device_id_hash,
-            message_event_id: "msg_mvp7_franking_001",
-            canonical_header_bytes,
-            associated_data,
-            ciphertext,
-            opening_key: &opening_key,
-            commitment_key: &commitment_key,
-        });
-    let franking_timestamp = 1_760_000_500;
-    let node_signing_key = ed25519_dalek::SigningKey::from_bytes(&MVP7_NODE_SERVICE_SIGNING_SEED);
-    let franking_tag = ramflux_crypto::sign_franking_node_tag(
-        MVP7_FRANKING_NODE_ID,
-        MVP7_FRANKING_ENVELOPE_ID,
-        "msg_mvp7_franking_001",
-        sender_device_id_hash,
-        &commitment.commitment,
-        &commitment.ciphertext_hash,
-        franking_timestamp,
-        &node_signing_key,
-    );
-    Mvp7FrankingReportFixture {
-        plaintext,
-        opaque_ciphertext: ramflux_protocol::encode_base64url(ciphertext),
-        evidence: Mvp7SelectedFrankingEvidence {
-            evidence_kind: ramflux_node_core::FrankingEvidenceKind::ReceiverAttestedDm,
-            node_id: MVP7_FRANKING_NODE_ID.to_owned(),
-            envelope_id: MVP7_FRANKING_ENVELOPE_ID.to_owned(),
-            plaintext_excerpt: "mvp7 explicitly selected reported excerpt".to_owned(),
-            opening_key: ramflux_protocol::encode_base64url(opening_key),
-            commitment_key: ramflux_protocol::encode_base64url(commitment_key),
-            sender_device_id_hash: ramflux_protocol::encode_base64url(sender_device_id_hash),
-            msg_event_id: "msg_mvp7_franking_001".to_owned(),
-            canonical_header_bytes: ramflux_protocol::encode_base64url(canonical_header_bytes),
-            associated_data: ramflux_protocol::encode_base64url(associated_data),
-            ciphertext: ramflux_protocol::encode_base64url(ciphertext),
-            header_hash: commitment.header_hash,
-            associated_data_hash: commitment.associated_data_hash,
-            ciphertext_hash: commitment.ciphertext_hash,
-            franking_commitment: commitment.franking_commitment,
-            commitment: commitment.commitment,
-            franking_tag,
-            franking_timestamp,
-            group_header_signature: None,
-        },
-    }
 }
 
 #[cfg(all(test, feature = "realnet"))]

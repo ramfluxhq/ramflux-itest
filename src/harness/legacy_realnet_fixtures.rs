@@ -39,15 +39,7 @@ pub(crate) struct Mvp7DeletedTombstoneFixture {
 }
 
 #[cfg(all(test, feature = "realnet"))]
-#[derive(Clone)]
-pub(crate) struct Mvp7FrankingReportFixture {
-    pub(crate) plaintext: String,
-    pub(crate) opaque_ciphertext: String,
-    pub(crate) evidence: Mvp7SelectedFrankingEvidence,
-}
-
-#[cfg(all(test, feature = "realnet"))]
-#[derive(Clone, serde::Serialize)]
+#[derive(Clone, serde::Deserialize, serde::Serialize)]
 pub(crate) struct Mvp7SelectedFrankingEvidence {
     pub(crate) evidence_kind: ramflux_node_core::FrankingEvidenceKind,
     pub(crate) node_id: String,

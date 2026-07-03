@@ -189,6 +189,7 @@ pub(crate) fn mvp9_assert_reply_mention_forward_projection(
             source_message_id_hash: "source_hash_mvp9".to_owned(),
         }),
         forward_count: 2,
+        franking_report: None,
     };
     clients.bob_db.send_direct_message_at_with_metadata(ramflux_storage::DirectMessageWrite {
         conversation_id: "conv_mvp9_realnet",

@@ -28,6 +28,7 @@ fn message_reply_mention_forward_projection() -> Result<(), Box<dyn std::error::
             source_message_id_hash: "source_hash_1".to_owned(),
         }),
         forward_count: 1,
+        franking_report: None,
     };
     db.send_direct_message_with_metadata("conv_1", "msg_2", "alice", b"rich", &metadata)?;
 
