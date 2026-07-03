@@ -145,6 +145,8 @@ mod mvp_s49_tui_account_contact;
 mod mvp_s50_cross_gateway;
 #[path = "mvp_s51_home_node_migration_forward.rs"]
 mod mvp_s51_home_node_migration_forward;
+#[path = "mvp_s52_media_relay.rs"]
+mod mvp_s52_media_relay;
 #[path = "objects.rs"]
 mod objects;
 #[path = "transport_node_store.rs"]
