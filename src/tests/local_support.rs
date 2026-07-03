@@ -357,6 +357,7 @@ async fn mvp7_real_franking_evidence_from_received_dm(
                 "bob_mvp7_franking",
             )
             .await?;
+            let created_at = realnet_now_i64();
             let submitted = alice
                 .request(
                     Some("alice_mvp7_franking_account".to_owned()),
@@ -375,7 +376,7 @@ async fn mvp7_real_franking_evidence_from_received_dm(
                         plaintext_body_base64: Some(ramflux_protocol::encode_base64url(
                             b"mvp7 explicitly selected reported excerpt",
                         )),
-                        created_at: 1_760_000_500,
+                        created_at,
                         ttl: 3_600,
                         attachments: Vec::new(),
                         federation: None,
