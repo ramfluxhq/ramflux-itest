@@ -28,6 +28,8 @@ pub const CRATE_NAME: &str = "ramflux-itest";
 #[cfg(all(test, feature = "realnet"))]
 const MVP6_REGISTRATION_POW_BITS: u8 = 8;
 
+pub mod quic_loadgen_core;
+
 #[must_use]
 pub const fn crate_name() -> &'static str {
     CRATE_NAME

@@ -147,6 +147,8 @@ mod mvp_s50_cross_gateway;
 mod mvp_s51_home_node_migration_forward;
 #[path = "mvp_s52_media_relay.rs"]
 mod mvp_s52_media_relay;
+#[path = "mvp_s53_quic_ingress_perf.rs"]
+mod mvp_s53_quic_ingress_perf;
 #[path = "objects.rs"]
 mod objects;
 #[path = "transport_node_store.rs"]
