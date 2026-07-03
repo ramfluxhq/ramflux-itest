@@ -53,6 +53,11 @@ name = "notify_loadgen"
 path = "src/bin/notify_loadgen.rs"
 required-features = ["loadgen"]
 
+[[bin]]
+name = "quic_loadgen"
+path = "src/bin/quic_loadgen.rs"
+required-features = ["loadgen"]
+
 [lints.rust]
 warnings = "deny"
 unsafe_code = "deny"
