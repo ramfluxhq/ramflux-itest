@@ -171,6 +171,22 @@ fn mvp7_realnet_franking_report_verified_rejected_retention()
     let realnet = start_realnet_compose()?;
     let gateway_url = &realnet.gateway_url;
     let retention_url = &realnet.retention_url;
-    mvp7_assert_franking_report_pipeline(gateway_url, retention_url)?;
+    let code_root = code_root();
+    let ca_cert = code_root.join("ramflux/deploy/certs/ca.pem");
+    let gateway_quic_addr: std::net::SocketAddr = std::env::var("RAMFLUX_ITEST_GATEWAY_QUIC_ADDR")
+        .unwrap_or_else(|_| "127.0.0.1:18443".to_owned())
+        .parse()?;
+    let runtime = tokio::runtime::Builder::new_current_thread().enable_all().build()?;
+    runtime.block_on(async {
+        wait_for_private_gateway_quic(gateway_quic_addr, &ca_cert).await?;
+        mvp7_assert_franking_report_pipeline(
+            gateway_url,
+            retention_url,
+            gateway_quic_addr,
+            &ca_cert,
+        )
+        .await?;
+        Ok::<(), Box<dyn std::error::Error>>(())
+    })?;
     Ok(())
 }

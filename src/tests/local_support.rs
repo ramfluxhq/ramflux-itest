@@ -236,33 +236,22 @@ pub(super) fn mvp7_assert_retention_gc(
 }
 
 #[cfg(all(test, feature = "realnet"))]
-pub(super) fn mvp7_assert_franking_report_pipeline(
+pub(super) async fn mvp7_assert_franking_report_pipeline(
     gateway_url: &str,
     retention_url: &str,
+    gateway_quic_addr: std::net::SocketAddr,
+    ca_cert: &Path,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let fixture = mvp7_franking_report_fixture();
-    let mut envelope = itest_envelope("env_mvp7_franking_report", "target_mvp7_franking");
-    envelope.encrypted_payload = fixture.opaque_ciphertext.clone();
-    envelope.payload_hash = ramflux_crypto::blake3_256_base64url(
-        ramflux_protocol::domain::ENVELOPE,
-        envelope.encrypted_payload.as_bytes(),
-    );
-    let submit: ramflux_node_core::EnvelopeSubmitResponse =
-        ramflux_node_core::itest_http_post_json(
-            &format!("{gateway_url}/mvp0/envelope"),
-            &envelope,
-        )?;
-    assert_eq!(submit.outcome, "offline_queued");
-    assert_eq!(submit.inbox_seq, Some(1));
-    assert_node_opaque_payload(&envelope.encrypted_payload, fixture.plaintext.as_bytes());
+    let evidence = mvp7_real_franking_evidence_from_received_dm(gateway_quic_addr, ca_cert).await?;
+    assert_eq!(evidence.node_id, "localhost");
+    assert_eq!(evidence.envelope_id, "env_mvp7_franking_report");
+    assert_eq!(evidence.plaintext_excerpt, "mvp7 explicitly selected reported excerpt");
+    assert!(!evidence.franking_tag.is_empty());
+    assert!(evidence.franking_timestamp > 1_700_000_000_000);
 
-    let verified =
-        mvp7_post_abuse_report(gateway_url, "report_mvp7_franking_verified", &fixture.evidence)?;
+    let verified = mvp7_post_abuse_report(gateway_url, "report_mvp7_franking_verified", &evidence)?;
     assert_eq!(verified.report.status, ramflux_node_core::FrankingReportStatus::Verified);
-    assert_eq!(
-        verified.report.verified_commitment.as_deref(),
-        Some(fixture.evidence.commitment.as_str())
-    );
+    assert_eq!(verified.report.verified_commitment.as_deref(), Some(evidence.commitment.as_str()));
     assert_eq!(verified.retention_record.metadata_class, "selected_evidence");
     mvp7_retention_record(retention_url, verified.retention_record.clone())?;
 
@@ -275,7 +264,7 @@ pub(super) fn mvp7_assert_franking_report_pipeline(
         Some(ramflux_node_core::FrankingReportStatus::Verified)
     );
 
-    let mut forged_plaintext = fixture.evidence.clone();
+    let mut forged_plaintext = evidence.clone();
     forged_plaintext.plaintext_excerpt.push_str(" forged");
     let rejected_plaintext = mvp7_post_abuse_report(
         gateway_url,
@@ -285,7 +274,7 @@ pub(super) fn mvp7_assert_franking_report_pipeline(
     assert_eq!(rejected_plaintext.report.status, ramflux_node_core::FrankingReportStatus::Rejected);
     assert!(rejected_plaintext.report.verified_commitment.is_none());
 
-    let mut group_without_signature = fixture.evidence.clone();
+    let mut group_without_signature = evidence.clone();
     group_without_signature.evidence_kind =
         ramflux_node_core::FrankingEvidenceKind::SenderBoundGroup;
     group_without_signature.group_header_signature = None;
@@ -298,5 +287,223 @@ pub(super) fn mvp7_assert_franking_report_pipeline(
 
     let gc = mvp7_retention_gc(retention_url, 1_768_000_000)?;
     assert!(gc.deleted_record_ids.contains(&verified.retention_record.record_id));
+    Ok(())
+}
+
+#[cfg(all(test, feature = "realnet"))]
+#[allow(clippy::too_many_lines)]
+async fn mvp7_real_franking_evidence_from_received_dm(
+    gateway_quic_addr: std::net::SocketAddr,
+    ca_cert: &Path,
+) -> Result<Mvp7SelectedFrankingEvidence, Box<dyn std::error::Error>> {
+    let temp_root = temp_root("mvp7_real_franking_e2e")?;
+    let alice_socket = temp_root.join("alice/rfd.sock");
+    let bob_socket = temp_root.join("bob/rfd.sock");
+    let (alice_shutdown_tx, alice_shutdown_rx) = tokio::sync::watch::channel(false);
+    let (bob_shutdown_tx, bob_shutdown_rx) = tokio::sync::watch::channel(false);
+    let alice_server = ramflux_sdk::serve_local_bus_until(
+        ramflux_sdk::LocalBusConfig::new(&alice_socket, temp_root.join("alice/data")),
+        alice_shutdown_rx,
+    );
+    let bob_server = ramflux_sdk::serve_local_bus_until(
+        ramflux_sdk::LocalBusConfig::new(&bob_socket, temp_root.join("bob/data")),
+        bob_shutdown_rx,
+    );
+
+    let flow = async {
+        let result = async {
+            mvp_s4_wait_for_socket(&alice_socket).await?;
+            mvp_s4_wait_for_socket(&bob_socket).await?;
+            let mut alice = ramflux_sdk::LocalBusClient::connect(&alice_socket).await?;
+            let mut bob = ramflux_sdk::LocalBusClient::connect(&bob_socket).await?;
+            let alice_commitment = mvp7_create_bus_account(
+                &mut alice,
+                gateway_quic_addr,
+                ca_cert,
+                "alice_mvp7_franking_account",
+                "alice_mvp7_franking",
+                "alice_device_mvp7_franking",
+                "target_mvp7_franking_alice",
+                [0x71; 32],
+                [0x72; 32],
+            )
+            .await?;
+            let bob_commitment = mvp7_create_bus_account(
+                &mut bob,
+                gateway_quic_addr,
+                ca_cert,
+                "bob_mvp7_franking_account",
+                "bob_mvp7_franking",
+                "bob_device_mvp7_franking",
+                "target_mvp7_franking_bob",
+                [0x81; 32],
+                [0x82; 32],
+            )
+            .await?;
+            let _ = alice_commitment;
+            mvp7_add_bus_contact(
+                &mut alice,
+                "alice_mvp7_franking_account",
+                "friend_link_mvp7_franking",
+                "alice_mvp7_franking",
+                "bob_mvp7_franking",
+            )
+            .await?;
+            mvp7_add_bus_contact(
+                &mut bob,
+                "bob_mvp7_franking_account",
+                "friend_link_mvp7_franking",
+                "alice_mvp7_franking",
+                "bob_mvp7_franking",
+            )
+            .await?;
+            let submitted = alice
+                .request(
+                    Some("alice_mvp7_franking_account".to_owned()),
+                    "message",
+                    "message.submit",
+                    &ramflux_sdk::LocalBusMessageSubmitRequest {
+                        conversation_id: "conv_mvp7_franking".to_owned(),
+                        message_id: "env_mvp7_franking_report".to_owned(),
+                        envelope_id: "env_mvp7_franking_report".to_owned(),
+                        source_principal_id: "alice_mvp7_franking".to_owned(),
+                        sender_id: "alice_device_mvp7_franking".to_owned(),
+                        recipient_device_id: Some("bob_device_mvp7_franking".to_owned()),
+                        recipient_principal_commitment: Some(bob_commitment),
+                        target_delivery_id: "target_mvp7_franking_bob".to_owned(),
+                        encrypted_body_base64: String::new(),
+                        plaintext_body_base64: Some(ramflux_protocol::encode_base64url(
+                            b"mvp7 explicitly selected reported excerpt",
+                        )),
+                        created_at: 1_760_000_500,
+                        ttl: 3_600,
+                        attachments: Vec::new(),
+                        federation: None,
+                    },
+                )
+                .await?;
+            assert_eq!(submitted["envelope"]["envelope_id"], "env_mvp7_franking_report");
+
+            let received = bob
+                .request(
+                    Some("bob_mvp7_franking_account".to_owned()),
+                    "message",
+                    "message.receive",
+                    &ramflux_sdk::LocalBusMessageReceiveRequest {
+                        limit: 8,
+                        conversation_id: Some("conv_mvp7_franking".to_owned()),
+                        auto_fetch_attachments: false,
+                        relay_service_key_base64: None,
+                    },
+                )
+                .await?;
+            let decrypted = received["decrypted_messages"]
+                .as_array()
+                .ok_or_else(|| std::io::Error::other("decrypted_messages missing"))?;
+            assert_eq!(decrypted.len(), 1);
+            assert_eq!(
+                decrypted[0]["plaintext_body_base64"],
+                ramflux_protocol::encode_base64url(b"mvp7 explicitly selected reported excerpt")
+            );
+            let evidence_value = bob
+                .request(
+                    Some("bob_mvp7_franking_account".to_owned()),
+                    "message",
+                    "message.franking_evidence",
+                    &serde_json::json!({
+                        "conversation_id": "conv_mvp7_franking",
+                        "message_id": "env_mvp7_franking_report"
+                    }),
+                )
+                .await?;
+            let evidence: Mvp7SelectedFrankingEvidence = serde_json::from_value(evidence_value)?;
+            Ok::<Mvp7SelectedFrankingEvidence, Box<dyn std::error::Error>>(evidence)
+        }
+        .await;
+        let _ = alice_shutdown_tx.send(true);
+        let _ = bob_shutdown_tx.send(true);
+        result
+    };
+    let (alice_result, bob_result, flow_result) =
+        tokio::time::timeout(std::time::Duration::from_mins(2), async {
+            tokio::join!(alice_server, bob_server, flow)
+        })
+        .await
+        .map_err(|_elapsed| "mvp7 franking e2e local bus flow timed out")?;
+    alice_result?;
+    bob_result?;
+    let evidence = flow_result?;
+    std::fs::remove_dir_all(temp_root)?;
+    Ok(evidence)
+}
+
+#[cfg(all(test, feature = "realnet"))]
+#[allow(clippy::too_many_arguments)]
+async fn mvp7_create_bus_account(
+    bus: &mut ramflux_sdk::LocalBusClient,
+    gateway_quic_addr: std::net::SocketAddr,
+    ca_cert: &Path,
+    local_account_id: &str,
+    principal_id: &str,
+    device_id: &str,
+    target_delivery_id: &str,
+    root_seed: [u8; 32],
+    device_seed: [u8; 32],
+) -> Result<String, Box<dyn std::error::Error>> {
+    let response: ramflux_sdk::LocalBusAccountCreateResponse = serde_json::from_value(
+        bus.request(
+            None,
+            "account",
+            "account.create",
+            &ramflux_sdk::LocalBusAccountCreateRequest {
+                local_account_id: local_account_id.to_owned(),
+                principal_id: principal_id.to_owned(),
+                principal_commitment: String::new(),
+                device_id: device_id.to_owned(),
+                target_delivery_id: target_delivery_id.to_owned(),
+                account_secret: "mvp7-franking-secret".to_owned(),
+                root_seed,
+                device_seed,
+                client_mode: ramflux_sdk::LocalBusClientMode::AttendedCli,
+                gateway: ramflux_sdk::GatewayQuicEndpointConfig {
+                    bind_addr: std::net::SocketAddr::from(([0, 0, 0, 0], 0)),
+                    gateway_addr: gateway_quic_addr,
+                    server_name: "localhost".to_owned(),
+                    ca_cert: ca_cert.to_path_buf(),
+                    principal_id: principal_id.to_owned(),
+                    device_id: device_id.to_owned(),
+                    target_delivery_id: target_delivery_id.to_owned(),
+                    prekey_http_url: None,
+                },
+            },
+        )
+        .await?,
+    )?;
+    assert_eq!(response.local_account_id, local_account_id);
+    assert_eq!(response.device_id, device_id);
+    Ok(response.principal_commitment)
+}
+
+#[cfg(all(test, feature = "realnet"))]
+async fn mvp7_add_bus_contact(
+    bus: &mut ramflux_sdk::LocalBusClient,
+    account_id: &str,
+    link_id: &str,
+    requester_id: &str,
+    target_id: &str,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let contact = bus
+        .request(
+            Some(account_id.to_owned()),
+            "contact",
+            "contact.add",
+            &ramflux_sdk::LocalBusContactAddRequest {
+                link_id: link_id.to_owned(),
+                requester_id: requester_id.to_owned(),
+                target_id: target_id.to_owned(),
+            },
+        )
+        .await?;
+    assert_eq!(contact["state"], "accepted");
     Ok(())
 }
