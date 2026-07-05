@@ -79,6 +79,14 @@ fn run_s53_stage(
     let compose_env = vec![
         ("RAMFLUX_ITEST_PERF".to_owned(), "1".to_owned()),
         ("RAMFLUX_ROUTER_GROUP_COMMIT".to_owned(), if group_commit { "1" } else { "0" }.to_owned()),
+        (
+            "RAMFLUX_ROUTER_WAL_COMMIT_WINDOW_US".to_owned(),
+            std::env::var("RAMFLUX_PERF_WAL_COMMIT_WINDOW_US").unwrap_or_else(|_| "0".to_owned()),
+        ),
+        (
+            "RAMFLUX_ROUTER_WAL_SHARDS".to_owned(),
+            std::env::var("RAMFLUX_PERF_WAL_SHARDS").unwrap_or_default(),
+        ),
     ];
     let realnet =
         start_realnet_compose_with_env_and_gateway_compio(&compose_env, plan.gateway_compio)?;
