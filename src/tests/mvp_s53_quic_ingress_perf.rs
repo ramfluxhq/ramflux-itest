@@ -87,6 +87,10 @@ fn run_s53_stage(
             "RAMFLUX_ROUTER_WAL_SHARDS".to_owned(),
             std::env::var("RAMFLUX_PERF_WAL_SHARDS").unwrap_or_default(),
         ),
+        (
+            "RAMFLUX_ROUTER_WAL_PIPELINE".to_owned(),
+            std::env::var("RAMFLUX_PERF_WAL_PIPELINE").unwrap_or_else(|_| "0".to_owned()),
+        ),
     ];
     let server_transport =
         std::env::var("RAMFLUX_PERF_SERVER_TRANSPORT").unwrap_or_else(|_| "quic".to_owned());
