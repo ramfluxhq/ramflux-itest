@@ -76,7 +76,7 @@ fn run_s53_stage(
     group_commit: bool,
 ) -> Result<serde_json::Value, Box<dyn std::error::Error>> {
     let label = if group_commit { "group_commit_on" } else { "group_commit_off" };
-    let compose_env = vec![
+    let mut compose_env = vec![
         ("RAMFLUX_ITEST_PERF".to_owned(), "1".to_owned()),
         ("RAMFLUX_ROUTER_GROUP_COMMIT".to_owned(), if group_commit { "1" } else { "0" }.to_owned()),
         (
@@ -88,6 +88,16 @@ fn run_s53_stage(
             std::env::var("RAMFLUX_PERF_WAL_SHARDS").unwrap_or_default(),
         ),
     ];
+    let server_transport =
+        std::env::var("RAMFLUX_PERF_SERVER_TRANSPORT").unwrap_or_else(|_| "quic".to_owned());
+    if server_transport != "http" {
+        compose_env.push(("RAMFLUX_ROUTER_ASYNC_INGRESS".to_owned(), "1".to_owned()));
+        compose_env.push(("RAMFLUX_ROUTER_ASYNC_INGRESS_RUNTIME".to_owned(), "tokio".to_owned()));
+        compose_env
+            .push(("RAMFLUX_ROUTER_ASYNC_LISTEN_ADDR".to_owned(), "0.0.0.0:17444".to_owned()));
+        compose_env
+            .push(("RAMFLUX_ROUTER_ASYNC_ENDPOINT".to_owned(), "ramflux-router:17444".to_owned()));
+    }
     let realnet =
         start_realnet_compose_with_env_and_gateway_compio(&compose_env, plan.gateway_compio)?;
     let gateway_url = realnet.gateway_url.clone();
