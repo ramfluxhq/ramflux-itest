@@ -95,6 +95,10 @@ fn run_s53_stage(
             "RAMFLUX_ROUTER_WAL_DIR".to_owned(),
             std::env::var("RAMFLUX_PERF_WAL_DIR").unwrap_or_default(),
         ),
+        (
+            "RAMFLUX_ROUTER_ASYNC_INGRESS_SOCKETS".to_owned(),
+            std::env::var("RAMFLUX_PERF_INGRESS_SOCKETS").unwrap_or_default(),
+        ),
     ];
     let server_transport =
         std::env::var("RAMFLUX_PERF_SERVER_TRANSPORT").unwrap_or_else(|_| "quic".to_owned());
