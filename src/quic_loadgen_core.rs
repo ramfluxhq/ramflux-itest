@@ -693,12 +693,21 @@ fn metrics_delta(
     };
     match service {
         "gateway" => serde_json::json!({
-            "gateway_submit_received_delta": json_delta(before, after, "/node/gateway_submit_received_total")
+            "gateway_submit_received_delta": json_delta(before, after, "/node/gateway_submit_received_total"),
+            "mesh_client_requests_delta": json_delta(before, after, "/transport/mesh_client_requests_total"),
+            "mesh_client_connect_count_delta": json_delta(before, after, "/transport/mesh_client_connect_count"),
+            "mesh_client_tls_handshakes_delta": json_delta(before, after, "/transport/mesh_client_tls_handshakes_total"),
+            "mesh_client_open_bi_us_delta": json_delta(before, after, "/transport/mesh_client_open_bi_us_total")
         }),
         "router" => {
             let accepted = json_delta(before, after, "/node/router_envelope_accepted_total");
             let denominator = accepted.max(u64::try_from(completed).unwrap_or(u64::MAX));
             serde_json::json!({
+                "mesh_client_requests_delta": json_delta(before, after, "/transport/mesh_client_requests_total"),
+                "mesh_client_connect_count_delta": json_delta(before, after, "/transport/mesh_client_connect_count"),
+                "mesh_client_tls_handshakes_delta": json_delta(before, after, "/transport/mesh_client_tls_handshakes_total"),
+                "mesh_client_open_bi_us_delta": json_delta(before, after, "/transport/mesh_client_open_bi_us_total"),
+                "mesh_server_quic_streams_accepted_delta": json_delta(before, after, "/transport/mesh_server_quic_streams_accepted_total"),
                 "router_envelope_accepted_delta": accepted,
                 "router_replay_guard_checks_delta": json_delta(before, after, "/node/router_replay_guard_checks_total"),
                 "router_replay_guard_redb_writes_delta": json_delta(before, after, "/node/router_replay_guard_redb_writes_total"),
