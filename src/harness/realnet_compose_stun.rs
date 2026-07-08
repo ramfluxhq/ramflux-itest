@@ -377,6 +377,9 @@ pub(crate) fn run_docker_compose_project_with_overrides(
 fn add_itest_compose_files(command: &mut std::process::Command, overrides: ItestComposeOverrides) {
     let overrides = overrides.with_env_defaults();
     command.arg("-f").arg("docker-compose.itest.yml");
+    if quic_broken_compose_enabled() {
+        command.arg("-f").arg("docker-compose.itest.quic-broken.yml");
+    }
     if overrides.federation_compio {
         command.arg("-f").arg("docker-compose.itest.federation-compio.yml");
     }
@@ -500,6 +503,11 @@ fn cross_gateway_compose_enabled() -> bool {
 #[cfg(all(test, feature = "realnet"))]
 fn notify_mesh_compose_enabled() -> bool {
     compose_bool_env("RAMFLUX_NOTIFY_MESH")
+}
+
+#[cfg(all(test, feature = "realnet"))]
+fn quic_broken_compose_enabled() -> bool {
+    compose_bool_env("RAMFLUX_ITEST_QUIC_BROKEN")
 }
 
 #[cfg(all(test, feature = "realnet"))]
