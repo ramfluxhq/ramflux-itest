@@ -87,7 +87,6 @@ async fn mvp_s41_assert_dm_attachment(
     let charlie_socket_arg = mvp_s4_path_arg(&charlie_socket);
     let input_arg = mvp_s4_path_arg(&input_path);
     let charlie_output_arg = mvp_s4_path_arg(&charlie_output);
-    let service_key = "ramflux-relay-itest-service-key";
     let object_id = "attachment:msg_s41_attach:0";
 
     let (alice_tx, alice_rx) = tokio::sync::watch::channel(false);
@@ -199,8 +198,6 @@ async fn mvp_s41_assert_dm_attachment(
                     &input_arg,
                     "--relay-url",
                     relay_url,
-                    "--relay-service-key",
-                    service_key,
                     "--attachment-chunk-size",
                     "1024",
                 ],
@@ -221,8 +218,6 @@ async fn mvp_s41_assert_dm_attachment(
                     object_id,
                     "--relay-url",
                     relay_url,
-                    "--relay-service-key",
-                    service_key,
                     &charlie_output_arg,
                 ],
                 "wrong recipient object get",
@@ -245,8 +240,6 @@ async fn mvp_s41_assert_dm_attachment(
                     "bob_s41_account",
                     "--conversation",
                     "conv_s41_attachment",
-                    "--relay-service-key",
-                    service_key,
                 ],
             )
             .await?;
@@ -301,8 +294,6 @@ async fn mvp_s41_assert_dm_attachment(
                     &input_arg,
                     "--relay-url",
                     relay_url,
-                    "--relay-service-key",
-                    service_key,
                     "--attachment-chunk-size",
                     "1024",
                 ],
@@ -323,8 +314,6 @@ async fn mvp_s41_assert_dm_attachment(
                     "charlie_s41_account",
                     "--conversation",
                     "conv_s41_wrong_device",
-                    "--relay-service-key",
-                    service_key,
                 ],
                 "wrong recipient device read",
             )
