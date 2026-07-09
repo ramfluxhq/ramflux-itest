@@ -189,9 +189,7 @@ async fn mvp_s48_assert_own_device_sync(
                     &ramflux_sdk::LocalBusDeviceSyncExportRequest {
                         target_device_id: "alice_device_s48_b".to_owned(),
                         relay_endpoint: relay_url.to_owned(),
-                        relay_service_key_base64: Some(
-                            "ramflux-relay-itest-service-key".to_owned(),
-                        ),
+                        relay_service_key_base64: None,
                         chunk_size: Some(4096),
                     },
                 )
@@ -206,9 +204,7 @@ async fn mvp_s48_assert_own_device_sync(
                     "device.sync.import",
                     &ramflux_sdk::LocalBusDeviceSyncImportRequest {
                         envelope: exported["envelope"].clone(),
-                        relay_service_key_base64: Some(
-                            "ramflux-relay-itest-service-key".to_owned(),
-                        ),
+                        relay_service_key_base64: None,
                     },
                 )
                 .await?;
