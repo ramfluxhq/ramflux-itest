@@ -167,6 +167,8 @@ mod mvp_s61_provider_keyring_rotation;
 mod mvp_s62_object_v3_quic_fault;
 #[path = "mvp_s63_rfd_midflight_crash.rs"]
 mod mvp_s63_rfd_midflight_crash;
+#[path = "mvp_s64_relay_quic_capacity.rs"]
+mod mvp_s64_relay_quic_capacity;
 #[path = "objects.rs"]
 mod objects;
 #[path = "transport_node_store.rs"]
