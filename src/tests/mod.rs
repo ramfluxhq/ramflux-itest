@@ -165,6 +165,8 @@ mod mvp_s60_gateway_attestation_rotation;
 mod mvp_s61_provider_keyring_rotation;
 #[path = "mvp_s62_object_v3_quic_fault.rs"]
 mod mvp_s62_object_v3_quic_fault;
+#[path = "mvp_s63_rfd_midflight_crash.rs"]
+mod mvp_s63_rfd_midflight_crash;
 #[path = "objects.rs"]
 mod objects;
 #[path = "transport_node_store.rs"]
