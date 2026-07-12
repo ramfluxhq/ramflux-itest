@@ -6,8 +6,8 @@
   "public_envelope_class": "current_verified_64k",
   "runs": [
     {
-      "artifact": "perf_d1_2_macro_a2d16_run0.json",
-      "run_id": "a2d16_run0"
+      "artifact": "perf_d1_2_macro_d12a_fresh1_run0.json",
+      "run_id": "d12a_fresh1_run0"
     }
   ],
   "schema": "ramflux.perf.d1.macrobench.manifest.v1",

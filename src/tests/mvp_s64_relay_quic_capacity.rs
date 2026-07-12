@@ -212,6 +212,12 @@ struct S64BoundaryDiag {
 struct S64Threshold {
     name: String,
     passed: bool,
+    /// CTRL-087: a diagnostic threshold is recorded and reported (field + pass/fail preserved,
+    /// never deleted or hidden) but does NOT hard-fail the acceptance run on its own. Currently
+    /// only the single-run 5-sample strict-monotonic+25% `RssAnon` check, retired from hard-gate to
+    /// diagnostic flag because a glibc never-trim high-water can look monotonic over a short window
+    /// while the numerical median/peak/`memory.current` hard gates already bound the footprint.
+    diagnostic: bool,
     detail: String,
 }
 
@@ -551,6 +557,13 @@ async fn s64_flow(
     if std::env::var("RAMFLUX_S64_MEM02").as_deref() == Ok("1") {
         return s64_mem02_flow(node, relay_ca, relay_url, ca_cert_env, issuer_node).await;
     }
+    // CTRL-088 PERF-D1-2b-K4 median-gate diagnostic (env-gated, default-off): run ONLY A_small K=4 with
+    // 12 measured rounds (vs the standard 5) so the median-growth ratio can be studied over many
+    // 5-sample windows. Absolute/peak/FD/conservation are still fail-stop; the 1.25 median-growth ratio
+    // is recorded as DATA (the object under study), NOT asserted. Does not touch the standard grid.
+    if std::env::var("RAMFLUX_S64_D2BK4").as_deref() == Ok("1") {
+        return s64_d2bk4_flow(node, relay_ca, relay_url, ca_cert_env, issuer_node).await;
+    }
     let audience_node = "node_a.realnet";
     let rf_binary = s64_build_rf_binary().await?;
     let ca_cert_arg = mvp_s4_path_arg(&node.ca_cert);
@@ -669,8 +682,16 @@ async fn s64_flow(
             path.file_name().map_or_else(String::new, |name| name.to_string_lossy().into_owned()),
         ));
 
-        // Hard gate: every threshold must pass on every run.
-        let failed: Vec<&S64Threshold> = artifact.thresholds.iter().filter(|t| !t.passed).collect();
+        // Hard gate: every non-diagnostic threshold must pass on every run. CTRL-087: diagnostic
+        // thresholds (the strict-monotonic RssAnon flag) are still recorded in the artifact but do
+        // not hard-fail on their own; log them separately so a monotonic window is never hidden.
+        let failed: Vec<&S64Threshold> =
+            artifact.thresholds.iter().filter(|t| !t.passed && !t.diagnostic).collect();
+        let diagnostic_flags: Vec<&S64Threshold> =
+            artifact.thresholds.iter().filter(|t| !t.passed && t.diagnostic).collect();
+        if !diagnostic_flags.is_empty() {
+            eprintln!("STEP s64: {run_id} diagnostic flags (non-fatal): {diagnostic_flags:?}");
+        }
         assert!(failed.is_empty(), "s64 {run_id} acceptance thresholds failed: {failed:?}");
     }
 
@@ -693,6 +714,212 @@ async fn s64_flow(
     )?;
 
     std::fs::remove_dir_all(&temp).ok();
+    Ok(())
+}
+
+// ---- CTRL-088 PERF-D1-2b-K4 median-gate diagnostic (env-gated `RAMFLUX_S64_D2BK4=1`, default-off) ----
+//
+// PERF-D1-2a-closure saw A_small K4 hard-fail the `rss_anon_median_growth_le_1_25x` gate on one of
+// three fresh grids because a single deep RssAnon dip in the first 3-sample window inflated the ratio
+// (median(last3)/median(first3)). This diagnostic reruns ONLY A_small K4 with 12 measured rounds so
+// the ratio can be studied over 8 sliding 5-sample windows and a 12-point regression, deciding whether
+// the median gate is unstable to allocator high-water dips (bounded) or reflects a genuine sustained
+// rise. It reuses the real K4 machinery via `s64_run_point`. Absolute/peak/FD/conservation remain
+// fail-stop; the 1.25 median-growth ratio is recorded as DATA, NOT asserted here.
+
+#[cfg(feature = "realnet")]
+#[derive(Clone, Debug, serde::Serialize)]
+struct S64D2bK4Artifact {
+    schema: String,
+    run_id: String,
+    git_sha: String,
+    git_dirty: bool,
+    build: String,
+    generated_note: String,
+    k: usize,
+    rounds: usize,
+    object_bytes: u64,
+    chunk_bytes: u64,
+    objects_per_daemon_per_round: usize,
+    ops_ok: usize,
+    ops_total: usize,
+    error_classes: Vec<String>,
+    http_object_requests: usize,
+    distinct_connections: usize,
+    max_requests_on_one_connection: usize,
+    // Full per-measured-round vectors (`rounds` entries each) — the raw growth evidence.
+    // measured_rss_anon_mib == relay Private_Dirty (same /proc source); measured_rss_file_mib ~= redb
+    // page cache (mmap, reclaimable). No distinct per-round Private_Dirty/redb vector is sampled for
+    // A_small (collect_mem is D_resource-only), so those equivalences are noted, not duplicated.
+    measured_rss_anon_mib: Vec<f64>,
+    measured_rss_mib: Vec<f64>,
+    measured_rss_file_mib: Vec<f64>,
+    measured_fd: Vec<u64>,
+    // Recorded data over the anon samples (NOT gated in this mode).
+    median_growth_ratio: f64,
+    peak_ratio: f64,
+    // CTRL-089 RELAY-MEM-02-A1: when true, peak_ratio (1.75) AND median_growth (1.25) are RECORD-ONLY
+    // (not asserted) so the RssAnon curve PAST the 1.75 crossing can be observed. All other
+    // fail-stop gates (success/http/conservation/memcurrent/FD) remain asserted.
+    plateau_mode: bool,
+}
+
+#[cfg(feature = "realnet")]
+#[allow(clippy::too_many_lines)]
+async fn s64_d2bk4_flow(
+    node: &S8RealnetNode,
+    relay_ca: &Path,
+    relay_url: &str,
+    ca_cert_env: &str,
+    issuer_node: &str,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let audience_node = "node_a.realnet";
+    let rf_binary = s64_build_rf_binary().await?;
+    let ca_cert_arg = mvp_s4_path_arg(&node.ca_cert);
+    let build_kind = if s64_release_build() { "release" } else { "debug" };
+    let temp = temp_root("s64_macrobench")?;
+    let (git_sha, git_dirty) = s64_git_state();
+    let run_tag = std::env::var("RAMFLUX_S64_RUN_TAG").unwrap_or_else(|_| "d2bk4".to_owned());
+    let run_id = format!("{run_tag}_run0");
+
+    // CTRL-089 RELAY-MEM-02-A1: parametrize the measured-round count (default 12 -> preserves the
+    // CTRL-088 behavior when unset). Part A runs with RAMFLUX_S64_D2BK4_ROUNDS=30 to see the curve past
+    // the 1.75 crossing. S64_WARMUP_ROUNDS (2) is unchanged.
+    let rounds: usize = std::env::var("RAMFLUX_S64_D2BK4_ROUNDS")
+        .ok()
+        .and_then(|value| value.parse().ok())
+        .filter(|&value| value >= 3)
+        .unwrap_or(12);
+    // CTRL-089 plateau-observation mode: peak_ratio (1.75) AND median_growth (1.25) become RECORD-ONLY
+    // (not asserted) so the RssAnon curve PAST the 1.75 crossing is observable. All other fail-stop
+    // gates (success/http/conservation/memcurrent/FD) remain asserted even in plateau mode.
+    let plateau_mode = std::env::var("RAMFLUX_S64_D2BK4_PLATEAU").as_deref() == Ok("1");
+
+    // A_small K4, but `rounds` measured rounds (vs the standard 5). Same object/concurrency/chunk shape;
+    // only rounds is parametrized and k restricted to 4. S64_WARMUP_ROUNDS (2) is unchanged.
+    let custom_point = S64Point {
+        name: "A_small",
+        ks: &[4],
+        object_bytes: 64 * 1024,
+        chunk_bytes: 64 * 1024,
+        objects_per_daemon_per_round: 4,
+        rounds,
+    };
+    eprintln!(
+        "STEP d2bk4: === {run_id} (build={build_kind}) A_small K4 {rounds}-round median-gate diagnostic (plateau_mode={plateau_mode}) ==="
+    );
+
+    let point = s64_run_point(
+        &rf_binary,
+        &temp,
+        relay_ca,
+        relay_url,
+        ca_cert_env,
+        &ca_cert_arg,
+        issuer_node,
+        audience_node,
+        &run_id,
+        custom_point,
+        4,
+    )
+    .await?;
+
+    // The object under study, over the 12 measured RssAnon samples — DATA only, not a stop-gate.
+    let median_growth_ratio = s64_median_growth_ratio(&point.resource.measured_rss_anon_mib);
+    let peak_ratio = s64_peak_ratio(&point.resource.measured_rss_anon_mib);
+
+    // STOP-gates (absolute/peak/FD/conservation). Compute all first; write artifact BEFORE asserting.
+    let fd_first = point.resource.measured_fd.first().copied().unwrap_or(0);
+    let fd_peak = point.resource.measured_fd.iter().copied().max().unwrap_or(0);
+    let memcurrent_peak = point.resource.measured_rss_mib.iter().copied().fold(f64::MIN, f64::max);
+    let success_ok = point.ops_ok == point.ops_total && point.error_classes.is_empty();
+    let http_zero_ok = point.http_object_requests == 0;
+    let conservation_ok = point.connections.distinct_connections >= 4
+        && point.connections.max_requests_on_one_connection > 1;
+    let peak_ok = peak_ratio <= 1.75;
+    let memcurrent_ok = memcurrent_peak <= 512.0;
+    let fd_ok = fd_peak <= fd_first + 2 && fd_peak <= 256;
+
+    // Schema v2 whenever plateau_mode is set OR the round count departs from the CTRL-088 default (12);
+    // v1 preserved for the unmodified 12-round stop-gate diagnostic.
+    let schema = if plateau_mode || rounds != 12 {
+        "ramflux.perf.d1.2b.k4.median_diagnostic.v2"
+    } else {
+        "ramflux.perf.d1.2b.k4.median_diagnostic.v1"
+    };
+    let generated_note = if plateau_mode {
+        "CTRL-089 RELAY-MEM-02-A1-PROFILE (plateau mode): A_small K4 with `rounds` measured rounds, NORMAL production allocator; peak_ratio(1.75) AND median_growth(1.25) recorded as DATA only (NOT asserted) to observe the RssAnon curve past the 1.75 crossing; success/http/conservation/memcurrent(512)/FD remain fail-stop. RssAnon==Private_Dirty (same /proc source) and redb page cache ~= measured_rss_file_mib (mmap, reclaimable); no distinct per-round Private_Dirty/redb vector is sampled for A_small (collect_mem is D_resource-only). mac-dev, not an SLO. Distinguishing bounded high-water plateau from per-op retained leak requires the Part B allocator profile."
+    } else {
+        "CTRL-088 PERF-D1-2b-K4: A_small K4 median-gate diagnostic; median-growth ratio recorded as DATA (not gated); absolute/peak/FD/conservation fail-stop; mac-dev, not an SLO"
+    };
+    let artifact = S64D2bK4Artifact {
+        schema: schema.to_owned(),
+        run_id: run_id.clone(),
+        git_sha,
+        git_dirty,
+        build: build_kind.to_owned(),
+        generated_note: generated_note.to_owned(),
+        k: point.k,
+        rounds: point.rounds,
+        object_bytes: point.object_bytes,
+        chunk_bytes: point.chunk_bytes,
+        objects_per_daemon_per_round: point.objects_per_daemon_per_round,
+        ops_ok: point.ops_ok,
+        ops_total: point.ops_total,
+        error_classes: point.error_classes.clone(),
+        http_object_requests: point.http_object_requests,
+        distinct_connections: point.connections.distinct_connections,
+        max_requests_on_one_connection: point.connections.max_requests_on_one_connection,
+        measured_rss_anon_mib: point.resource.measured_rss_anon_mib.clone(),
+        measured_rss_mib: point.resource.measured_rss_mib.clone(),
+        measured_rss_file_mib: point.resource.measured_rss_file_mib.clone(),
+        measured_fd: point.resource.measured_fd.clone(),
+        median_growth_ratio,
+        peak_ratio,
+        plateau_mode,
+    };
+    let dir = code_root().join("ramflux-itest/perf-artifacts");
+    std::fs::create_dir_all(&dir)?;
+    let path = dir.join(format!("perf_d1_2b_k4_{run_id}.json"));
+    std::fs::write(&path, serde_json::to_vec_pretty(&artifact)?)?;
+    eprintln!("STEP d2bk4: wrote artifact {}", path.display());
+    eprintln!(
+        "STEP d2bk4: {run_id} DATA plateau_mode={plateau_mode} rounds={rounds} median_growth_ratio(anon)={median_growth_ratio:.4} peak_ratio(anon)={peak_ratio:.4} memcurrent_peak={memcurrent_peak:.1}MiB fd_first={fd_first} fd_peak={fd_peak} anon={:?}",
+        point.resource.measured_rss_anon_mib
+    );
+
+    std::fs::remove_dir_all(&temp).ok();
+
+    // Fail-stop gates — asserted AFTER the artifact is persisted so evidence survives a failure.
+    assert!(
+        success_ok,
+        "d2bk4 {run_id} success gate failed: ops_ok={} ops_total={} errors={:?}",
+        point.ops_ok, point.ops_total, point.error_classes
+    );
+    assert!(
+        http_zero_ok,
+        "d2bk4 {run_id} HTTP object requests != 0: {}",
+        point.http_object_requests
+    );
+    assert!(
+        conservation_ok,
+        "d2bk4 {run_id} capture conservation failed: distinct={} max_on_one={}",
+        point.connections.distinct_connections, point.connections.max_requests_on_one_connection
+    );
+    // CTRL-089: in plateau mode the peak_ratio (1.75) is RECORD-ONLY so the curve past the crossing is
+    // observable; the literal 1.75 constant is unchanged, only whether it fail-stops this diagnostic.
+    if plateau_mode {
+        eprintln!(
+            "STEP d2bk4: {run_id} plateau_mode: peak_ratio(anon)={peak_ratio:.4} recorded-only (1.75 NOT asserted); peak_ok_would_be={peak_ok}"
+        );
+    } else {
+        assert!(peak_ok, "d2bk4 {run_id} anon peak_ratio {peak_ratio} > 1.75");
+    }
+    assert!(memcurrent_ok, "d2bk4 {run_id} memcurrent peak {memcurrent_peak} MiB > 512");
+    assert!(
+        fd_ok,
+        "d2bk4 {run_id} fd gate failed: peak={fd_peak} first={fd_first} (need <=first+2 && <=256)"
+    );
     Ok(())
 }
 
@@ -2449,7 +2676,10 @@ fn s64_evaluate_thresholds(
     out: &mut Vec<S64Threshold>,
 ) {
     let mut push = |name: &str, passed: bool, detail: String| {
-        out.push(S64Threshold { name: name.to_owned(), passed, detail });
+        // CTRL-087: the strict-monotonic RssAnon check is a diagnostic flag, not a standalone
+        // hard gate. Classified here by name so the field/value is always recorded, never hidden.
+        let diagnostic = name.ends_with("_rss_anon_not_monotonic_unbounded");
+        out.push(S64Threshold { name: name.to_owned(), passed, diagnostic, detail });
     };
 
     for point in points {

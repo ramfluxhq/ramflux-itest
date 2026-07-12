@@ -4,6 +4,20 @@
 #![allow(unused_imports)]
 use crate::*;
 
+/// `compose down` shutdown-grace timeout (seconds). Default "2" (fast teardown for normal tests).
+/// CTRL-089 DIAGNOSTIC: a heap-profiler relay build dumps its dhat json on SIGTERM, and symbolizing
+/// the (unstripped) binary's backtraces at drop can exceed 2s → SIGKILL truncates the dump. The
+/// profile run sets `RAMFLUX_ITEST_COMPOSE_DOWN_TIMEOUT` (e.g. 30) so the relay flushes before SIGKILL;
+/// unset, every normal test tears down in 2s exactly as before.
+#[cfg(all(test, feature = "realnet"))]
+pub(crate) fn compose_down_timeout() -> String {
+    std::env::var("RAMFLUX_ITEST_COMPOSE_DOWN_TIMEOUT")
+        .ok()
+        .map(|value| value.trim().to_owned())
+        .filter(|value| value.parse::<u64>().is_ok())
+        .unwrap_or_else(|| "2".to_owned())
+}
+
 #[cfg(all(test, feature = "realnet"))]
 pub(crate) fn container_runtime() -> &'static str {
     if std::process::Command::new("docker").arg("--version").status().is_ok() {
@@ -164,7 +178,7 @@ impl Drop for ComposeDownGuard {
         let _status = command
             .arg("down")
             .arg("--timeout")
-            .arg("2")
+            .arg(compose_down_timeout())
             .arg("-v")
             .envs(compose_env.iter().map(|(key, value)| (key, value)))
             .current_dir(&self.deploy_root)
@@ -238,7 +252,7 @@ impl Drop for ComposeProjectDownGuard {
         let _status = command
             .arg("down")
             .arg("--timeout")
-            .arg("2")
+            .arg(compose_down_timeout())
             .arg("-v")
             .arg("--remove-orphans")
             .envs(compose_env.iter().map(|(key, value)| (key, value)))
@@ -329,7 +343,7 @@ impl Drop for ProductionComposeDownGuard {
             .arg("docker-compose.yml")
             .arg("down")
             .arg("--timeout")
-            .arg("2")
+            .arg(compose_down_timeout())
             .arg("-v")
             .arg("--remove-orphans")
             .envs(compose_env.iter().map(|(key, value)| (key, value)))
