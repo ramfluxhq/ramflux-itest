@@ -7,11 +7,20 @@ use ramflux_storage::VaultSecretSource;
 
 #[cfg(feature = "realnet")]
 #[test]
+// T22-A1 / RQ-04: enabling the LocalMint runtime opt-in for the in-process bus requires
+// `std::env::set_var`, which is `unsafe` in edition 2024. Scoped allow for this test setup only.
+#[allow(unsafe_code)]
 fn mvp_s40_realnet_object_resume_status() -> Result<(), Box<dyn std::error::Error>> {
     if std::env::var("RAMFLUX_ITEST_REALNET").as_deref() != Ok("1") {
         eprintln!("skipping realnet full test; set RAMFLUX_ITEST_REALNET=1");
         return Ok(());
     }
+
+    // T22-A1 / RQ-04: the legacy LocalMint (v2 shared-HMAC) path is double-gated — the compile
+    // feature `itest-local-mint` (enabled via the itest `realnet` feature) plus this runtime opt-in.
+    // This test drives the bus in-process, so the opt-in must live in the test process.
+    // SAFETY: realnet tests run under a single-filter invocation, so nothing races on this env.
+    unsafe { std::env::set_var("RAMFLUX_SDK_OBJECT_RELAY_LOCAL_MINT", "1") };
 
     let ports = S8ComposePorts {
         gateway_http: 64_181,
@@ -60,7 +69,9 @@ async fn mvp_s40_assert_object_resume_status(
 ) -> Result<(), Box<dyn std::error::Error>> {
     let temp_root = temp_root("s40_object_resume")?;
     let data_root = temp_root.join("alice/data");
-    let socket = temp_root.join("alice/rfd.sock");
+    // macOS AF_UNIX paths have a small SUN_LEN limit; keep the socket path short even though the
+    // durable account data remains under the per-test temporary root.
+    let socket = PathBuf::from(format!("/tmp/ramflux-s40-rfd-{}.sock", std::process::id()));
     let input_path = temp_root.join("object-input.bin");
     let output_path = temp_root.join("object-output.bin");
     let rf_binary = mvp_s4_build_rf_binary().await?;
@@ -135,12 +146,24 @@ async fn mvp_s40_assert_object_resume_status(
         let _ = shutdown_tx.send(true);
         result
     };
-    let (server_result, flow_result) =
-        tokio::time::timeout(Duration::from_mins(4), async { tokio::join!(server, first_run) })
-            .await
-            .map_err(|_elapsed| "s40 first local-bus run timed out")?;
-    flow_result?;
-    server_result?;
+    tokio::pin!(server);
+    tokio::pin!(first_run);
+    tokio::time::timeout(Duration::from_mins(4), async {
+        tokio::select! {
+            server_result = &mut server => {
+                Err::<(), Box<dyn std::error::Error>>(
+                    format!("local-bus server exited before flow completed: {server_result:?}").into(),
+                )
+            }
+            flow_result = &mut first_run => {
+                flow_result?;
+                server.await?;
+                Ok(())
+            }
+        }
+    })
+    .await
+    .map_err(|_elapsed| "s40 first local-bus run timed out")??;
 
     let (restart_tx, restart_rx) = tokio::sync::watch::channel(false);
     let restarted = ramflux_sdk::serve_local_bus_until(
@@ -221,13 +244,25 @@ async fn mvp_s40_assert_object_resume_status(
         let _ = restart_tx.send(true);
         result
     };
-    let (server_result, flow_result) = tokio::time::timeout(Duration::from_mins(4), async {
-        tokio::join!(restarted, resumed_flow)
+    tokio::pin!(restarted);
+    tokio::pin!(resumed_flow);
+    tokio::time::timeout(Duration::from_mins(4), async {
+        tokio::select! {
+            server_result = &mut restarted => {
+                Err::<(), Box<dyn std::error::Error>>(
+                    format!("restarted local-bus server exited before flow completed: {server_result:?}").into(),
+                )
+            }
+            flow_result = &mut resumed_flow => {
+                flow_result?;
+                restarted.await?;
+                Ok(())
+            }
+        }
     })
     .await
-    .map_err(|_elapsed| "s40 restarted local-bus run timed out")?;
-    flow_result?;
-    server_result?;
+    .map_err(|_elapsed| "s40 restarted local-bus run timed out")??;
+    let _ = std::fs::remove_file(&socket);
     std::fs::remove_dir_all(&temp_root)?;
     Ok(())
 }
@@ -386,7 +421,7 @@ fn mvp_s40_relay_file(
     compose_project: &str,
     path: &str,
 ) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
-    let output = std::process::Command::new("docker")
+    let output = std::process::Command::new(container_runtime())
         .arg("compose")
         .arg("-p")
         .arg(compose_project)

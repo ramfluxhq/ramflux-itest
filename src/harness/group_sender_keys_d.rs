@@ -418,8 +418,21 @@ pub(crate) async fn mvp_s7_send_sender_key_distribution(
         .await?;
     assert_eq!(submitted.target_delivery_id, recipient_spec.target_delivery_id);
     assert_node_opaque_payload(&submitted.envelope.encrypted_payload, distribution);
+    // T24-A2: the receive path now takes the account's relay QUIC pool for attachment fetches.
+    // This harness disables attachment auto-fetch (`false`), so the pool is unused here but still
+    // required by the signature; a fresh functional-default pool suffices.
+    let relay_quic_pool = ramflux_transport::RelayQuicPool::new(
+        ramflux_transport::RelayQuicPoolConfig::functional_default()?,
+    );
     let delivered = recipient
-        .receive_gateway_plaintext_deliveries(recipient_engine, 10, conversation_id, false, None)
+        .receive_gateway_plaintext_deliveries(
+            recipient_engine,
+            &relay_quic_pool,
+            10,
+            conversation_id,
+            false,
+            None,
+        )
         .await?;
     assert_eq!(delivered.len(), 1);
     assert_eq!(delivered[0].entry.envelope.envelope_id, envelope_id);

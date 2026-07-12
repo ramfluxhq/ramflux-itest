@@ -291,7 +291,9 @@ pub(crate) async fn mvp_s4_build_rf_binary() -> Result<PathBuf, Box<dyn std::err
     let manifest = code_root().join("ramflux/apps/rf/Cargo.toml");
     let status = tokio::task::spawn_blocking(move || {
         std::process::Command::new("cargo")
-            .args(["build", "--quiet", "--manifest-path"])
+            // T22-A1 / RQ-04: the itest rf binary enables itest-local-mint so LocalMint object tests
+            // (e.g. mvp_s40 `--relay-service-key`) keep working. Production rf is built without it.
+            .args(["build", "--quiet", "--features", "itest-local-mint", "--manifest-path"])
             .arg(manifest)
             .status()
     })

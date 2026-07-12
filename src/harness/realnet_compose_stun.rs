@@ -5,6 +5,17 @@
 use crate::*;
 
 #[cfg(all(test, feature = "realnet"))]
+pub(crate) fn container_runtime() -> &'static str {
+    if std::process::Command::new("docker").arg("--version").status().is_ok() {
+        "docker"
+    } else if std::process::Command::new("podman").arg("--version").status().is_ok() {
+        "podman"
+    } else {
+        "docker"
+    }
+}
+
+#[cfg(all(test, feature = "realnet"))]
 #[derive(Clone, Copy, Default)]
 pub(crate) struct ItestComposeOverrides {
     pub(crate) federation_compio: bool,
@@ -86,7 +97,7 @@ pub(crate) fn run_docker_compose_with_env_and_overrides(
 ) -> Result<(), Box<dyn std::error::Error>> {
     ensure_itest_shared_network()?;
     let compose_env = compose_env_with_required_defaults(env);
-    let mut command = std::process::Command::new("docker");
+    let mut command = std::process::Command::new(container_runtime());
     command.arg("compose");
     let _env_file = add_compose_env_file_arg(&mut command, "itest", &compose_env)?;
     add_itest_compose_files(
@@ -136,7 +147,7 @@ impl ComposeDownGuard {
 impl Drop for ComposeDownGuard {
     fn drop(&mut self) {
         let compose_env = compose_env_with_required_defaults(&[]);
-        let mut command = std::process::Command::new("docker");
+        let mut command = std::process::Command::new(container_runtime());
         command.arg("compose");
         let _env_file = add_compose_env_file_arg(&mut command, "itest-down", &compose_env).ok();
         add_itest_compose_files(
@@ -152,6 +163,8 @@ impl Drop for ComposeDownGuard {
         );
         let _status = command
             .arg("down")
+            .arg("--timeout")
+            .arg("2")
             .arg("-v")
             .envs(compose_env.iter().map(|(key, value)| (key, value)))
             .current_dir(&self.deploy_root)
@@ -204,7 +217,7 @@ impl Drop for ComposeProjectDownGuard {
             self.gateway_compio,
             self.notify_compio,
         );
-        let mut command = std::process::Command::new("docker");
+        let mut command = std::process::Command::new(container_runtime());
         command.arg("compose");
         let _env_file =
             add_compose_env_file_arg(&mut command, &self.project_name, &compose_env).ok();
@@ -224,6 +237,8 @@ impl Drop for ComposeProjectDownGuard {
         );
         let _status = command
             .arg("down")
+            .arg("--timeout")
+            .arg("2")
             .arg("-v")
             .arg("--remove-orphans")
             .envs(compose_env.iter().map(|(key, value)| (key, value)))
@@ -254,7 +269,7 @@ fn dump_compose_logs(
     let Ok(log_file_for_stderr) = log_file.try_clone() else {
         return;
     };
-    let mut command = std::process::Command::new("docker");
+    let mut command = std::process::Command::new(container_runtime());
     command.arg("compose");
     let _env_file = add_compose_env_file_arg(&mut command, project_name, env).ok();
     command.arg("-p").arg(project_name);
@@ -303,7 +318,7 @@ impl ProductionComposeDownGuard {
 impl Drop for ProductionComposeDownGuard {
     fn drop(&mut self) {
         let compose_env = compose_env_with_required_defaults(&self.env);
-        let mut command = std::process::Command::new("docker");
+        let mut command = std::process::Command::new(container_runtime());
         command.arg("compose");
         let _env_file =
             add_compose_env_file_arg(&mut command, &self.project_name, &compose_env).ok();
@@ -313,6 +328,8 @@ impl Drop for ProductionComposeDownGuard {
             .arg("-f")
             .arg("docker-compose.yml")
             .arg("down")
+            .arg("--timeout")
+            .arg("2")
             .arg("-v")
             .arg("--remove-orphans")
             .envs(compose_env.iter().map(|(key, value)| (key, value)))
@@ -355,7 +372,7 @@ pub(crate) fn run_docker_compose_project_with_overrides(
 ) -> Result<(), Box<dyn std::error::Error>> {
     ensure_itest_shared_network()?;
     let compose_env = compose_env_with_required_defaults(env);
-    let mut command = std::process::Command::new("docker");
+    let mut command = std::process::Command::new(container_runtime());
     command.arg("compose");
     let _env_file = add_compose_env_file_arg(&mut command, project_name, &compose_env)?;
     command.arg("-p").arg(project_name);
@@ -388,6 +405,9 @@ fn add_itest_compose_files(command: &mut std::process::Command, overrides: Itest
     }
     if cross_gateway_compose_enabled() {
         command.arg("-f").arg("docker-compose.itest.cross-gateway.yml");
+    }
+    if object_v3_compose_enabled() {
+        command.arg("-f").arg("docker-compose.itest.object-v3.yml");
     }
     if overrides.notify_mesh {
         command.arg("-f").arg("docker-compose.itest.notify-mesh.yml");
@@ -501,6 +521,11 @@ fn cross_gateway_compose_enabled() -> bool {
 }
 
 #[cfg(all(test, feature = "realnet"))]
+fn object_v3_compose_enabled() -> bool {
+    compose_bool_env("RAMFLUX_OBJECT_V3")
+}
+
+#[cfg(all(test, feature = "realnet"))]
 fn notify_mesh_compose_enabled() -> bool {
     compose_bool_env("RAMFLUX_NOTIFY_MESH")
 }
@@ -521,7 +546,7 @@ fn compose_bool_env(name: &str) -> bool {
 pub(crate) fn ensure_itest_shared_network() -> Result<(), Box<dyn std::error::Error>> {
     let network = std::env::var("RAMFLUX_ITEST_SHARED_NETWORK")
         .unwrap_or_else(|_| "ramflux-itest-mesh".to_owned());
-    let inspect = std::process::Command::new("docker")
+    let inspect = std::process::Command::new(container_runtime())
         .arg("network")
         .arg("inspect")
         .arg(&network)
@@ -529,8 +554,11 @@ pub(crate) fn ensure_itest_shared_network() -> Result<(), Box<dyn std::error::Er
     if inspect.success() {
         return Ok(());
     }
-    let create =
-        std::process::Command::new("docker").arg("network").arg("create").arg(&network).status()?;
+    let create = std::process::Command::new(container_runtime())
+        .arg("network")
+        .arg("create")
+        .arg(&network)
+        .status()?;
     if create.success() {
         Ok(())
     } else {
@@ -546,7 +574,7 @@ pub(crate) fn run_production_compose_project(
     args: &[&str],
 ) -> Result<(), Box<dyn std::error::Error>> {
     let compose_env = compose_env_with_required_defaults(env);
-    let mut command = std::process::Command::new("docker");
+    let mut command = std::process::Command::new(container_runtime());
     command.arg("compose");
     let _env_file = add_compose_env_file_arg(&mut command, project_name, &compose_env)?;
     command

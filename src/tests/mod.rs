@@ -149,6 +149,22 @@ mod mvp_s51_home_node_migration_forward;
 mod mvp_s52_media_relay;
 #[path = "mvp_s53_quic_ingress_perf.rs"]
 mod mvp_s53_quic_ingress_perf;
+#[path = "mvp_s54_object_v3_runtime.rs"]
+mod mvp_s54_object_v3_runtime;
+#[path = "mvp_s55_object_v3_public_sdk.rs"]
+mod mvp_s55_object_v3_public_sdk;
+#[path = "mvp_s56_object_v3_grantee.rs"]
+mod mvp_s56_object_v3_grantee;
+#[path = "mvp_s58_trust_snapshot_lifecycle.rs"]
+mod mvp_s58_trust_snapshot_lifecycle;
+#[path = "mvp_s59_trust_root_cert_rotation.rs"]
+mod mvp_s59_trust_root_cert_rotation;
+#[path = "mvp_s60_gateway_attestation_rotation.rs"]
+mod mvp_s60_gateway_attestation_rotation;
+#[path = "mvp_s61_provider_keyring_rotation.rs"]
+mod mvp_s61_provider_keyring_rotation;
+#[path = "mvp_s62_object_v3_quic_fault.rs"]
+mod mvp_s62_object_v3_quic_fault;
 #[path = "objects.rs"]
 mod objects;
 #[path = "transport_node_store.rs"]

@@ -68,9 +68,11 @@ async fn mvp_s41_assert_dm_attachment(
     let alice_data = temp_root.join("alice/data");
     let bob_data = temp_root.join("bob/data");
     let charlie_data = temp_root.join("charlie/data");
-    let alice_socket = temp_root.join("alice/rfd.sock");
-    let bob_socket = temp_root.join("bob/rfd.sock");
-    let charlie_socket = temp_root.join("charlie/rfd.sock");
+    // Keep AF_UNIX paths below macOS SUN_LEN while retaining per-test data under temp_root.
+    let pid = std::process::id();
+    let alice_socket = PathBuf::from(format!("/tmp/ramflux-s41-alice-{pid}.sock"));
+    let bob_socket = PathBuf::from(format!("/tmp/ramflux-s41-bob-{pid}.sock"));
+    let charlie_socket = PathBuf::from(format!("/tmp/ramflux-s41-charlie-{pid}.sock"));
     let filename_sentinel = "mvp_s41_secret_filename_do_not_leak";
     let plaintext_window = b"mvp_s41_attachment_plaintext_window_do_not_leak";
     let input_path = temp_root.join(filename_sentinel);
@@ -366,6 +368,9 @@ async fn mvp_s41_assert_dm_attachment(
     alice_result?;
     bob_result?;
     charlie_result?;
+    let _ = std::fs::remove_file(&alice_socket);
+    let _ = std::fs::remove_file(&bob_socket);
+    let _ = std::fs::remove_file(&charlie_socket);
     std::fs::remove_dir_all(&temp_root)?;
     Ok(())
 }
@@ -413,7 +418,8 @@ async fn mvp_s41_rf_failure(
         .stderr(std::process::Stdio::piped())
         .kill_on_drop(true)
         .output()
-        .await?;
+        .await
+        .map_err(|error| format!("{step}: failed to start rf {}: {error}", binary.display()))?;
     if output.status.success() {
         return Err(format!("{step} unexpectedly succeeded").into());
     }
@@ -523,7 +529,7 @@ fn mvp_s41_service_file(
     service: &str,
     path: &str,
 ) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
-    let output = std::process::Command::new("docker")
+    let output = std::process::Command::new(container_runtime())
         .arg("compose")
         .arg("-p")
         .arg(compose_project)
