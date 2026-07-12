@@ -1,0 +1,389 @@
+{
+  "schema": "ramflux.perf.d1.macrobench.v1",
+  "run_id": "a2d16_run0",
+  "git_sha": "3baa1fdfeef2ef7831df1ecd8097d9c4037ea7e5",
+  "git_dirty": true,
+  "build": "release",
+  "generated_note": "PERF-D1-2a public-path K-daemon macrobench, CTRL-073 64KiB verified envelope; large objects blocked by OBJ-IPC-01; mac-dev, not an SLO",
+  "public_envelope_class": "current_verified_64k",
+  "supported_public_object_bytes": 65536,
+  "known_limit_local_bus_frame_bytes": 1048576,
+  "large_object_capacity": "blocked_OBJ-IPC-01",
+  "large_object_public_path": "blocked_by_OBJ-IPC-01",
+  "namespace_seed_slots": [
+    {
+      "point": "Zprobe",
+      "k": 1,
+      "account_prefix": "s64_acct_Zprobe_k1_a2d16_run0_d",
+      "seed_slot_first": 0,
+      "seed_slot_last": 0,
+      "root_seed_first": "90",
+      "root_seed_last": "90"
+    },
+    {
+      "point": "A_small",
+      "k": 1,
+      "account_prefix": "s64_acct_A_small_k1_a2d16_run0_d",
+      "seed_slot_first": 1,
+      "seed_slot_last": 1,
+      "root_seed_first": "92",
+      "root_seed_last": "92"
+    },
+    {
+      "point": "A_small",
+      "k": 4,
+      "account_prefix": "s64_acct_A_small_k4_a2d16_run0_d",
+      "seed_slot_first": 2,
+      "seed_slot_last": 5,
+      "root_seed_first": "94",
+      "root_seed_last": "9a"
+    },
+    {
+      "point": "A_small",
+      "k": 8,
+      "account_prefix": "s64_acct_A_small_k8_a2d16_run0_d",
+      "seed_slot_first": 6,
+      "seed_slot_last": 13,
+      "root_seed_first": "9c",
+      "root_seed_last": "aa"
+    },
+    {
+      "point": "D_resource",
+      "k": 16,
+      "account_prefix": "s64_acct_D_resource_k16_a2d16_run0_d",
+      "seed_slot_first": 14,
+      "seed_slot_last": 29,
+      "root_seed_first": "ac",
+      "root_seed_last": "ca"
+    },
+    {
+      "point": "E_churn",
+      "k": 4,
+      "account_prefix": "s64_acct_E_churn_k4_a2d16_run0_d",
+      "seed_slot_first": 30,
+      "seed_slot_last": 33,
+      "root_seed_first": "cc",
+      "root_seed_last": "d2"
+    }
+  ],
+  "points": [
+    {
+      "point": "D_resource",
+      "k": 16,
+      "rounds": 5,
+      "object_bytes": 65536,
+      "chunk_bytes": 65536,
+      "objects_per_daemon_per_round": 1,
+      "ops_total": 80,
+      "ops_ok": 80,
+      "error_classes": [],
+      "put_p50_ns": 225503541,
+      "put_p95_ns": 279881292,
+      "put_p99_ns": 307232375,
+      "get_p50_ns": 30110084,
+      "get_p95_ns": 32621959,
+      "get_p99_ns": 34299375,
+      "round_throughputs_mib_s": [
+        3.499198246201839,
+        3.5776682036591634,
+        3.252886289257344,
+        3.566622115038729,
+        3.5711718934487298
+      ],
+      "throughput_mib_s": 3.566622115038729,
+      "verified_objects": 112,
+      "connections": {
+        "distinct_connections": 16,
+        "max_requests_on_one_connection": 44,
+        "expected_min_distinct": 16,
+        "captured_lines": 704
+      },
+      "resource": {
+        "measured_rss_mib": [
+          89.66796875,
+          114.6796875,
+          97.88671875,
+          100.84375,
+          133.32421875
+        ],
+        "measured_rss_anon_mib": [
+          80.59375,
+          105.49609375,
+          88.71484375,
+          91.51171875,
+          123.91015625
+        ],
+        "measured_rss_file_mib": [
+          5.7578125,
+          5.7578125,
+          5.7578125,
+          5.7578125,
+          5.7578125
+        ],
+        "measured_fd": [
+          23,
+          23,
+          24,
+          24,
+          24
+        ],
+        "relay_rss_first_mib": 89.66796875,
+        "relay_rss_last_mib": 133.32421875,
+        "relay_rss_median_growth_ratio": 1.030208707450417,
+        "relay_rss_monotonic_unbounded": false,
+        "relay_fd_last": 24,
+        "relay_cpu_last_pct": 29.412910230504636,
+        "rfd_aggregate_rss_mib": 1228.84375,
+        "rfd_aggregate_fd": 288
+      },
+      "http_object_requests": 0,
+      "restart_hash_verified": null,
+      "mem_breakdown": [
+        {
+          "round": 0,
+          "measured": false,
+          "cumulative_objects": 32,
+          "cumulative_plaintext_bytes": 1064960,
+          "cumulative_chunks": 32,
+          "cgroup_memory_current_mib": 107.765625,
+          "memstat_anon_mib": 80.94140625,
+          "memstat_file_mib": 25.28515625,
+          "memstat_kernel_mib": 1.37890625,
+          "memstat_kernel_stack_mib": 0.3125,
+          "memstat_pagetables_mib": 0.0,
+          "memstat_sock_mib": 0.0078125,
+          "memstat_shmem_mib": 0.0,
+          "memstat_file_mapped_mib": 5.79296875,
+          "memstat_file_dirty_mib": 0.03125,
+          "memstat_file_writeback_mib": 0.0,
+          "proc_vmrss_mib": 86.60546875,
+          "proc_rss_anon_mib": 80.84765625,
+          "proc_rss_file_mib": 5.7578125,
+          "proc_rss_shmem_mib": 0.0,
+          "smaps_private_dirty_mib": 80.84765625,
+          "fd": 23,
+          "relay_redb_bytes": 21236496
+        },
+        {
+          "round": 1,
+          "measured": false,
+          "cumulative_objects": 48,
+          "cumulative_plaintext_bytes": 2113536,
+          "cumulative_chunks": 48,
+          "cgroup_memory_current_mib": 130.33984375,
+          "memstat_anon_mib": 87.15625,
+          "memstat_file_mib": 41.56640625,
+          "memstat_kernel_mib": 1.44921875,
+          "memstat_kernel_stack_mib": 0.3125,
+          "memstat_pagetables_mib": 0.0,
+          "memstat_sock_mib": 0.0078125,
+          "memstat_shmem_mib": 0.0,
+          "memstat_file_mapped_mib": 5.79296875,
+          "memstat_file_dirty_mib": 0.05078125,
+          "memstat_file_writeback_mib": 0.0,
+          "proc_vmrss_mib": 92.8203125,
+          "proc_rss_anon_mib": 87.0625,
+          "proc_rss_file_mib": 5.7578125,
+          "proc_rss_shmem_mib": 0.0,
+          "smaps_private_dirty_mib": 87.0625,
+          "fd": 23,
+          "relay_redb_bytes": 42460144
+        },
+        {
+          "round": 2,
+          "measured": true,
+          "cumulative_objects": 64,
+          "cumulative_plaintext_bytes": 3162112,
+          "cumulative_chunks": 64,
+          "cgroup_memory_current_mib": 139.98828125,
+          "memstat_anon_mib": 80.6875,
+          "memstat_file_mib": 57.65625,
+          "memstat_kernel_mib": 1.48828125,
+          "memstat_kernel_stack_mib": 0.3125,
+          "memstat_pagetables_mib": 0.0,
+          "memstat_sock_mib": 0.0078125,
+          "memstat_shmem_mib": 0.0,
+          "memstat_file_mapped_mib": 5.79296875,
+          "memstat_file_dirty_mib": 0.07421875,
+          "memstat_file_writeback_mib": 0.0,
+          "proc_vmrss_mib": 86.3515625,
+          "proc_rss_anon_mib": 80.59375,
+          "proc_rss_file_mib": 5.7578125,
+          "proc_rss_shmem_mib": 0.0,
+          "smaps_private_dirty_mib": 80.59375,
+          "fd": 23,
+          "relay_redb_bytes": 84884688
+        },
+        {
+          "round": 3,
+          "measured": true,
+          "cumulative_objects": 80,
+          "cumulative_plaintext_bytes": 4210688,
+          "cumulative_chunks": 80,
+          "cgroup_memory_current_mib": 181.5390625,
+          "memstat_anon_mib": 105.58984375,
+          "memstat_file_mib": 73.75,
+          "memstat_kernel_mib": 1.5234375,
+          "memstat_kernel_stack_mib": 0.3125,
+          "memstat_pagetables_mib": 0.0,
+          "memstat_sock_mib": 0.0078125,
+          "memstat_shmem_mib": 0.0,
+          "memstat_file_mapped_mib": 5.79296875,
+          "memstat_file_dirty_mib": 0.09765625,
+          "memstat_file_writeback_mib": 0.0,
+          "proc_vmrss_mib": 111.25390625,
+          "proc_rss_anon_mib": 105.49609375,
+          "proc_rss_file_mib": 5.7578125,
+          "proc_rss_shmem_mib": 0.0,
+          "smaps_private_dirty_mib": 105.49609375,
+          "fd": 23,
+          "relay_redb_bytes": 84907440
+        },
+        {
+          "round": 4,
+          "measured": true,
+          "cumulative_objects": 96,
+          "cumulative_plaintext_bytes": 5259264,
+          "cumulative_chunks": 96,
+          "cgroup_memory_current_mib": 180.40234375,
+          "memstat_anon_mib": 88.80859375,
+          "memstat_file_mib": 89.84765625,
+          "memstat_kernel_mib": 1.58984375,
+          "memstat_kernel_stack_mib": 0.3125,
+          "memstat_pagetables_mib": 0.0,
+          "memstat_sock_mib": 0.01171875,
+          "memstat_shmem_mib": 0.0,
+          "memstat_file_mapped_mib": 5.79296875,
+          "memstat_file_dirty_mib": 0.1171875,
+          "memstat_file_writeback_mib": 0.0,
+          "proc_vmrss_mib": 94.47265625,
+          "proc_rss_anon_mib": 88.71484375,
+          "proc_rss_file_mib": 5.7578125,
+          "proc_rss_shmem_mib": 0.0,
+          "smaps_private_dirty_mib": 88.71484375,
+          "fd": 24,
+          "relay_redb_bytes": 169733776
+        },
+        {
+          "round": 5,
+          "measured": true,
+          "cumulative_objects": 112,
+          "cumulative_plaintext_bytes": 6307840,
+          "cumulative_chunks": 112,
+          "cgroup_memory_current_mib": 199.74609375,
+          "memstat_anon_mib": 91.60546875,
+          "memstat_file_mib": 105.93359375,
+          "memstat_kernel_mib": 1.60546875,
+          "memstat_kernel_stack_mib": 0.3125,
+          "memstat_pagetables_mib": 0.0,
+          "memstat_sock_mib": 0.01171875,
+          "memstat_shmem_mib": 0.0,
+          "memstat_file_mapped_mib": 5.79296875,
+          "memstat_file_dirty_mib": 0.140625,
+          "memstat_file_writeback_mib": 0.0,
+          "proc_vmrss_mib": 97.26953125,
+          "proc_rss_anon_mib": 91.51171875,
+          "proc_rss_file_mib": 5.7578125,
+          "proc_rss_shmem_mib": 0.0,
+          "smaps_private_dirty_mib": 91.51171875,
+          "fd": 24,
+          "relay_redb_bytes": 169756528
+        },
+        {
+          "round": 6,
+          "measured": true,
+          "cumulative_objects": 128,
+          "cumulative_plaintext_bytes": 7356416,
+          "cumulative_chunks": 128,
+          "cgroup_memory_current_mib": 247.81640625,
+          "memstat_anon_mib": 124.00390625,
+          "memstat_file_mib": 122.015625,
+          "memstat_kernel_mib": 1.62890625,
+          "memstat_kernel_stack_mib": 0.3125,
+          "memstat_pagetables_mib": 0.0,
+          "memstat_sock_mib": 0.01171875,
+          "memstat_shmem_mib": 0.0,
+          "memstat_file_mapped_mib": 5.79296875,
+          "memstat_file_dirty_mib": 0.16015625,
+          "memstat_file_writeback_mib": 0.0,
+          "proc_vmrss_mib": 129.66796875,
+          "proc_rss_anon_mib": 123.91015625,
+          "proc_rss_file_mib": 5.7578125,
+          "proc_rss_shmem_mib": 0.0,
+          "smaps_private_dirty_mib": 123.91015625,
+          "fd": 24,
+          "relay_redb_bytes": 169779280
+        }
+      ]
+    }
+  ],
+  "churn": null,
+  "boundary_diagnostics": [],
+  "thresholds": [
+    {
+      "name": "D_resource_k16_success_100",
+      "passed": true,
+      "detail": "ops_ok=80/80 errors=[]"
+    },
+    {
+      "name": "D_resource_k16_http_object_zero",
+      "passed": true,
+      "detail": "http_object_requests=0"
+    },
+    {
+      "name": "D_resource_k16_distinct_connections_ge_k",
+      "passed": true,
+      "detail": "distinct=16 expected>=16"
+    },
+    {
+      "name": "D_resource_k16_connection_reuse_gt_1",
+      "passed": true,
+      "detail": "max_reuse=44"
+    },
+    {
+      "name": "D_resource_k16_rss_anon_median_growth_le_1_25x",
+      "passed": true,
+      "detail": "median_ratio=1.032 rss_anon=[80.59375, 105.49609375, 88.71484375, 91.51171875, 123.91015625]"
+    },
+    {
+      "name": "D_resource_k16_rss_anon_peak_le_1_75x",
+      "passed": true,
+      "detail": "peak_ratio=1.397"
+    },
+    {
+      "name": "D_resource_k16_rss_anon_not_monotonic_unbounded",
+      "passed": true,
+      "detail": "monotonic_unbounded=false"
+    },
+    {
+      "name": "D_resource_k16_relay_memcurrent_le_512mib",
+      "passed": true,
+      "detail": "memcurrent_peak=133.3 MiB"
+    },
+    {
+      "name": "D_resource_k16_relay_fd_stable",
+      "passed": true,
+      "detail": "fd_first=23 fd_peak=24"
+    },
+    {
+      "name": "D_resource_k16_rfd_aggregate_rss_le_1_5gib",
+      "passed": true,
+      "detail": "rfd_aggregate_rss=1228.8 MiB"
+    },
+    {
+      "name": "D_resource_k16_rfd_aggregate_fd_le_1024",
+      "passed": true,
+      "detail": "rfd_aggregate_fd=288"
+    },
+    {
+      "name": "D_resource_k16_file_cache_le_redb_plus_32mib",
+      "passed": true,
+      "detail": "max(file-redb)=5.0 MiB"
+    },
+    {
+      "name": "D_resource_k16_cgroup_components_reconcile",
+      "passed": true,
+      "detail": "memory.current ~= anon+file+kernel (<=64MiB or 15%)"
+    }
+  ]
+}
