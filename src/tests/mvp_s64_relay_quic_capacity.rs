@@ -908,12 +908,20 @@ async fn s64_d2bk4_flow(
     );
     // CTRL-089: in plateau mode the peak_ratio (1.75) is RECORD-ONLY so the curve past the crossing is
     // observable; the literal 1.75 constant is unchanged, only whether it fail-stops this diagnostic.
+    // RELAY-MEM-02-A2-TRIM DoD: outside plateau mode this is a FORMAL K4 gate — the frozen CTRL-079
+    // anon gates (median growth <= 1.25 AND peak <= 1.75) both fail-stop, so a 30-round K4 run proves
+    // the trim guardrail holds the accumulation under the acceptance thresholds (not just the curve).
     if plateau_mode {
         eprintln!(
-            "STEP d2bk4: {run_id} plateau_mode: peak_ratio(anon)={peak_ratio:.4} recorded-only (1.75 NOT asserted); peak_ok_would_be={peak_ok}"
+            "STEP d2bk4: {run_id} plateau_mode: peak_ratio(anon)={peak_ratio:.4}/median_growth={median_growth_ratio:.4} recorded-only (1.75/1.25 NOT asserted); peak_ok_would_be={peak_ok} median_ok_would_be={}",
+            median_growth_ratio <= 1.25
         );
     } else {
         assert!(peak_ok, "d2bk4 {run_id} anon peak_ratio {peak_ratio} > 1.75");
+        assert!(
+            median_growth_ratio <= 1.25,
+            "d2bk4 {run_id} anon median_growth_ratio {median_growth_ratio} > 1.25"
+        );
     }
     assert!(memcurrent_ok, "d2bk4 {run_id} memcurrent peak {memcurrent_peak} MiB > 512");
     assert!(
