@@ -1,0 +1,162 @@
+{
+  "schema": "ramflux.relay.mem03a0.differential.v1",
+  "run_id": "mem03a0_scenarioA_k4",
+  "git_sha": "68788edf9bc6208aa555b719373a6aea59e7f6b3",
+  "git_dirty": true,
+  "build": "debug",
+  "note": "RELAY-MEM-03-A0 (CTRL-092) differential dhat live-owner diagnostic: one of A(fresh)/B(idempotent)/C(reject-403) PUT batteries, K4 64KiB 12 rounds, capture-conserved; the dhat-heap.json dumped on relay SIGTERM is the primary artifact. mac-dev diagnostic, not an SLO",
+  "result": {
+    "scenario": "A",
+    "scenario_desc": "fresh-unique PUT (state GROWS)",
+    "k": 4,
+    "objs_per_conn": 4,
+    "object_bytes": 65536,
+    "rounds": 12,
+    "expected_puts_per_round": 16,
+    "expected_status": 200,
+    "put_capture_conserved": true,
+    "stored_objects_first": 16,
+    "stored_objects_last": 192,
+    "stored_objects_grew": true,
+    "redb_bytes_first": 8430482,
+    "redb_bytes_last": 33694634,
+    "redb_bytes_delta": 25264152,
+    "rss_anon_first_mib": 33.05859375,
+    "rss_anon_last_mib": 78.63671875,
+    "rss_anon_growth_mib": 45.578125,
+    "samples": [
+      {
+        "round": 0,
+        "put_capture_increment": 16,
+        "rejected_403_capture": 0,
+        "ok_200_capture": 16,
+        "cumulative_stored_objects": 16,
+        "relay_redb_bytes": 8430482,
+        "rss_anon_mib": 33.05859375,
+        "cgroup_memcurrent_mib": 56.53515625,
+        "fd": 25
+      },
+      {
+        "round": 1,
+        "put_capture_increment": 16,
+        "rejected_403_capture": 0,
+        "ok_200_capture": 16,
+        "cumulative_stored_objects": 32,
+        "relay_redb_bytes": 16851866,
+        "rss_anon_mib": 43.3828125,
+        "cgroup_memcurrent_mib": 71.79296875,
+        "fd": 25
+      },
+      {
+        "round": 2,
+        "put_capture_increment": 16,
+        "rejected_403_capture": 0,
+        "ok_200_capture": 16,
+        "cumulative_stored_objects": 48,
+        "relay_redb_bytes": 16851866,
+        "rss_anon_mib": 49.37109375,
+        "cgroup_memcurrent_mib": 81.8203125,
+        "fd": 25
+      },
+      {
+        "round": 3,
+        "put_capture_increment": 16,
+        "rejected_403_capture": 0,
+        "ok_200_capture": 16,
+        "cumulative_stored_objects": 64,
+        "relay_redb_bytes": 33694618,
+        "rss_anon_mib": 51.91796875,
+        "cgroup_memcurrent_mib": 88.37109375,
+        "fd": 25
+      },
+      {
+        "round": 4,
+        "put_capture_increment": 16,
+        "rejected_403_capture": 0,
+        "ok_200_capture": 16,
+        "cumulative_stored_objects": 80,
+        "relay_redb_bytes": 33694618,
+        "rss_anon_mib": 57.6875,
+        "cgroup_memcurrent_mib": 95.92578125,
+        "fd": 25
+      },
+      {
+        "round": 5,
+        "put_capture_increment": 16,
+        "rejected_403_capture": 0,
+        "ok_200_capture": 16,
+        "cumulative_stored_objects": 96,
+        "relay_redb_bytes": 33694618,
+        "rss_anon_mib": 60.73828125,
+        "cgroup_memcurrent_mib": 101.22265625,
+        "fd": 25
+      },
+      {
+        "round": 6,
+        "put_capture_increment": 16,
+        "rejected_403_capture": 0,
+        "ok_200_capture": 16,
+        "cumulative_stored_objects": 112,
+        "relay_redb_bytes": 33694632,
+        "rss_anon_mib": 73.8515625,
+        "cgroup_memcurrent_mib": 117.3984375,
+        "fd": 25
+      },
+      {
+        "round": 7,
+        "put_capture_increment": 16,
+        "rejected_403_capture": 0,
+        "ok_200_capture": 16,
+        "cumulative_stored_objects": 128,
+        "relay_redb_bytes": 33694634,
+        "rss_anon_mib": 73.85546875,
+        "cgroup_memcurrent_mib": 118.18359375,
+        "fd": 25
+      },
+      {
+        "round": 8,
+        "put_capture_increment": 16,
+        "rejected_403_capture": 0,
+        "ok_200_capture": 16,
+        "cumulative_stored_objects": 144,
+        "relay_redb_bytes": 33694634,
+        "rss_anon_mib": 83.3203125,
+        "cgroup_memcurrent_mib": 127.68359375,
+        "fd": 25
+      },
+      {
+        "round": 9,
+        "put_capture_increment": 16,
+        "rejected_403_capture": 0,
+        "ok_200_capture": 16,
+        "cumulative_stored_objects": 160,
+        "relay_redb_bytes": 33694634,
+        "rss_anon_mib": 83.43359375,
+        "cgroup_memcurrent_mib": 127.9609375,
+        "fd": 25
+      },
+      {
+        "round": 10,
+        "put_capture_increment": 16,
+        "rejected_403_capture": 0,
+        "ok_200_capture": 16,
+        "cumulative_stored_objects": 176,
+        "relay_redb_bytes": 33694634,
+        "rss_anon_mib": 84.671875,
+        "cgroup_memcurrent_mib": 128.828125,
+        "fd": 25
+      },
+      {
+        "round": 11,
+        "put_capture_increment": 16,
+        "rejected_403_capture": 0,
+        "ok_200_capture": 16,
+        "cumulative_stored_objects": 192,
+        "relay_redb_bytes": 33694634,
+        "rss_anon_mib": 78.63671875,
+        "cgroup_memcurrent_mib": 122.921875,
+        "fd": 25
+      }
+    ]
+  }
+}
