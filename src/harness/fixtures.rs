@@ -299,6 +299,8 @@ pub(crate) fn itest_relay_chunk(
         manifest_hash: "manifest_hash_itest".to_owned(),
         chunk_index: 0,
         chunk_cipher_hash: "chunk_cipher_hash_itest".to_owned(),
+        owner_signing_key_id: "owner_signing_key_itest".to_owned(),
+        owner_public_key: "owner_public_key_itest".to_owned(),
         encrypted_chunk: b"encrypted relay chunk".to_vec(),
         stored_at,
         expires_at: stored_at.saturating_add(ttl),
@@ -411,6 +413,7 @@ pub(crate) fn itest_signed_fields() -> ramflux_protocol::SignedFields {
 }
 
 #[cfg(test)]
+#[cfg_attr(not(feature = "realnet"), allow(dead_code))]
 pub(crate) fn itest_node_service_signing_seed() -> [u8; 32] {
     [
         1_u8, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24,
@@ -419,11 +422,13 @@ pub(crate) fn itest_node_service_signing_seed() -> [u8; 32] {
 }
 
 #[cfg(test)]
+#[cfg_attr(not(feature = "realnet"), allow(dead_code))]
 pub(crate) fn itest_node_service_signing_seed_b64url() -> String {
     ramflux_protocol::encode_base64url(itest_node_service_signing_seed())
 }
 
 #[cfg(test)]
+#[cfg_attr(not(feature = "realnet"), allow(dead_code))]
 pub(crate) fn ensure_itest_node_service_signing_seed_env(env: &mut Vec<(String, String)>) {
     if !env.iter().any(|(key, _value)| key == ramflux_node_core::NODE_SERVICE_SIGNING_SEED_ENV) {
         env.push((
@@ -434,6 +439,7 @@ pub(crate) fn ensure_itest_node_service_signing_seed_env(env: &mut Vec<(String, 
 }
 
 #[cfg(test)]
+#[cfg_attr(not(feature = "realnet"), allow(dead_code))]
 pub(crate) fn sign_itest_notification_wake(
     wake: &mut ramflux_protocol::NotificationWake,
 ) -> Result<(), ramflux_crypto::CryptoError> {

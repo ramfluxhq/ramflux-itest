@@ -2,6 +2,9 @@
 // Copyright (c) 2026 Span Brain
 
 #![allow(clippy::cast_precision_loss)]
+// Perf plan constants below are consumed only by the realnet-gated test in this module; keep
+// them available in all test builds but silence dead_code when realnet is compiled out.
+#![cfg_attr(not(feature = "realnet"), allow(dead_code))]
 
 use crate::quic_loadgen_core::{LoadgenConfig, run_loadgen};
 use crate::*;

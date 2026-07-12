@@ -389,6 +389,8 @@ fn mvp3_relay_token_for_chunk(
         owner_signing_key_id: "mvp3_owner_fixture".to_owned(),
         owner_public_key: ramflux_crypto::fixture_public_key_base64url(),
         issuer_service: "router".to_owned(),
+        audience_service: "ramflux-relay".to_owned(),
+        token_version: ramflux_node_core::OBJECT_RELAY_TOKEN_VERSION,
         capabilities: vec![capability],
         delete_after_ack,
         issued_at: now,

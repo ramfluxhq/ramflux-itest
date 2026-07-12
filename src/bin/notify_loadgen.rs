@@ -439,6 +439,8 @@ fn relay_loadgen_token(
         owner_signing_key_id: "loadgen_owner_fixture".to_owned(),
         owner_public_key: ramflux_crypto::fixture_public_key_base64url(),
         issuer_service: "router".to_owned(),
+        audience_service: "ramflux-relay".to_owned(),
+        token_version: ramflux_node_core::OBJECT_RELAY_TOKEN_VERSION,
         capabilities: vec![ramflux_node_core::ObjectRelayCapability::Put],
         delete_after_ack: true,
         issued_at: now,

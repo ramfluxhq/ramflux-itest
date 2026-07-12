@@ -2,6 +2,9 @@
 // Copyright (c) 2026 Span Brain
 
 #![allow(unused_imports)]
+// Fixtures below are consumed only by the realnet-gated test in this module; keep them
+// available in all test builds but silence dead_code when the realnet tests are compiled out.
+#![cfg_attr(not(feature = "realnet"), allow(dead_code))]
 use super::*;
 
 const S43_BODY: &str = "s43 network receipt body";
