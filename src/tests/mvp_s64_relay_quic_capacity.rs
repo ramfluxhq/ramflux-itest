@@ -736,6 +736,81 @@ async fn s64_flow(
 // rise. It reuses the real K4 machinery via `s64_run_point`. Absolute/peak/FD/conservation remain
 // fail-stop; the 1.25 median-growth ratio is recorded as DATA, NOT asserted here.
 
+/// RELAY-MEM-03-A0c-closure (CTRL-095) validated candidate redb page-cache cap: 16 MiB. The restart
+/// verification asserts the cache `used_bytes` stays bounded at/under this at BOTH the post-restart cold
+/// baseline and the post-warm sample (this closure does NOT change the production default, still 1 GiB).
+#[cfg(feature = "realnet")]
+const S64_REDB_CACHE_CAP_16_MIB: u64 = 16 * 1024 * 1024;
+
+/// RELAY-MEM-03-A0c-closure (CTRL-095) same-volume relay-restart verification. After the measured rounds,
+/// the relay container is `restart`ed on the RETAINED `relay-redb` volume (the s62 pattern). A fixed set of
+/// raw-v3-QUIC objects is PUT + GET-verified BEFORE the restart, then re-GET AFTER it (each op is a real
+/// relay QUIC request proven by the itest capture increment — no SDK local-cache short-circuit), so a
+/// matching ciphertext round-trip proves the rows survived the restart from redb, not from a client cache.
+///
+/// CORRECTED cache-behaviour semantics (A0c-closure): the redb page cache does NOT cold-drop across a
+/// restart. On database re-open, `RelayRedbStore::load_state` does a FULL TABLE SCAN that immediately
+/// re-warms the cache up to the configured cap — so `used_bytes` stays BOUNDED (<= 16 MiB for the
+/// candidate) across the restart, it does NOT drop to zero. What DOES cold-drop is the process anon heap
+/// (`RssAnon`), sampled pre/post/warm. The six `redb::CacheStats` counters are sampled at a post-restart
+/// BASELINE (after healthy, before the re-GETs) and again AFTER the 4 re-GETs; the read hit/miss delta
+/// proves the re-GETs provably reached the redb store (>= `objects` reads), not a client short-circuit.
+#[cfg(feature = "realnet")]
+#[derive(Clone, Debug, serde::Serialize)]
+#[allow(clippy::struct_excessive_bools)]
+struct S64D2bK4Restart {
+    // Fixed subset PUT then re-GET across the restart.
+    objects: usize,
+    // (a) durability: every subset object re-GET after restart returned byte-identical ciphertext.
+    rows_retained: bool,
+    // (a) the re-GET wave provably reached the restarted relay (capture get_chunk increment == objects).
+    expected_get_captures: usize,
+    observed_get_captures: usize,
+    get_capture_conserved: bool,
+    // (b) cache used_bytes + RSS across the restart. Pre-restart is the warm end-of-rounds sample; the
+    // post-restart-cold BASELINE and post-warm samples bracket the 4 re-GETs (all six cache counters).
+    cache_cap_bytes: u64,
+    cache_used_bytes_pre_restart: u64,
+    cache_evictions_pre_restart: u64,
+    // Post-restart cold BASELINE (after healthy, before the re-GETs): all six CacheStats counters.
+    cache_used_bytes_post_restart_cold: u64,
+    cache_evictions_post_restart_cold: u64,
+    cache_read_hits_post_restart_cold: u64,
+    cache_read_misses_post_restart_cold: u64,
+    cache_write_hits_post_restart_cold: u64,
+    cache_write_misses_post_restart_cold: u64,
+    // Post-warm (after the 4 re-GETs): all six CacheStats counters.
+    cache_used_bytes_post_warm: u64,
+    cache_evictions_post_warm: u64,
+    cache_read_hits_post_warm: u64,
+    cache_read_misses_post_warm: u64,
+    cache_write_hits_post_warm: u64,
+    cache_write_misses_post_warm: u64,
+    // Deltas (post-warm minus cold baseline) for all six counters. used_bytes may fall (eviction), so i64.
+    cache_used_bytes_delta: i64,
+    cache_evictions_delta: u64,
+    cache_read_hits_delta: u64,
+    cache_read_misses_delta: u64,
+    cache_write_hits_delta: u64,
+    cache_write_misses_delta: u64,
+    // (a) the 4 re-GETs provably reached redb: read_hits_delta + read_misses_delta >= objects.
+    reads_reached_redb: bool,
+    // RSS anon cold-drop across the restart (this IS what drops; the cache used_bytes does NOT).
+    rss_anon_pre_restart_mib: f64,
+    rss_anon_post_restart_cold_mib: f64,
+    rss_anon_post_warm_mib: f64,
+    rss_cold_dropped: bool,
+    // (b/c) cache used_bytes stays bounded <= 16 MiB at BOTH the cold baseline and post-warm samples,
+    // and stays <= the configured cap (with redb soft-cap headroom). It does NOT drop to zero — the
+    // load_state full-table-scan re-warms it on startup (see load_state_rewarm_note).
+    cache_used_bounded_16mib_cold: bool,
+    cache_used_bounded_16mib_post_warm: bool,
+    cache_used_bounded_across_restart: bool,
+    cache_bounded_by_cap: bool,
+    // Honest correction of the retired `cache_cold_dropped` assumption.
+    load_state_rewarm_note: String,
+}
+
 #[cfg(feature = "realnet")]
 #[derive(Clone, Debug, serde::Serialize)]
 struct S64D2bK4Artifact {
@@ -764,7 +839,25 @@ struct S64D2bK4Artifact {
     measured_rss_mib: Vec<f64>,
     measured_rss_file_mib: Vec<f64>,
     measured_fd: Vec<u64>,
-    // Recorded data over the anon samples (NOT gated in this mode).
+    // RELAY-MEM-03-A0c (CTRL-094): surface the PUT/GET latency percentiles + throughput the
+    // `S64PointResult` already collects (they were computed but never persisted in this diagnostic
+    // mode), so a p50/p95/p99 + throughput <=10% regression comparison vs the control cap is possible.
+    // Percentiles are point-level (over ALL measured-round PUT/GET latencies — per-round percentiles
+    // are not retained by s64_run_point); `round_throughputs_mib_s` is the per-round throughput vector
+    // (retained), `throughput_mib_s` its median.
+    put_p50_ns: u128,
+    put_p95_ns: u128,
+    put_p99_ns: u128,
+    get_p50_ns: u128,
+    get_p95_ns: u128,
+    get_p99_ns: u128,
+    throughput_mib_s: f64,
+    round_throughputs_mib_s: Vec<f64>,
+    // RELAY-MEM-03-A0c: same-volume relay-restart durability + cache/RSS cold-drop verification
+    // (present only when RAMFLUX_S64_D2BK4_RESTART=1; None otherwise).
+    restart: Option<S64D2bK4Restart>,
+    // Anon-sample growth ratios. FORMALLY asserted fail-stop gates (median<=1.25 AND peak<=1.75) unless
+    // plateau_mode is set, in which case they are record-only so the curve past the crossing is visible.
     median_growth_ratio: f64,
     peak_ratio: f64,
     // CTRL-089 RELAY-MEM-02-A1: when true, peak_ratio (1.75) AND median_growth (1.25) are RECORD-ONLY
@@ -774,7 +867,7 @@ struct S64D2bK4Artifact {
 }
 
 #[cfg(feature = "realnet")]
-#[allow(clippy::too_many_lines)]
+#[allow(clippy::too_many_lines, clippy::cast_precision_loss)]
 async fn s64_d2bk4_flow(
     node: &S8RealnetNode,
     relay_ca: &Path,
@@ -837,6 +930,20 @@ async fn s64_d2bk4_flow(
     let median_growth_ratio = s64_median_growth_ratio(&point.resource.measured_rss_anon_mib);
     let peak_ratio = s64_peak_ratio(&point.resource.measured_rss_anon_mib);
 
+    // RELAY-MEM-03-A0c (CTRL-094): same-volume relay-restart verification (gated by
+    // RAMFLUX_S64_D2BK4_RESTART=1; the plain run is unchanged). Run BEFORE the artifact write so the
+    // durability/cold-drop evidence is persisted alongside the 30-round gate. Hard setup errors are
+    // remembered and re-raised AFTER the artifact is written (evidence preserved).
+    let restart_result = if std::env::var("RAMFLUX_S64_D2BK4_RESTART").as_deref() == Ok("1") {
+        Some(s64_d2bk4_restart_verify(node, relay_ca, issuer_node, &run_id).await)
+    } else {
+        None
+    };
+    let restart = match &restart_result {
+        Some(Ok(record)) => Some(record.clone()),
+        _ => None,
+    };
+
     // STOP-gates (absolute/peak/FD/conservation). Compute all first; write artifact BEFORE asserting.
     let fd_first = point.resource.measured_fd.first().copied().unwrap_or(0);
     let fd_peak = point.resource.measured_fd.iter().copied().max().unwrap_or(0);
@@ -849,17 +956,22 @@ async fn s64_d2bk4_flow(
     let memcurrent_ok = memcurrent_peak <= 512.0;
     let fd_ok = fd_peak <= fd_first + 2 && fd_peak <= 256;
 
-    // Schema v2 whenever plateau_mode is set OR the round count departs from the CTRL-088 default (12);
-    // v1 preserved for the unmodified 12-round stop-gate diagnostic.
+    // Schema v3 (RELAY-MEM-03-A0c) whenever plateau_mode is set OR the round count departs from the
+    // CTRL-088 default (12): the artifact now also carries PUT/GET latency percentiles + throughput and
+    // (when enabled) the same-volume restart verification. v1 preserved for the unmodified 12-round
+    // stop-gate diagnostic (which does not exercise the A0c surfaces).
     let schema = if plateau_mode || rounds != 12 {
-        "ramflux.perf.d1.2b.k4.median_diagnostic.v2"
+        // v4 (RELAY-MEM-03-A0c-closure, CTRL-095): the restart verification block now carries the six
+        // redb CacheStats counters at the post-restart cold baseline + post-warm samples with deltas and
+        // the read-reached-redb + used<=16MiB evidence (v3 carried only used_bytes/evictions).
+        "ramflux.perf.d1.2b.k4.median_diagnostic.v4"
     } else {
         "ramflux.perf.d1.2b.k4.median_diagnostic.v1"
     };
     let generated_note = if plateau_mode {
         "CTRL-089 RELAY-MEM-02-A1-PROFILE (plateau mode): A_small K4 with `rounds` measured rounds, NORMAL production allocator; peak_ratio(1.75) AND median_growth(1.25) recorded as DATA only (NOT asserted) to observe the RssAnon curve past the 1.75 crossing; success/http/conservation/memcurrent(512)/FD remain fail-stop. RssAnon==Private_Dirty (same /proc source) and redb page cache ~= measured_rss_file_mib (mmap, reclaimable); no distinct per-round Private_Dirty/redb vector is sampled for A_small (collect_mem is D_resource-only). mac-dev, not an SLO. Distinguishing bounded high-water plateau from per-op retained leak requires the Part B allocator profile."
     } else {
-        "CTRL-088 PERF-D1-2b-K4: A_small K4 median-gate diagnostic; median-growth ratio recorded as DATA (not gated); absolute/peak/FD/conservation fail-stop; mac-dev, not an SLO"
+        "CTRL-095 RELAY-MEM-03-A0c-closure PERF-D1-2b-K4: A_small K4 fresh-unique-PUT median-gate diagnostic; median-growth (<=1.25) AND peak (<=1.75) are FORMALLY asserted fail-stop gates (not record-only) alongside success/http/conservation/memcurrent(512)/FD; the 16 MiB redb page-cache candidate executes this gate. When RAMFLUX_S64_D2BK4_RESTART=1 the restart verification adds the six redb CacheStats counters (cold baseline vs post-warm) + read-reached-redb + used<=16MiB evidence. mac-dev, not an SLO"
     };
     let artifact = S64D2bK4Artifact {
         schema: schema.to_owned(),
@@ -883,6 +995,15 @@ async fn s64_d2bk4_flow(
         measured_rss_mib: point.resource.measured_rss_mib.clone(),
         measured_rss_file_mib: point.resource.measured_rss_file_mib.clone(),
         measured_fd: point.resource.measured_fd.clone(),
+        put_p50_ns: point.put_p50_ns,
+        put_p95_ns: point.put_p95_ns,
+        put_p99_ns: point.put_p99_ns,
+        get_p50_ns: point.get_p50_ns,
+        get_p95_ns: point.get_p95_ns,
+        get_p99_ns: point.get_p99_ns,
+        throughput_mib_s: point.throughput_mib_s,
+        round_throughputs_mib_s: point.round_throughputs_mib_s.clone(),
+        restart: restart.clone(),
         median_growth_ratio,
         peak_ratio,
         plateau_mode,
@@ -896,6 +1017,50 @@ async fn s64_d2bk4_flow(
         "STEP d2bk4: {run_id} DATA plateau_mode={plateau_mode} rounds={rounds} median_growth_ratio(anon)={median_growth_ratio:.4} peak_ratio(anon)={peak_ratio:.4} memcurrent_peak={memcurrent_peak:.1}MiB fd_first={fd_first} fd_peak={fd_peak} anon={:?}",
         point.resource.measured_rss_anon_mib
     );
+    eprintln!(
+        "STEP d2bk4: {run_id} LATENCY put_p50={:.3}ms put_p95={:.3}ms put_p99={:.3}ms get_p50={:.3}ms get_p95={:.3}ms throughput_median={:.2}MiB/s round_throughputs={:?}",
+        point.put_p50_ns as f64 / 1e6,
+        point.put_p95_ns as f64 / 1e6,
+        point.put_p99_ns as f64 / 1e6,
+        point.get_p50_ns as f64 / 1e6,
+        point.get_p95_ns as f64 / 1e6,
+        point.throughput_mib_s,
+        point.round_throughputs_mib_s,
+    );
+    if let Some(r) = &restart {
+        eprintln!(
+            "STEP d2bk4: {run_id} RESTART objects={} rows_retained={} get_capture={}/{} conserved={} cache_cap={}B used pre={}B->cold={}B->warm={}B(delta={}) evict pre={}/cold={}/warm={} read_hits cold={}->warm={}(delta={}) read_misses cold={}->warm={}(delta={}) write_hits delta={} write_misses delta={} reads_reached_redb={} used<=16MiB cold={}/warm={} rss_anon pre={:.1}->cold={:.1}->warm={:.1}MiB rss_cold_drop={} bounded<=cap={}",
+            r.objects,
+            r.rows_retained,
+            r.observed_get_captures,
+            r.expected_get_captures,
+            r.get_capture_conserved,
+            r.cache_cap_bytes,
+            r.cache_used_bytes_pre_restart,
+            r.cache_used_bytes_post_restart_cold,
+            r.cache_used_bytes_post_warm,
+            r.cache_used_bytes_delta,
+            r.cache_evictions_pre_restart,
+            r.cache_evictions_post_restart_cold,
+            r.cache_evictions_post_warm,
+            r.cache_read_hits_post_restart_cold,
+            r.cache_read_hits_post_warm,
+            r.cache_read_hits_delta,
+            r.cache_read_misses_post_restart_cold,
+            r.cache_read_misses_post_warm,
+            r.cache_read_misses_delta,
+            r.cache_write_hits_delta,
+            r.cache_write_misses_delta,
+            r.reads_reached_redb,
+            r.cache_used_bounded_16mib_cold,
+            r.cache_used_bounded_16mib_post_warm,
+            r.rss_anon_pre_restart_mib,
+            r.rss_anon_post_restart_cold_mib,
+            r.rss_anon_post_warm_mib,
+            r.rss_cold_dropped,
+            r.cache_bounded_by_cap,
+        );
+    }
 
     std::fs::remove_dir_all(&temp).ok();
 
@@ -937,7 +1102,434 @@ async fn s64_d2bk4_flow(
         fd_ok,
         "d2bk4 {run_id} fd gate failed: peak={fd_peak} first={fd_first} (need <=first+2 && <=256)"
     );
+
+    // RELAY-MEM-03-A0c restart verification gates (only when RAMFLUX_S64_D2BK4_RESTART=1). A hard setup
+    // error is re-raised here (evidence already persisted); a completed record must show rows retained,
+    // the re-GET wave capture-conserved (provably reached the restarted relay), and a bounded re-warm.
+    if let Some(result) = restart_result {
+        let record = result?;
+        assert!(
+            record.rows_retained,
+            "d2bk4 {run_id} restart durability failed: subset objects did NOT re-GET byte-identical after restart"
+        );
+        assert!(
+            record.get_capture_conserved,
+            "d2bk4 {run_id} restart get-capture conservation failed: observed {} != expected {} (re-GETs did not reach the restarted relay)",
+            record.observed_get_captures, record.expected_get_captures
+        );
+        assert!(
+            record.cache_bounded_by_cap,
+            "d2bk4 {run_id} restart re-warm exceeded cap: used {}B > cap {}B",
+            record.cache_used_bytes_post_warm, record.cache_cap_bytes
+        );
+        // RELAY-MEM-03-A0c-closure (CTRL-095): the 4 re-GETs provably reached the redb store — each is a
+        // cache read hit OR miss, so the read delta across the GETs must be >= objects (proves they hit
+        // redb, not a client short-circuit).
+        assert!(
+            record.reads_reached_redb,
+            "d2bk4 {run_id} restart read delta gate failed: read_hits_delta({}) + read_misses_delta({}) = {} < {} objects (re-GETs did not provably reach redb)",
+            record.cache_read_hits_delta,
+            record.cache_read_misses_delta,
+            record.cache_read_hits_delta + record.cache_read_misses_delta,
+            record.objects
+        );
+        // CORRECTED cache semantics: used_bytes does NOT cold-drop (load_state re-warms it); it stays
+        // bounded <= 16 MiB at BOTH the post-restart cold baseline and the post-warm sample.
+        assert!(
+            record.cache_used_bounded_16mib_cold,
+            "d2bk4 {run_id} restart cache used_bytes at cold baseline {}B > 16 MiB ({}B)",
+            record.cache_used_bytes_post_restart_cold, S64_REDB_CACHE_CAP_16_MIB
+        );
+        assert!(
+            record.cache_used_bounded_16mib_post_warm,
+            "d2bk4 {run_id} restart cache used_bytes post-warm {}B > 16 MiB ({}B)",
+            record.cache_used_bytes_post_warm, S64_REDB_CACHE_CAP_16_MIB
+        );
+    }
     Ok(())
+}
+
+/// RELAY-MEM-03-A0c (CTRL-094) same-volume relay-restart verification. Reuses the s54/mem02 raw-v3-QUIC
+/// PUT/GET builders to store a fixed subset, GET-verify it, `restart` the relay container on the retained
+/// `relay-redb` volume (the s62 pattern), then re-GET the subset AFTER the restart. Every op is a real
+/// relay QUIC request proven by the itest capture increment (no SDK local-cache short-circuit), so a
+/// byte-identical ciphertext round-trip proves the rows survived from redb, not a client cache. Cache
+/// `used_bytes` + relay `RssAnon` are sampled pre-restart (warm), immediately post-restart (cold) and after
+/// the warming GETs (bounded re-rise). Product-inert: raw-QUIC itest driver only.
+#[cfg(feature = "realnet")]
+#[allow(clippy::too_many_lines)]
+async fn s64_d2bk4_restart_verify(
+    node: &S8RealnetNode,
+    relay_ca: &Path,
+    issuer_node: &str,
+    run_tag: &str,
+) -> Result<S64D2bK4Restart, Box<dyn std::error::Error>> {
+    let audience_node = "node_a.realnet";
+    let gateway_id = "gw-b";
+    let object_bytes = 64 * 1024u64;
+    let objects = 4usize;
+    let run_id = format!("{run_tag}_restart");
+    eprintln!(
+        "STEP d2bk4: [restart-verify] raw-QUIC PUT {objects} objs -> restart ramflux-relay (retained relay-redb volume) -> re-GET + hash-verify"
+    );
+
+    // Owner/requester device — seeds distinct from mem02 (0x71) and the SDK daemons.
+    let device_id = "device_s64_d2bk4_restart".to_owned();
+    let principal = "principal_s64_d2bk4_restart".to_owned();
+    let device_seed = [0x73u8; 32];
+    let root_seed = [0x72u8; 32];
+    let registration = mvp_s1_identity_register_request(GatewayFrameIdentitySpec {
+        principal_id: &principal,
+        device_id: &device_id,
+        target_delivery_id: "target_s64_d2bk4_restart",
+        gateway_id,
+        session_id: "pre_session_s64_d2bk4_restart",
+        push_alias_hash: Some("push_s64_d2bk4_restart"),
+        source_ip_hash: Some("s64_d2bk4_restart_source"),
+        root_seed,
+        device_seed,
+        device_epoch: 1,
+    })?;
+    register_mvp1_identity(&node.gateway_url, &registration)?;
+    let (_endpoint, _connection, mut send, mut recv) =
+        mvp_s1_open_quic_stream(S64_GATEWAY_B_QUIC.parse()?, &node.ca_cert).await?;
+    let now0 = s64_now();
+    let mut open = mvp_s1_open_frame(None, now0, "s64_d2bk4_restart");
+    open.client_instance_id = "rf_s64_d2bk4_restart".to_owned();
+    open.device_id = device_id.clone();
+    open.target_delivery_id = "target_s64_d2bk4_restart".to_owned();
+    open.stream_nonce = "nonce_s64_d2bk4_restart".to_owned();
+    open.source_ip_hash = Some("s64_d2bk4_restart_source".to_owned());
+    let auth = mvp_s1_auth_frame_for_registered_device(&open, &principal, 1, device_seed)?;
+    mvp_s1_write_client_frame(
+        &mut send,
+        &ramflux_node_core::GatewayClientFrame::Open { open: open.clone() },
+    )
+    .await?;
+    mvp_s1_write_client_frame(&mut send, &ramflux_node_core::GatewayClientFrame::Auth { auth })
+        .await?;
+    let _session = mvp_s1_expect_session_established(&mut recv).await?;
+
+    let owner_public_key = ramflux_crypto::public_key_base64url_from_seed(device_seed);
+    let ctx = S64Mem02Ctx {
+        certificate: s64_certificate(now0, issuer_node, gateway_id, [0x44; 32], [0x33; 32])?,
+        requester_device_hash: ramflux_crypto::blake3_256_base64url(
+            "ramflux.object_relay.recipient_device.v1",
+            device_id.as_bytes(),
+        ),
+        requester_public_key: owner_public_key.clone(),
+        owner_public_key,
+        device_id,
+        principal,
+        device_seed,
+        issuer_node: issuer_node.to_owned(),
+        audience_node: audience_node.to_owned(),
+        gateway_id: gateway_id.to_owned(),
+    };
+
+    let connections = s64_mem02_connect_relay(relay_ca, 1).await?;
+
+    // PUT the fixed subset (raw QUIC).
+    let mut built: Vec<S64Mem02Object> = Vec::with_capacity(objects);
+    for o in 0..objects {
+        let obj = s64_mem02_build_object(&ctx, &run_id, &format!("o{o}"), object_bytes, s64_now())?;
+        let now = s64_now();
+        let (token, proof) =
+            s64_mem02_put_token(&mut send, &mut recv, &open, &ctx, &obj, now, &format!("o{o}"))
+                .await?;
+        let body = s64_mem02_put_body(&ctx, &obj, &token, &proof, now, &format!("o{o}_pop"))?;
+        let response = connections[0]
+            .request(&ramflux_transport::GatewayQuicRequest {
+                method: "POST".to_owned(),
+                path: "/relay/v1/object/put_chunk".to_owned(),
+                body,
+            })
+            .await?;
+        if response.status != 200 {
+            return Err(format!("restart-verify put o{o} failed: {response:?}").into());
+        }
+        built.push(obj);
+    }
+    // GET-verify each object pre-restart (proves stored + round-trip before the restart).
+    for (o, obj) in built.iter().enumerate() {
+        let now = s64_now();
+        let token =
+            s64_mem02_get_token(&mut send, &mut recv, &open, &ctx, obj, now, &format!("pre_o{o}"))
+                .await?;
+        let body = s64_mem02_get_body(&ctx, obj, &token, now, &format!("pre_o{o}_pop"))?;
+        let response = connections[0]
+            .request(&ramflux_transport::GatewayQuicRequest {
+                method: "POST".to_owned(),
+                path: "/relay/v1/object/get_chunk".to_owned(),
+                body,
+            })
+            .await?;
+        if response.status != 200 {
+            return Err(format!("restart-verify pre-restart get o{o} failed: {response:?}").into());
+        }
+        let got: ramflux_node_core::ObjectRelayGetResponse = serde_json::from_value(response.body)?;
+        if got.chunk.encrypted_chunk != obj.encrypted_chunk {
+            return Err(format!("restart-verify pre-restart get o{o} ciphertext mismatch").into());
+        }
+    }
+
+    // Pre-restart (warm) cache + RSS sample.
+    let cache_cap_bytes = std::env::var("RAMFLUX_RELAY_REDB_CACHE_BYTES")
+        .ok()
+        .and_then(|value| value.parse().ok())
+        .unwrap_or(0u64);
+    let (pre_used, pre_evict) = s64_relay_cache_probe().unwrap_or((0, 0));
+    let (_c0, rss_anon_pre, _f0, _fd0, _cpu0) = s64_relay_resource()?;
+
+    // Restart the relay on the RETAINED relay-redb volume; the dead pre-restart connection is dropped.
+    drop(connections);
+    eprintln!("STEP d2bk4: [restart-verify] restart ramflux-relay");
+    s64_container_ctl("restart", "ramflux-relay")?;
+    s64_wait_relay_quic_healthy(relay_ca).await?;
+
+    // Post-restart (cold) sample. The relay's startup transiently allocates while it re-opens redb, so
+    // poll the settled floor: take the MIN RssAnon over a short window (the cold cache floor, before any
+    // warming GET). The cache probe thread re-emits every 2s, so the LATEST line after the window is a
+    // genuine post-restart cold reading (fresh empty page cache).
+    let mut rss_anon_cold = f64::MAX;
+    for _ in 0..8 {
+        tokio::time::sleep(Duration::from_millis(1200)).await;
+        if let Ok((_c, anon, _f, _fd, _cpu)) = s64_relay_resource() {
+            rss_anon_cold = rss_anon_cold.min(anon);
+        }
+    }
+    if !rss_anon_cold.is_finite() {
+        rss_anon_cold = 0.0;
+    }
+    // Post-restart cold BASELINE: sample all six CacheStats counters AFTER the relay is healthy but
+    // BEFORE the re-GETs. `load_state`'s full-table scan has already re-warmed the cache to its bounded
+    // cap by now (the probe re-emits every 2s and we polled the RSS floor for ~9.6s above), so this is a
+    // genuine post-restart-cold reading of the re-warmed (NOT dropped) cache.
+    let cold_stats = s64_relay_cache_stats().unwrap_or_default();
+    let cold_used = cold_stats.used_bytes;
+    let cold_evict = cold_stats.evictions;
+
+    // Fresh relay connection + re-GET the subset. Reset capture first so the get_chunk increment counts
+    // ONLY these re-GETs (capture-conservation proof they reached the restarted relay, not a client cache).
+    let connections = s64_mem02_connect_relay(relay_ca, 1).await?;
+    s64_reset_capture()?;
+    let mut rows_retained = true;
+    for (o, obj) in built.iter().enumerate() {
+        let now = s64_now();
+        let token =
+            s64_mem02_get_token(&mut send, &mut recv, &open, &ctx, obj, now, &format!("post_o{o}"))
+                .await?;
+        let body = s64_mem02_get_body(&ctx, obj, &token, now, &format!("post_o{o}_pop"))?;
+        let response = connections[0]
+            .request(&ramflux_transport::GatewayQuicRequest {
+                method: "POST".to_owned(),
+                path: "/relay/v1/object/get_chunk".to_owned(),
+                body,
+            })
+            .await?;
+        if response.status != 200 {
+            return Err(format!("restart-verify post-restart get o{o} failed: {response:?}").into());
+        }
+        let got: ramflux_node_core::ObjectRelayGetResponse = serde_json::from_value(response.body)?;
+        if got.chunk.encrypted_chunk != obj.encrypted_chunk {
+            rows_retained = false;
+            eprintln!(
+                "STEP d2bk4: [restart-verify] MISMATCH o{o} (len {} vs {})",
+                got.chunk.encrypted_chunk.len(),
+                obj.encrypted_chunk.len()
+            );
+        }
+    }
+    let observed_get_captures = s64_capture_route_count("get_chunk");
+    let expected_get_captures = objects;
+    let get_capture_conserved = observed_get_captures == expected_get_captures;
+
+    // After the warming GETs: sample all six CacheStats counters again. The probe re-emits every ~2s, so
+    // POLL for a FRESH post-GET line whose read counters have advanced past the cold baseline (each of the
+    // 4 re-GETs touches the redb store -> a cache read hit or miss). Fall back to the latest line after the
+    // window so a sample is always taken (the assertion below then reports the actual delta).
+    let mut warm_stats = s64_relay_cache_stats().unwrap_or_default();
+    for _ in 0..12 {
+        tokio::time::sleep(Duration::from_millis(600)).await;
+        if let Some(stats) = s64_relay_cache_stats() {
+            warm_stats = stats;
+            let read_delta = warm_stats.read_hits.saturating_sub(cold_stats.read_hits)
+                + warm_stats.read_misses.saturating_sub(cold_stats.read_misses);
+            if read_delta >= objects as u64 {
+                break;
+            }
+        }
+    }
+    let warm_used = warm_stats.used_bytes;
+    let warm_evict = warm_stats.evictions;
+    let (_c2, rss_anon_warm, _f2, _fd2, _cpu2) = s64_relay_resource()?;
+    drop(connections);
+
+    // Deltas (post-warm minus cold baseline) for all six counters. Read counters are monotone so the
+    // subtraction is saturating-safe; used_bytes may fall (eviction), so it is signed.
+    let read_hits_delta = warm_stats.read_hits.saturating_sub(cold_stats.read_hits);
+    let read_misses_delta = warm_stats.read_misses.saturating_sub(cold_stats.read_misses);
+    let write_hits_delta = warm_stats.write_hits.saturating_sub(cold_stats.write_hits);
+    let write_misses_delta = warm_stats.write_misses.saturating_sub(cold_stats.write_misses);
+    let used_bytes_delta =
+        i64::try_from(warm_used).unwrap_or(i64::MAX) - i64::try_from(cold_used).unwrap_or(i64::MAX);
+    let evictions_delta = warm_evict.saturating_sub(cold_evict);
+
+    // (a) the 4 re-GETs provably reached redb: every GET is a cache read hit OR miss, so the read delta
+    // must be >= `objects`. This proves the post-restart re-GETs hit the redb store, not a client cache.
+    let reads_reached_redb = read_hits_delta + read_misses_delta >= objects as u64;
+
+    // CORRECTED semantics: the cache used_bytes does NOT cold-drop; `load_state`'s full-table scan
+    // re-warms it on startup. What DOES drop is the process anon heap (RssAnon). Judge RSS cold-drop only
+    // when a genuine pre-restart reading exists; record the accurate cache story via the bounded flags.
+    let rss_cold_dropped = rss_anon_cold < rss_anon_pre;
+    // The 16 MiB candidate cap (the DELIVERABLE bound), asserted at BOTH the cold baseline and post-warm.
+    let cache_used_bounded_16mib_cold = cold_used <= S64_REDB_CACHE_CAP_16_MIB;
+    let cache_used_bounded_16mib_post_warm = warm_used <= S64_REDB_CACHE_CAP_16_MIB;
+    let cache_used_bounded_across_restart =
+        cache_used_bounded_16mib_cold && cache_used_bounded_16mib_post_warm;
+    // Bounded-by-configured-cap when a cap is set (cap>0), with a small soft-target headroom (redb's cap
+    // is a target, not a hard ceiling); uncapped (cap==0) cannot bound, recorded true (no constraint).
+    let cache_bounded_by_cap =
+        cache_cap_bytes == 0 || warm_used <= cache_cap_bytes + cache_cap_bytes / 10;
+
+    Ok(S64D2bK4Restart {
+        objects,
+        rows_retained,
+        expected_get_captures,
+        observed_get_captures,
+        get_capture_conserved,
+        cache_cap_bytes,
+        cache_used_bytes_pre_restart: pre_used,
+        cache_evictions_pre_restart: pre_evict,
+        cache_used_bytes_post_restart_cold: cold_used,
+        cache_evictions_post_restart_cold: cold_evict,
+        cache_read_hits_post_restart_cold: cold_stats.read_hits,
+        cache_read_misses_post_restart_cold: cold_stats.read_misses,
+        cache_write_hits_post_restart_cold: cold_stats.write_hits,
+        cache_write_misses_post_restart_cold: cold_stats.write_misses,
+        cache_used_bytes_post_warm: warm_used,
+        cache_evictions_post_warm: warm_evict,
+        cache_read_hits_post_warm: warm_stats.read_hits,
+        cache_read_misses_post_warm: warm_stats.read_misses,
+        cache_write_hits_post_warm: warm_stats.write_hits,
+        cache_write_misses_post_warm: warm_stats.write_misses,
+        cache_used_bytes_delta: used_bytes_delta,
+        cache_evictions_delta: evictions_delta,
+        cache_read_hits_delta: read_hits_delta,
+        cache_read_misses_delta: read_misses_delta,
+        cache_write_hits_delta: write_hits_delta,
+        cache_write_misses_delta: write_misses_delta,
+        reads_reached_redb,
+        rss_anon_pre_restart_mib: rss_anon_pre,
+        rss_anon_post_restart_cold_mib: rss_anon_cold,
+        rss_anon_post_warm_mib: rss_anon_warm,
+        rss_cold_dropped,
+        cache_used_bounded_16mib_cold,
+        cache_used_bounded_16mib_post_warm,
+        cache_used_bounded_across_restart,
+        cache_bounded_by_cap,
+        load_state_rewarm_note:
+            "redb page cache does NOT cold-drop on restart: RelayRedbStore::load_state does a full table \
+             scan at startup that immediately re-warms the cache up to the configured cap, so used_bytes \
+             stays bounded (<= 16 MiB for the candidate) across the restart rather than dropping to zero. \
+             The process anon heap (RssAnon) is what cold-drops; the 4 re-GETs' read hit/miss delta \
+             proves they reached the redb store."
+                .to_owned(),
+    })
+}
+
+/// All six `redb::CacheStats` counters parsed from a single `redb cache probe stats` log line
+/// (`used_bytes`/`evictions`/`read_hits`/`read_misses`/`write_hits`/`write_misses`).
+#[cfg(feature = "realnet")]
+#[derive(Clone, Copy, Debug, Default)]
+struct S64RedbCacheStats {
+    used_bytes: u64,
+    evictions: u64,
+    read_hits: u64,
+    read_misses: u64,
+    write_hits: u64,
+    write_misses: u64,
+}
+
+/// Parses the LATEST `redb cache probe stats` line from the relay container logs into all six
+/// `redb::CacheStats` counters. `None` when no probe line is present (feature off or not yet emitted).
+#[cfg(feature = "realnet")]
+fn s64_relay_cache_stats() -> Option<S64RedbCacheStats> {
+    let container = s64_container("ramflux-relay");
+    let output = std::process::Command::new(container_runtime())
+        .args(["logs", "--tail", "4000", &container])
+        .output()
+        .ok()?;
+    let text = format!(
+        "{}{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let mut latest: Option<S64RedbCacheStats> = None;
+    for raw in text.lines().filter(|line| line.contains("redb cache probe stats")) {
+        // The relay's tracing fmt colorizes fields (`\x1b[3mused_bytes\x1b[0m\x1b[2m=\x1b[0m8512`), so
+        // the key and `=` and value are NOT contiguous — strip ANSI first, then parse `key=NNN`.
+        let line = s64_strip_ansi(raw);
+        // used_bytes + evictions are required (always present); the four hit/miss counters default to 0
+        // if an older probe line omitted them (all six are emitted by the current probe).
+        if let (Some(used_bytes), Some(evictions)) =
+            (s64_log_field_u64(&line, "used_bytes"), s64_log_field_u64(&line, "evictions"))
+        {
+            latest = Some(S64RedbCacheStats {
+                used_bytes,
+                evictions,
+                read_hits: s64_log_field_u64(&line, "read_hits").unwrap_or(0),
+                read_misses: s64_log_field_u64(&line, "read_misses").unwrap_or(0),
+                write_hits: s64_log_field_u64(&line, "write_hits").unwrap_or(0),
+                write_misses: s64_log_field_u64(&line, "write_misses").unwrap_or(0),
+            });
+        }
+    }
+    latest
+}
+
+/// LATEST `(used_bytes, evictions)` from the redb cache probe log — thin wrapper over
+/// [`s64_relay_cache_stats`] for the pre-restart warm sample (full counters not needed there).
+#[cfg(feature = "realnet")]
+fn s64_relay_cache_probe() -> Option<(u64, u64)> {
+    s64_relay_cache_stats().map(|stats| (stats.used_bytes, stats.evictions))
+}
+
+/// Removes ANSI CSI escape sequences (`\x1b[ ... m`) from a (ASCII) log line.
+#[cfg(feature = "realnet")]
+fn s64_strip_ansi(input: &str) -> String {
+    let bytes = input.as_bytes();
+    let mut out = String::with_capacity(bytes.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == 0x1b {
+            i += 1;
+            if i < bytes.len() && bytes[i] == b'[' {
+                i += 1;
+                while i < bytes.len() && !(0x40..=0x7e).contains(&bytes[i]) {
+                    i += 1;
+                }
+                if i < bytes.len() {
+                    i += 1; // skip the final byte (e.g. 'm')
+                }
+            }
+        } else {
+            out.push(char::from(bytes[i]));
+            i += 1;
+        }
+    }
+    out
+}
+
+/// Extracts the `u64` value of a `key=NNN` field from a (ANSI-stripped) tracing full-format log line.
+#[cfg(feature = "realnet")]
+fn s64_log_field_u64(line: &str, key: &str) -> Option<u64> {
+    let needle = format!("{key}=");
+    let start = line.find(&needle)? + needle.len();
+    let rest = &line[start..];
+    let end = rest.find(|c: char| !c.is_ascii_digit()).unwrap_or(rest.len());
+    rest.get(..end)?.parse().ok()
 }
 
 // ---- RELAY-MEM-02-A0 allocation diagnostic (env-gated `RAMFLUX_S64_MEM02=1`, default-off) ----
