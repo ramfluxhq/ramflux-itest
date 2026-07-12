@@ -557,6 +557,15 @@ async fn s64_flow(
     if std::env::var("RAMFLUX_S64_MEM02").as_deref() == Ok("1") {
         return s64_mem02_flow(node, relay_ca, relay_url, ca_cert_env, issuer_node).await;
     }
+    // RELAY-MEM-03-A0 (CTRL-092) differential dhat live-owner diagnostic (env-gated, default-off): run one
+    // of three PUT-battery scenarios (A fresh-unique / B byte-identical-idempotent / C authorization-
+    // rejected-403) at K4, 64 KiB, 12 measured rounds, with per-round capture-conservation + redb-size
+    // sampling, so a differential of the relay's dhat-symbolized LIVE stacks across the three runs locates
+    // the state that scales with unique-object count. Every op is a raw v3 QUIC relay request proven by the
+    // itest capture; no product/allocator/wire/schema change. Selector `RAMFLUX_S64_MEM03A0_SCENARIO=A|B|C`.
+    if std::env::var("RAMFLUX_S64_MEM03A0").as_deref() == Ok("1") {
+        return s64_mem03a0_flow(node, relay_ca, relay_url, ca_cert_env, issuer_node).await;
+    }
     // CTRL-088 PERF-D1-2b-K4 median-gate diagnostic (env-gated, default-off): run ONLY A_small K=4 with
     // 12 measured rounds (vs the standard 5) so the median-growth ratio can be studied over many
     // 5-sample windows. Absolute/peak/FD/conservation are still fail-stop; the 1.25 median-growth ratio
@@ -1863,6 +1872,471 @@ async fn s64_mem02_flow(
         artifact.result.replay_anon_growth_mib,
         artifact.result.replay_idle_reclaim_mib,
     );
+    Ok(())
+}
+
+// ---- RELAY-MEM-03-A0 differential dhat live-owner diagnostic (env-gated `RAMFLUX_S64_MEM03A0=1`) ----
+//
+// CTRL-092. malloc_trim (A2) and jemalloc (A3) both failed to bound the relay's ~250-290 MiB RssAnon
+// climb over 30 K4 rounds, and the jemalloc probe proved allocated ~= active (near-zero fragmentation)
+// at round-completion boundaries → the memory is genuinely LIVE, held by a long-term application owner
+// that accumulates as unique PUTs are processed. This mode drives ONE of three raw-v3-QUIC PUT batteries
+// (selector `RAMFLUX_S64_MEM03A0_SCENARIO`), each K4 / 64 KiB / 12 measured rounds, so a differential of
+// the relay's dhat-symbolized LIVE stacks (dumped on SIGTERM to the host bind mount) across the three
+// runs attributes the live owner:
+//   * A `fresh` — every PUT is a NEW unique object_id/chunk_id/cipher_hash → relay redb + object count
+//     GROW each round. State-scaling allocation sites light up here.
+//   * B `idem`  — a FIXED object set is PUT once, then the byte-identical requests are re-PUT every round
+//     (fresh token/PoP wrapper, identical stored payload). `RelayCacheState::put_chunk` overwrites the
+//     same `chunks_by_id` key (resident delta 0) → object count + redb do NOT grow. Request churn == A.
+//   * C `reject`— every PUT passes ingress + JSON envelope parse + v3 token verification, then FAILS the
+//     PoP signature check in `verify_relay_invocation_v3` → 403 with ZERO redb/live mutation (the relay
+//     builds the store candidate only AFTER verification passes). Full parse/verify work, no state.
+// A live-allocation site that grows in A but is absent/flat in B and C is owned by state that scales with
+// unique objects (redb read cache / RelayCacheState metadata / object directory). A site present in all
+// three is connection/ingress/parse retention. Per-round capture-increment conservation is asserted
+// (A/B/C all witness every PUT at the relay); redb byte size + RssAnon are sampled per round as the
+// conservation evidence (A grows; B/C flat).
+
+#[cfg(feature = "realnet")]
+#[derive(Clone, Debug, serde::Serialize)]
+struct S64Mem03A0Sample {
+    round: usize,
+    put_capture_increment: usize,
+    rejected_403_capture: usize,
+    ok_200_capture: usize,
+    cumulative_stored_objects: usize,
+    relay_redb_bytes: u64,
+    rss_anon_mib: f64,
+    cgroup_memcurrent_mib: f64,
+    fd: u64,
+}
+
+#[cfg(feature = "realnet")]
+#[derive(Clone, Debug, serde::Serialize)]
+struct S64Mem03A0Result {
+    scenario: String,
+    scenario_desc: String,
+    k: usize,
+    objs_per_conn: usize,
+    object_bytes: u64,
+    rounds: usize,
+    expected_puts_per_round: usize,
+    expected_status: u16,
+    // Per-round capture-increment conservation: every PUT reached the relay handler this round.
+    put_capture_conserved: bool,
+    // Scenario conservation: A must grow the stored object count + redb size; B/C must NOT.
+    stored_objects_first: usize,
+    stored_objects_last: usize,
+    stored_objects_grew: bool,
+    redb_bytes_first: u64,
+    redb_bytes_last: u64,
+    redb_bytes_delta: i64,
+    rss_anon_first_mib: f64,
+    rss_anon_last_mib: f64,
+    rss_anon_growth_mib: f64,
+    samples: Vec<S64Mem03A0Sample>,
+}
+
+#[cfg(feature = "realnet")]
+#[derive(Clone, Debug, serde::Serialize)]
+struct S64Mem03A0Artifact {
+    schema: String,
+    run_id: String,
+    git_sha: String,
+    git_dirty: bool,
+    build: String,
+    note: String,
+    result: S64Mem03A0Result,
+}
+
+/// Fires one concurrent PUT wave that is EXPECTED to be rejected with `expected_status` (scenario C).
+/// Mirrors [`s64_mem02_fire_wave`] but asserts each response carries the rejection status (not 200), so a
+/// silent 200 (accidental acceptance = a real relay mutation) fails the diagnostic loudly. Returns the
+/// number of requests fired.
+#[cfg(feature = "realnet")]
+async fn s64_mem03a0_fire_wave_expect(
+    connections: &[Arc<ramflux_transport::QuicGatewayClient>],
+    per_conn: Vec<Vec<(String, serde_json::Value)>>,
+    expected_status: u16,
+) -> Result<usize, Box<dyn std::error::Error>> {
+    let k = connections.len();
+    let barrier = Arc::new(tokio::sync::Barrier::new(k));
+    let mut handles = Vec::with_capacity(k);
+    for (connection, requests) in connections.iter().zip(per_conn) {
+        let connection = connection.clone();
+        let barrier = barrier.clone();
+        handles.push(tokio::spawn(async move {
+            barrier.wait().await;
+            let mut fired = 0usize;
+            for (path, body) in requests {
+                let response = connection
+                    .request(&ramflux_transport::GatewayQuicRequest {
+                        method: "POST".to_owned(),
+                        path: path.clone(),
+                        body,
+                    })
+                    .await
+                    .map_err(|error| format!("relay request {path}: {error}"))?;
+                if response.status != expected_status {
+                    return Err(format!(
+                        "relay {path} expected rejection status {expected_status} but got {} body={:?} (scenario C must NOT mutate the store)",
+                        response.status, response.body
+                    ));
+                }
+                fired += 1;
+            }
+            Ok::<usize, String>(fired)
+        }));
+    }
+    let mut total = 0usize;
+    for handle in handles {
+        total += handle.await??;
+    }
+    Ok(total)
+}
+
+/// Counts capture lines for the `put_chunk` route with the given status (server-side proof of the
+/// per-round outcome distribution). Read AFTER a `s64_reset_capture()` + one wave.
+#[cfg(feature = "realnet")]
+fn s64_mem03a0_put_status_count(status: u16) -> usize {
+    s64_read_capture().map_or(0, |lines| {
+        lines.iter().filter(|l| l.route.ends_with("put_chunk") && l.status == status).count()
+    })
+}
+
+#[cfg(feature = "realnet")]
+#[allow(clippy::too_many_lines)]
+async fn s64_mem03a0_flow(
+    node: &S8RealnetNode,
+    relay_ca: &Path,
+    _relay_url: &str,
+    _ca_cert_env: &str,
+    issuer_node: &str,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let audience_node = "node_a.realnet";
+    let gateway_id = "gw-b";
+    let build_kind = if s64_release_build() { "release" } else { "debug" };
+    let (git_sha, git_dirty) = s64_git_state();
+
+    let scenario = std::env::var("RAMFLUX_S64_MEM03A0_SCENARIO")
+        .unwrap_or_else(|_| "A".to_owned())
+        .trim()
+        .to_ascii_uppercase();
+    let (scenario_desc, expected_status) = match scenario.as_str() {
+        "A" => ("fresh-unique PUT (state GROWS)", 200u16),
+        "B" => ("byte-identical idempotent PUT on a FIXED set (state flat)", 200u16),
+        "C" => ("authorization-rejected PUT (403, zero mutation)", 403u16),
+        other => {
+            return Err(format!("RAMFLUX_S64_MEM03A0_SCENARIO must be A|B|C, got {other:?}").into());
+        }
+    };
+
+    let k = s64_mem02_env_usize("RAMFLUX_S64_MEM03A0_K", 4);
+    let objs = s64_mem02_env_usize("RAMFLUX_S64_MEM03A0_OBJS", 4);
+    let rounds = s64_mem02_env_usize("RAMFLUX_S64_MEM03A0_ROUNDS", 12);
+    let object_bytes = s64_mem02_env_u64("RAMFLUX_S64_MEM03A0_OBJECT_BYTES", 64 * 1024);
+    let run_tag = std::env::var("RAMFLUX_S64_RUN_TAG").unwrap_or_else(|_| "mem03a0".to_owned());
+    let run_id = format!("{run_tag}_scenario{scenario}_k{k}");
+    eprintln!(
+        "STEP mem03a0: [CTRL-092 scenario {scenario}] {scenario_desc} k={k} objs/conn={objs} obj={object_bytes}B rounds={rounds} expected_status={expected_status} (every op = raw v3 QUIC relay request, capture-conserved)"
+    );
+
+    // --- Owner/requester device: register on the gateway, open an authenticated session for tokens.
+    // Same seeds as mem02 (clear of the gateway node seeds 0x33/0x44/0x66/0x88 and s54's device).
+    let device_id = "device_s64_mem03a0".to_owned();
+    let principal = "principal_s64_mem03a0".to_owned();
+    let device_seed = [0x71u8; 32];
+    let root_seed = [0x70u8; 32];
+    let registration = mvp_s1_identity_register_request(GatewayFrameIdentitySpec {
+        principal_id: &principal,
+        device_id: &device_id,
+        target_delivery_id: "target_s64_mem03a0",
+        gateway_id,
+        session_id: "pre_session_s64_mem03a0",
+        push_alias_hash: Some("push_s64_mem03a0"),
+        source_ip_hash: Some("s64_mem03a0_source"),
+        root_seed,
+        device_seed,
+        device_epoch: 1,
+    })?;
+    register_mvp1_identity(&node.gateway_url, &registration)?;
+    let (_endpoint, _connection, mut send, mut recv) =
+        mvp_s1_open_quic_stream(S64_GATEWAY_B_QUIC.parse()?, &node.ca_cert).await?;
+    let now0 = s64_now();
+    let mut open = mvp_s1_open_frame(None, now0, "s64_mem03a0");
+    open.client_instance_id = "rf_s64_mem03a0".to_owned();
+    open.device_id = device_id.clone();
+    open.target_delivery_id = "target_s64_mem03a0".to_owned();
+    open.stream_nonce = "nonce_s64_mem03a0".to_owned();
+    open.source_ip_hash = Some("s64_mem03a0_source".to_owned());
+    let auth = mvp_s1_auth_frame_for_registered_device(&open, &principal, 1, device_seed)?;
+    mvp_s1_write_client_frame(
+        &mut send,
+        &ramflux_node_core::GatewayClientFrame::Open { open: open.clone() },
+    )
+    .await?;
+    mvp_s1_write_client_frame(&mut send, &ramflux_node_core::GatewayClientFrame::Auth { auth })
+        .await?;
+    let _session = mvp_s1_expect_session_established(&mut recv).await?;
+
+    let owner_public_key = ramflux_crypto::public_key_base64url_from_seed(device_seed);
+    let ctx = S64Mem02Ctx {
+        certificate: s64_certificate(now0, issuer_node, gateway_id, [0x44; 32], [0x33; 32])?,
+        requester_device_hash: ramflux_crypto::blake3_256_base64url(
+            "ramflux.object_relay.recipient_device.v1",
+            device_id.as_bytes(),
+        ),
+        requester_public_key: owner_public_key.clone(),
+        owner_public_key,
+        device_id,
+        principal,
+        device_seed,
+        issuer_node: issuer_node.to_owned(),
+        audience_node: audience_node.to_owned(),
+        gateway_id: gateway_id.to_owned(),
+    };
+
+    // K persistent, warm relay connections (the honest concurrency knob).
+    let connections = s64_mem02_connect_relay(relay_ca, k).await?;
+    let expected_puts_per_round = k * objs;
+
+    // Scenario B: establish the FIXED object set ONCE (serial PUTs), so subsequent rounds re-PUT the
+    // byte-identical payloads and the stored set stays constant. A/C build fresh per round.
+    let mut fixed_set: Vec<S64Mem02Object> = Vec::new();
+    let mut cumulative_stored_objects = 0usize;
+    if scenario == "B" {
+        for c in 0..k {
+            for o in 0..objs {
+                let obj = s64_mem02_build_object(
+                    &ctx,
+                    &run_id,
+                    &format!("fixed_c{c}_o{o}"),
+                    object_bytes,
+                    s64_now(),
+                )?;
+                let now = s64_now();
+                let (token, proof) = s64_mem02_put_token(
+                    &mut send,
+                    &mut recv,
+                    &open,
+                    &ctx,
+                    &obj,
+                    now,
+                    &format!("fixed_c{c}_o{o}"),
+                )
+                .await?;
+                let body = s64_mem02_put_body(
+                    &ctx,
+                    &obj,
+                    &token,
+                    &proof,
+                    now,
+                    &format!("fixed_c{c}_o{o}_pop"),
+                )?;
+                let response = connections[0]
+                    .request(&ramflux_transport::GatewayQuicRequest {
+                        method: "POST".to_owned(),
+                        path: "/relay/v1/object/put_chunk".to_owned(),
+                        body,
+                    })
+                    .await?;
+                if response.status != 200 {
+                    return Err(
+                        format!("mem03a0 B establish put c{c} o{o} failed: {response:?}").into()
+                    );
+                }
+                fixed_set.push(obj);
+            }
+        }
+        cumulative_stored_objects = fixed_set.len();
+        eprintln!(
+            "STEP mem03a0: scenario B established FIXED set of {} objects (subsequent rounds re-PUT byte-identical)",
+            fixed_set.len()
+        );
+    }
+
+    let mut samples: Vec<S64Mem03A0Sample> = Vec::with_capacity(rounds);
+    let mut put_capture_per_round: Vec<usize> = Vec::with_capacity(rounds);
+
+    for r in 0..rounds {
+        // Build this round's K*objs PUT requests (serial token issue over the single gateway stream).
+        let mut per_conn: Vec<Vec<(String, serde_json::Value)>> = Vec::with_capacity(k);
+        for c in 0..k {
+            let mut requests = Vec::with_capacity(objs);
+            for o in 0..objs {
+                // A/C: fresh unique object each round; B: re-use the fixed set (byte-identical payload).
+                let obj_owned;
+                let obj: &S64Mem02Object = if scenario == "B" {
+                    &fixed_set[c * objs + o]
+                } else {
+                    obj_owned = s64_mem02_build_object(
+                        &ctx,
+                        &run_id,
+                        &format!("{scenario}_r{r}_c{c}_o{o}"),
+                        object_bytes,
+                        s64_now(),
+                    )?;
+                    &obj_owned
+                };
+                let now = s64_now();
+                let (token, proof) = s64_mem02_put_token(
+                    &mut send,
+                    &mut recv,
+                    &open,
+                    &ctx,
+                    obj,
+                    now,
+                    &format!("{scenario}_r{r}_c{c}_o{o}"),
+                )
+                .await?;
+                let mut body = s64_mem02_put_body(
+                    &ctx,
+                    obj,
+                    &token,
+                    &proof,
+                    now,
+                    &format!("{scenario}_r{r}_c{c}_o{o}_pop"),
+                )?;
+                if scenario == "C" {
+                    // Corrupt the PoP signature so the request passes ingress + JSON envelope parse + v3
+                    // token verification, then FAILS `verify_relay_invocation_v3` (the PoP check) → 403,
+                    // with ZERO redb mutation (the store candidate is built only after verify passes).
+                    // Flip the FIRST base64url char (keeps it decodable, alters the first signature byte).
+                    let tampered = body
+                        .get("pop")
+                        .and_then(|pop| pop.get("signature"))
+                        .and_then(serde_json::Value::as_str)
+                        .map(|sig| {
+                            let mut chars: Vec<char> = sig.chars().collect();
+                            if let Some(first) = chars.first_mut() {
+                                *first = if *first == 'A' { 'B' } else { 'A' };
+                            }
+                            chars.into_iter().collect::<String>()
+                        })
+                        .ok_or("mem03a0 C: PoP signature field missing")?;
+                    body["pop"]["signature"] = serde_json::Value::String(tampered);
+                }
+                requests.push(("/relay/v1/object/put_chunk".to_owned(), body));
+            }
+            per_conn.push(requests);
+        }
+
+        s64_reset_capture()?;
+        let fired = if scenario == "C" {
+            s64_mem03a0_fire_wave_expect(&connections, per_conn, 403).await?
+        } else {
+            s64_mem02_fire_wave(&connections, per_conn).await?
+        };
+        let put_inc = s64_capture_route_count("put_chunk");
+        put_capture_per_round.push(put_inc);
+        if put_inc != expected_puts_per_round {
+            return Err(format!(
+                "mem03a0 scenario {scenario} round {r}: capture put_chunk increment {put_inc} != expected {expected_puts_per_round} (relay did not witness every PUT)"
+            )
+            .into());
+        }
+        let ok_200 = s64_mem03a0_put_status_count(200);
+        let rejected_403 = s64_mem03a0_put_status_count(403);
+        // Fresh-unique (A) grows the stored count by fired PUTs; B re-PUTs the fixed set (constant); C
+        // stores nothing (all rejected).
+        if scenario == "A" {
+            cumulative_stored_objects += fired;
+        }
+        let m = s64_relay_mem_breakdown(r, true, cumulative_stored_objects, 0, 0);
+        eprintln!(
+            "STEP mem03a0: [{scenario}] round={r} put_cap+={put_inc} ok200={ok_200} rej403={rejected_403} stored={cumulative_stored_objects} redb={}MiB rss_anon={:.1}MiB memcur={:.1}MiB fd={}",
+            m.relay_redb_bytes / (1024 * 1024),
+            m.proc_rss_anon_mib,
+            m.cgroup_memory_current_mib,
+            m.fd
+        );
+        samples.push(S64Mem03A0Sample {
+            round: r,
+            put_capture_increment: put_inc,
+            rejected_403_capture: rejected_403,
+            ok_200_capture: ok_200,
+            cumulative_stored_objects,
+            relay_redb_bytes: m.relay_redb_bytes,
+            rss_anon_mib: m.proc_rss_anon_mib,
+            cgroup_memcurrent_mib: m.cgroup_memory_current_mib,
+            fd: m.fd,
+        });
+    }
+
+    // Conservation derivation.
+    let put_capture_conserved =
+        put_capture_per_round.iter().all(|&count| count == expected_puts_per_round);
+    let stored_objects_first = samples.first().map_or(0, |s| s.cumulative_stored_objects);
+    let stored_objects_last = samples.last().map_or(0, |s| s.cumulative_stored_objects);
+    let redb_bytes_first = samples.first().map_or(0, |s| s.relay_redb_bytes);
+    let redb_bytes_last = samples.last().map_or(0, |s| s.relay_redb_bytes);
+    let rss_anon_first_mib = samples.first().map_or(0.0, |s| s.rss_anon_mib);
+    let rss_anon_last_mib = samples.last().map_or(0.0, |s| s.rss_anon_mib);
+    let stored_objects_grew = stored_objects_last > stored_objects_first;
+
+    let result = S64Mem03A0Result {
+        scenario: scenario.clone(),
+        scenario_desc: scenario_desc.to_owned(),
+        k,
+        objs_per_conn: objs,
+        object_bytes,
+        rounds,
+        expected_puts_per_round,
+        expected_status,
+        put_capture_conserved,
+        stored_objects_first,
+        stored_objects_last,
+        stored_objects_grew,
+        redb_bytes_first,
+        redb_bytes_last,
+        redb_bytes_delta: i64::try_from(redb_bytes_last).unwrap_or(i64::MAX)
+            - i64::try_from(redb_bytes_first).unwrap_or(i64::MAX),
+        rss_anon_first_mib,
+        rss_anon_last_mib,
+        rss_anon_growth_mib: rss_anon_last_mib - rss_anon_first_mib,
+        samples,
+    };
+
+    let artifact = S64Mem03A0Artifact {
+        schema: "ramflux.relay.mem03a0.differential.v1".to_owned(),
+        run_id: run_id.clone(),
+        git_sha,
+        git_dirty,
+        build: build_kind.to_owned(),
+        note: "RELAY-MEM-03-A0 (CTRL-092) differential dhat live-owner diagnostic: one of A(fresh)/B(idempotent)/C(reject-403) PUT batteries, K4 64KiB 12 rounds, capture-conserved; the dhat-heap.json dumped on relay SIGTERM is the primary artifact. mac-dev diagnostic, not an SLO".to_owned(),
+        result,
+    };
+    let dir = code_root().join("ramflux-itest/perf-artifacts");
+    std::fs::create_dir_all(&dir)?;
+    let path = dir.join(format!("perf_mem03a0_{run_id}.json"));
+    std::fs::write(&path, serde_json::to_vec_pretty(&artifact)?)?;
+    eprintln!(
+        "STEP mem03a0: wrote {} (scenario={scenario} put_conserved={put_capture_conserved} stored {stored_objects_first}->{stored_objects_last} grew={stored_objects_grew} redb {}->{}MiB rss_anon {:.1}->{:.1}MiB)",
+        path.display(),
+        redb_bytes_first / (1024 * 1024),
+        redb_bytes_last / (1024 * 1024),
+        rss_anon_first_mib,
+        rss_anon_last_mib,
+    );
+
+    // Conservation assertions (evidence written first). Every scenario must witness every PUT at the
+    // relay; A must grow the stored object count; B and C must NOT grow it.
+    assert!(
+        put_capture_conserved,
+        "mem03a0 {scenario} capture conservation failed: per-round put_chunk increments {put_capture_per_round:?} != expected {expected_puts_per_round}"
+    );
+    match scenario.as_str() {
+        "A" => assert!(
+            stored_objects_grew && redb_bytes_last > redb_bytes_first,
+            "mem03a0 A must GROW state: stored {stored_objects_first}->{stored_objects_last}, redb {redb_bytes_first}->{redb_bytes_last}"
+        ),
+        "B" | "C" => assert!(
+            !stored_objects_grew,
+            "mem03a0 {scenario} must NOT grow the stored object count: {stored_objects_first}->{stored_objects_last}"
+        ),
+        _ => unreachable!(),
+    }
     Ok(())
 }
 
