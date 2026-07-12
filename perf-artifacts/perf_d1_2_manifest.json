@@ -1,13 +1,13 @@
 {
   "build": "release",
   "git_dirty": true,
-  "git_sha": "3baa1fdfeef2ef7831df1ecd8097d9c4037ea7e5",
+  "git_sha": "4efc50c388959b75268b6ea8641cbb17d65a586f",
   "large_object_capacity": "blocked_OBJ-IPC-01",
   "public_envelope_class": "current_verified_64k",
   "runs": [
     {
-      "artifact": "perf_d1_2_macro_d12a_fresh1_run0.json",
-      "run_id": "d12a_fresh1_run0"
+      "artifact": "perf_d1_2_macro_cut_grid_r3_run0.json",
+      "run_id": "cut_grid_r3_run0"
     }
   ],
   "schema": "ramflux.perf.d1.macrobench.manifest.v1",

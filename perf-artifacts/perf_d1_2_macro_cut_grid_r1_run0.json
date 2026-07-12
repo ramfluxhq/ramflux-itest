@@ -1,0 +1,879 @@
+{
+  "schema": "ramflux.perf.d1.macrobench.v1",
+  "run_id": "cut_grid_r1_run0",
+  "git_sha": "4efc50c388959b75268b6ea8641cbb17d65a586f",
+  "git_dirty": true,
+  "build": "release",
+  "generated_note": "PERF-D1-2a public-path K-daemon macrobench, CTRL-073 64KiB verified envelope; large objects blocked by OBJ-IPC-01; mac-dev, not an SLO",
+  "public_envelope_class": "current_verified_64k",
+  "supported_public_object_bytes": 65536,
+  "known_limit_local_bus_frame_bytes": 1048576,
+  "large_object_capacity": "blocked_OBJ-IPC-01",
+  "large_object_public_path": "blocked_by_OBJ-IPC-01",
+  "namespace_seed_slots": [
+    {
+      "point": "Zprobe",
+      "k": 1,
+      "account_prefix": "s64_acct_Zprobe_k1_cut_grid_r1_run0_d",
+      "seed_slot_first": 0,
+      "seed_slot_last": 0,
+      "root_seed_first": "90",
+      "root_seed_last": "90"
+    },
+    {
+      "point": "A_small",
+      "k": 1,
+      "account_prefix": "s64_acct_A_small_k1_cut_grid_r1_run0_d",
+      "seed_slot_first": 1,
+      "seed_slot_last": 1,
+      "root_seed_first": "92",
+      "root_seed_last": "92"
+    },
+    {
+      "point": "A_small",
+      "k": 4,
+      "account_prefix": "s64_acct_A_small_k4_cut_grid_r1_run0_d",
+      "seed_slot_first": 2,
+      "seed_slot_last": 5,
+      "root_seed_first": "94",
+      "root_seed_last": "9a"
+    },
+    {
+      "point": "A_small",
+      "k": 8,
+      "account_prefix": "s64_acct_A_small_k8_cut_grid_r1_run0_d",
+      "seed_slot_first": 6,
+      "seed_slot_last": 13,
+      "root_seed_first": "9c",
+      "root_seed_last": "aa"
+    },
+    {
+      "point": "D_resource",
+      "k": 16,
+      "account_prefix": "s64_acct_D_resource_k16_cut_grid_r1_run0_d",
+      "seed_slot_first": 14,
+      "seed_slot_last": 29,
+      "root_seed_first": "ac",
+      "root_seed_last": "ca"
+    },
+    {
+      "point": "E_churn",
+      "k": 4,
+      "account_prefix": "s64_acct_E_churn_k4_cut_grid_r1_run0_d",
+      "seed_slot_first": 30,
+      "seed_slot_last": 33,
+      "root_seed_first": "cc",
+      "root_seed_last": "d2"
+    }
+  ],
+  "points": [
+    {
+      "point": "A_small",
+      "k": 1,
+      "rounds": 5,
+      "object_bytes": 65536,
+      "chunk_bytes": 65536,
+      "objects_per_daemon_per_round": 4,
+      "ops_total": 20,
+      "ops_ok": 20,
+      "error_classes": [],
+      "put_p50_ns": 52848375,
+      "put_p95_ns": 54147666,
+      "put_p99_ns": 56387625,
+      "get_p50_ns": 29390625,
+      "get_p95_ns": 31210083,
+      "get_p99_ns": 32100916,
+      "round_throughputs_mib_s": [
+        1.1648712118388191,
+        1.1740272303875816,
+        1.1925264387166055,
+        1.1817525606025403,
+        1.1747126652820719
+      ],
+      "throughput_mib_s": 1.1747126652820719,
+      "verified_objects": 28,
+      "connections": {
+        "distinct_connections": 1,
+        "max_requests_on_one_connection": 170,
+        "expected_min_distinct": 1,
+        "captured_lines": 170
+      },
+      "resource": {
+        "measured_rss_mib": [
+          78.8515625,
+          90.52734375,
+          92.0078125,
+          91.8671875,
+          91.875
+        ],
+        "measured_rss_anon_mib": [
+          70.07421875,
+          81.78125,
+          83.109375,
+          83.11328125,
+          83.1171875
+        ],
+        "measured_rss_file_mib": [
+          5.7578125,
+          5.7578125,
+          5.7578125,
+          5.7578125,
+          5.7578125
+        ],
+        "measured_fd": [
+          23,
+          23,
+          23,
+          23,
+          23
+        ],
+        "relay_rss_first_mib": 78.8515625,
+        "relay_rss_last_mib": 91.875,
+        "relay_rss_median_growth_ratio": 1.0148867313915857,
+        "relay_rss_monotonic_unbounded": false,
+        "relay_fd_last": 23,
+        "relay_cpu_last_pct": 14.352492077915946,
+        "rfd_aggregate_rss_mib": 0.0,
+        "rfd_aggregate_fd": 0
+      },
+      "http_object_requests": 0,
+      "restart_hash_verified": null,
+      "mem_breakdown": []
+    },
+    {
+      "point": "A_small",
+      "k": 4,
+      "rounds": 5,
+      "object_bytes": 65536,
+      "chunk_bytes": 65536,
+      "objects_per_daemon_per_round": 4,
+      "ops_total": 80,
+      "ops_ok": 80,
+      "error_classes": [],
+      "put_p50_ns": 79228083,
+      "put_p95_ns": 109651500,
+      "put_p99_ns": 120968958,
+      "get_p50_ns": 29872208,
+      "get_p95_ns": 36021000,
+      "get_p99_ns": 55919708,
+      "round_throughputs_mib_s": [
+        2.9774831558195096,
+        2.91789765473976,
+        2.7050223836815217,
+        2.815425617857258,
+        2.727932703471495
+      ],
+      "throughput_mib_s": 2.815425617857258,
+      "verified_objects": 112,
+      "connections": {
+        "distinct_connections": 4,
+        "max_requests_on_one_connection": 170,
+        "expected_min_distinct": 4,
+        "captured_lines": 680
+      },
+      "resource": {
+        "measured_rss_mib": [
+          96.66015625,
+          92.2109375,
+          98.96875,
+          98.44140625,
+          83.95703125
+        ],
+        "measured_rss_anon_mib": [
+          87.8203125,
+          83.109375,
+          89.859375,
+          89.5546875,
+          74.87890625
+        ],
+        "measured_rss_file_mib": [
+          5.7578125,
+          5.7578125,
+          5.7578125,
+          5.7578125,
+          5.7578125
+        ],
+        "measured_fd": [
+          23,
+          24,
+          24,
+          24,
+          24
+        ],
+        "relay_rss_first_mib": 96.66015625,
+        "relay_rss_last_mib": 83.95703125,
+        "relay_rss_median_growth_ratio": 1.0184279652455042,
+        "relay_rss_monotonic_unbounded": false,
+        "relay_fd_last": 24,
+        "relay_cpu_last_pct": 29.534572666594126,
+        "rfd_aggregate_rss_mib": 0.0,
+        "rfd_aggregate_fd": 0
+      },
+      "http_object_requests": 0,
+      "restart_hash_verified": null,
+      "mem_breakdown": []
+    },
+    {
+      "point": "A_small",
+      "k": 8,
+      "rounds": 5,
+      "object_bytes": 65536,
+      "chunk_bytes": 65536,
+      "objects_per_daemon_per_round": 4,
+      "ops_total": 160,
+      "ops_ok": 160,
+      "error_classes": [],
+      "put_p50_ns": 121839375,
+      "put_p95_ns": 179267000,
+      "put_p99_ns": 209664542,
+      "get_p50_ns": 30551167,
+      "get_p95_ns": 35306583,
+      "get_p99_ns": 61908334,
+      "round_throughputs_mib_s": [
+        3.7757734864551455,
+        3.693867072499529,
+        3.7266221400164157,
+        3.564422781197656,
+        3.5852868768280453
+      ],
+      "throughput_mib_s": 3.693867072499529,
+      "verified_objects": 224,
+      "connections": {
+        "distinct_connections": 8,
+        "max_requests_on_one_connection": 170,
+        "expected_min_distinct": 8,
+        "captured_lines": 1360
+      },
+      "resource": {
+        "measured_rss_mib": [
+          85.70703125,
+          87.8828125,
+          102.265625,
+          95.484375,
+          94.10546875
+        ],
+        "measured_rss_anon_mib": [
+          76.5859375,
+          78.81640625,
+          93.1796875,
+          86.3125,
+          84.9609375
+        ],
+        "measured_rss_file_mib": [
+          5.7578125,
+          5.7578125,
+          5.7578125,
+          5.7578125,
+          5.7578125
+        ],
+        "measured_fd": [
+          25,
+          25,
+          25,
+          25,
+          25
+        ],
+        "relay_rss_first_mib": 85.70703125,
+        "relay_rss_last_mib": 94.10546875,
+        "relay_rss_median_growth_ratio": 1.086496577473553,
+        "relay_rss_monotonic_unbounded": false,
+        "relay_fd_last": 25,
+        "relay_cpu_last_pct": 42.533751222226414,
+        "rfd_aggregate_rss_mib": 0.0,
+        "rfd_aggregate_fd": 0
+      },
+      "http_object_requests": 0,
+      "restart_hash_verified": null,
+      "mem_breakdown": []
+    },
+    {
+      "point": "D_resource",
+      "k": 16,
+      "rounds": 5,
+      "object_bytes": 65536,
+      "chunk_bytes": 65536,
+      "objects_per_daemon_per_round": 1,
+      "ops_total": 80,
+      "ops_ok": 80,
+      "error_classes": [],
+      "put_p50_ns": 217095458,
+      "put_p95_ns": 280605250,
+      "put_p99_ns": 285302416,
+      "get_p50_ns": 31488416,
+      "get_p95_ns": 34667125,
+      "get_p99_ns": 59886125,
+      "round_throughputs_mib_s": [
+        3.5198692872605064,
+        3.561923210428069,
+        3.515760274369932,
+        3.567798654850712,
+        3.5032302743358956
+      ],
+      "throughput_mib_s": 3.5198692872605064,
+      "verified_objects": 112,
+      "connections": {
+        "distinct_connections": 16,
+        "max_requests_on_one_connection": 44,
+        "expected_min_distinct": 16,
+        "captured_lines": 704
+      },
+      "resource": {
+        "measured_rss_mib": [
+          103.79296875,
+          102.09765625,
+          94.84765625,
+          100.15625,
+          104.71484375
+        ],
+        "measured_rss_anon_mib": [
+          94.12109375,
+          92.734375,
+          85.47265625,
+          90.41796875,
+          95.296875
+        ],
+        "measured_rss_file_mib": [
+          5.7578125,
+          5.7578125,
+          5.7578125,
+          5.7578125,
+          5.7578125
+        ],
+        "measured_fd": [
+          25,
+          25,
+          25,
+          25,
+          25
+        ],
+        "relay_rss_first_mib": 103.79296875,
+        "relay_rss_last_mib": 104.71484375,
+        "relay_rss_median_growth_ratio": 0.9809848108046065,
+        "relay_rss_monotonic_unbounded": false,
+        "relay_fd_last": 25,
+        "relay_cpu_last_pct": 38.774151308216496,
+        "rfd_aggregate_rss_mib": 1215.078125,
+        "rfd_aggregate_fd": 288
+      },
+      "http_object_requests": 0,
+      "restart_hash_verified": null,
+      "mem_breakdown": [
+        {
+          "round": 0,
+          "measured": false,
+          "cumulative_objects": 32,
+          "cumulative_plaintext_bytes": 1064960,
+          "cumulative_chunks": 32,
+          "cgroup_memory_current_mib": 489.97265625,
+          "memstat_anon_mib": 95.953125,
+          "memstat_file_mib": 392.12890625,
+          "memstat_kernel_mib": 1.74609375,
+          "memstat_kernel_stack_mib": 0.3125,
+          "memstat_pagetables_mib": 0.0,
+          "memstat_sock_mib": 0.015625,
+          "memstat_shmem_mib": 0.0,
+          "memstat_file_mapped_mib": 5.79296875,
+          "memstat_file_dirty_mib": 0.03125,
+          "memstat_file_writeback_mib": 0.0,
+          "proc_vmrss_mib": 101.6171875,
+          "proc_rss_anon_mib": 95.859375,
+          "proc_rss_file_mib": 5.7578125,
+          "proc_rss_shmem_mib": 0.0,
+          "smaps_private_dirty_mib": 95.859375,
+          "fd": 25,
+          "relay_redb_bytes": 678464506
+        },
+        {
+          "round": 1,
+          "measured": false,
+          "cumulative_objects": 48,
+          "cumulative_plaintext_bytes": 2113536,
+          "cumulative_chunks": 48,
+          "cgroup_memory_current_mib": 507.203125,
+          "memstat_anon_mib": 96.484375,
+          "memstat_file_mib": 408.42578125,
+          "memstat_kernel_mib": 1.74609375,
+          "memstat_kernel_stack_mib": 0.3125,
+          "memstat_pagetables_mib": 0.0,
+          "memstat_sock_mib": 0.015625,
+          "memstat_shmem_mib": 0.0,
+          "memstat_file_mapped_mib": 5.79296875,
+          "memstat_file_dirty_mib": 0.02734375,
+          "memstat_file_writeback_mib": 0.0,
+          "proc_vmrss_mib": 102.1484375,
+          "proc_rss_anon_mib": 96.390625,
+          "proc_rss_file_mib": 5.7578125,
+          "proc_rss_shmem_mib": 0.0,
+          "smaps_private_dirty_mib": 96.390625,
+          "fd": 25,
+          "relay_redb_bytes": 678487354
+        },
+        {
+          "round": 2,
+          "measured": true,
+          "cumulative_objects": 64,
+          "cumulative_plaintext_bytes": 3162112,
+          "cumulative_chunks": 64,
+          "cgroup_memory_current_mib": 520.953125,
+          "memstat_anon_mib": 94.2109375,
+          "memstat_file_mib": 424.5078125,
+          "memstat_kernel_mib": 1.7578125,
+          "memstat_kernel_stack_mib": 0.3125,
+          "memstat_pagetables_mib": 0.0,
+          "memstat_sock_mib": 0.015625,
+          "memstat_shmem_mib": 0.0,
+          "memstat_file_mapped_mib": 5.79296875,
+          "memstat_file_dirty_mib": 0.046875,
+          "memstat_file_writeback_mib": 0.0,
+          "proc_vmrss_mib": 99.87890625,
+          "proc_rss_anon_mib": 94.12109375,
+          "proc_rss_file_mib": 5.7578125,
+          "proc_rss_shmem_mib": 0.0,
+          "smaps_private_dirty_mib": 94.12109375,
+          "fd": 25,
+          "relay_redb_bytes": 678510202
+        },
+        {
+          "round": 3,
+          "measured": true,
+          "cumulative_objects": 80,
+          "cumulative_plaintext_bytes": 4210688,
+          "cumulative_chunks": 80,
+          "cgroup_memory_current_mib": 535.625,
+          "memstat_anon_mib": 92.828125,
+          "memstat_file_mib": 440.609375,
+          "memstat_kernel_mib": 1.76953125,
+          "memstat_kernel_stack_mib": 0.3125,
+          "memstat_pagetables_mib": 0.0,
+          "memstat_sock_mib": 0.015625,
+          "memstat_shmem_mib": 0.0,
+          "memstat_file_mapped_mib": 5.79296875,
+          "memstat_file_dirty_mib": 0.0703125,
+          "memstat_file_writeback_mib": 0.0,
+          "proc_vmrss_mib": 98.4921875,
+          "proc_rss_anon_mib": 92.734375,
+          "proc_rss_file_mib": 5.7578125,
+          "proc_rss_shmem_mib": 0.0,
+          "smaps_private_dirty_mib": 92.734375,
+          "fd": 25,
+          "relay_redb_bytes": 678533050
+        },
+        {
+          "round": 4,
+          "measured": true,
+          "cumulative_objects": 96,
+          "cumulative_plaintext_bytes": 5259264,
+          "cumulative_chunks": 96,
+          "cgroup_memory_current_mib": 544.4453125,
+          "memstat_anon_mib": 85.5625,
+          "memstat_file_mib": 456.6875,
+          "memstat_kernel_mib": 1.78515625,
+          "memstat_kernel_stack_mib": 0.3125,
+          "memstat_pagetables_mib": 0.0,
+          "memstat_sock_mib": 0.015625,
+          "memstat_shmem_mib": 0.0,
+          "memstat_file_mapped_mib": 5.79296875,
+          "memstat_file_dirty_mib": 0.08984375,
+          "memstat_file_writeback_mib": 0.0,
+          "proc_vmrss_mib": 91.23046875,
+          "proc_rss_anon_mib": 85.47265625,
+          "proc_rss_file_mib": 5.7578125,
+          "proc_rss_shmem_mib": 0.0,
+          "smaps_private_dirty_mib": 85.47265625,
+          "fd": 25,
+          "relay_redb_bytes": 678555898
+        },
+        {
+          "round": 5,
+          "measured": true,
+          "cumulative_objects": 112,
+          "cumulative_plaintext_bytes": 6307840,
+          "cumulative_chunks": 112,
+          "cgroup_memory_current_mib": 565.27734375,
+          "memstat_anon_mib": 90.51171875,
+          "memstat_file_mib": 472.76953125,
+          "memstat_kernel_mib": 1.78515625,
+          "memstat_kernel_stack_mib": 0.3125,
+          "memstat_pagetables_mib": 0.0,
+          "memstat_sock_mib": 0.015625,
+          "memstat_shmem_mib": 0.0,
+          "memstat_file_mapped_mib": 5.79296875,
+          "memstat_file_dirty_mib": 0.11328125,
+          "memstat_file_writeback_mib": 0.0,
+          "proc_vmrss_mib": 96.17578125,
+          "proc_rss_anon_mib": 90.41796875,
+          "proc_rss_file_mib": 5.7578125,
+          "proc_rss_shmem_mib": 0.0,
+          "smaps_private_dirty_mib": 90.41796875,
+          "fd": 25,
+          "relay_redb_bytes": 678578746
+        },
+        {
+          "round": 6,
+          "measured": true,
+          "cumulative_objects": 128,
+          "cumulative_plaintext_bytes": 7356416,
+          "cumulative_chunks": 128,
+          "cgroup_memory_current_mib": 586.51171875,
+          "memstat_anon_mib": 95.390625,
+          "memstat_file_mib": 488.859375,
+          "memstat_kernel_mib": 1.8046875,
+          "memstat_kernel_stack_mib": 0.3125,
+          "memstat_pagetables_mib": 0.0,
+          "memstat_sock_mib": 0.015625,
+          "memstat_shmem_mib": 0.0,
+          "memstat_file_mapped_mib": 5.79296875,
+          "memstat_file_dirty_mib": 0.1328125,
+          "memstat_file_writeback_mib": 0.0,
+          "proc_vmrss_mib": 101.0546875,
+          "proc_rss_anon_mib": 95.296875,
+          "proc_rss_file_mib": 5.7578125,
+          "proc_rss_shmem_mib": 0.0,
+          "smaps_private_dirty_mib": 95.296875,
+          "fd": 25,
+          "relay_redb_bytes": 678601594
+        }
+      ]
+    }
+  ],
+  "churn": {
+    "k": 4,
+    "restart_first_op_ns": 10125797625,
+    "warm_p95_pre_ns": 58857000,
+    "warm_p95_post_ns": 56388333
+  },
+  "boundary_diagnostics": [
+    {
+      "label": "1MiB_request",
+      "object_bytes": 1048576,
+      "chunk_bytes": 262144,
+      "put_failed": true,
+      "put_error_excerpt": "SDK error: I/O error: Broken pipe (os error 32)\n",
+      "local_status_excerpt": "{\n  \"transfer\": null\n}\n",
+      "local_object_exists": false,
+      "local_completed_chunks": 0,
+      "local_transfer_state": "unknown",
+      "relay_write_actions": 0,
+      "request_frame_estimate_bytes": 1398101,
+      "response_frame_estimate_bytes": 5138022,
+      "relay_close_reason_excerpt": "",
+      "classification": "pre_commit_reject",
+      "post_get_ok": false,
+      "post_get_hash_match": false
+    },
+    {
+      "label": "512KiB_response",
+      "object_bytes": 524288,
+      "chunk_bytes": 65536,
+      "put_failed": true,
+      "put_error_excerpt": "SDK error: local bus error: local bus frame too large: 2573183\n",
+      "local_status_excerpt": "{\n  \"transfer\": {\n    \"completed_chunks\": 9,\n    \"direction\": \"upload\",\n    \"done_bytes\": 524304,\n    \"last_error\": null,\n    \"manifest_hash\": \"snndvWgC_D1AkedR",
+      "local_object_exists": true,
+      "local_completed_chunks": 9,
+      "local_transfer_state": "complete",
+      "relay_write_actions": 9,
+      "request_frame_estimate_bytes": 699050,
+      "response_frame_estimate_bytes": 2569011,
+      "relay_close_reason_excerpt": "",
+      "classification": "ambiguous_success",
+      "post_get_ok": true,
+      "post_get_hash_match": true
+    },
+    {
+      "label": "512KiB_128chunk_peerstop",
+      "object_bytes": 524288,
+      "chunk_bytes": 131072,
+      "put_failed": true,
+      "put_error_excerpt": "SDK error: local bus error: ValidationFailed: transport error: QUIC error: relay QUIC connection lost with no complete application response: QUIC error: sending stopped by peer: error 0\n",
+      "local_status_excerpt": "{\n  \"transfer\": null\n}\n",
+      "local_object_exists": false,
+      "local_completed_chunks": 0,
+      "local_transfer_state": "unknown",
+      "relay_write_actions": 0,
+      "request_frame_estimate_bytes": 699050,
+      "response_frame_estimate_bytes": 2569011,
+      "relay_close_reason_excerpt": "",
+      "classification": "pre_commit_reject",
+      "post_get_ok": false,
+      "post_get_hash_match": false
+    }
+  ],
+  "thresholds": [
+    {
+      "name": "A_small_k1_success_100",
+      "passed": true,
+      "diagnostic": false,
+      "detail": "ops_ok=20/20 errors=[]"
+    },
+    {
+      "name": "A_small_k1_http_object_zero",
+      "passed": true,
+      "diagnostic": false,
+      "detail": "http_object_requests=0"
+    },
+    {
+      "name": "A_small_k1_distinct_connections_ge_k",
+      "passed": true,
+      "diagnostic": false,
+      "detail": "distinct=1 expected>=1"
+    },
+    {
+      "name": "A_small_k1_connection_reuse_gt_1",
+      "passed": true,
+      "diagnostic": false,
+      "detail": "max_reuse=170"
+    },
+    {
+      "name": "A_small_k1_rss_anon_median_growth_le_1_25x",
+      "passed": true,
+      "diagnostic": false,
+      "detail": "median_ratio=1.016 rss_anon=[70.07421875, 81.78125, 83.109375, 83.11328125, 83.1171875]"
+    },
+    {
+      "name": "A_small_k1_rss_anon_peak_le_1_75x",
+      "passed": true,
+      "diagnostic": false,
+      "detail": "peak_ratio=1.016"
+    },
+    {
+      "name": "A_small_k1_rss_anon_not_monotonic_unbounded",
+      "passed": true,
+      "diagnostic": true,
+      "detail": "monotonic_unbounded=false"
+    },
+    {
+      "name": "A_small_k1_relay_memcurrent_le_512mib",
+      "passed": true,
+      "diagnostic": false,
+      "detail": "memcurrent_peak=92.0 MiB"
+    },
+    {
+      "name": "A_small_k1_relay_fd_stable",
+      "passed": true,
+      "diagnostic": false,
+      "detail": "fd_first=23 fd_peak=23"
+    },
+    {
+      "name": "A_small_k4_success_100",
+      "passed": true,
+      "diagnostic": false,
+      "detail": "ops_ok=80/80 errors=[]"
+    },
+    {
+      "name": "A_small_k4_http_object_zero",
+      "passed": true,
+      "diagnostic": false,
+      "detail": "http_object_requests=0"
+    },
+    {
+      "name": "A_small_k4_distinct_connections_ge_k",
+      "passed": true,
+      "diagnostic": false,
+      "detail": "distinct=4 expected>=4"
+    },
+    {
+      "name": "A_small_k4_connection_reuse_gt_1",
+      "passed": true,
+      "diagnostic": false,
+      "detail": "max_reuse=170"
+    },
+    {
+      "name": "A_small_k4_rss_anon_median_growth_le_1_25x",
+      "passed": true,
+      "diagnostic": false,
+      "detail": "median_ratio=1.020 rss_anon=[87.8203125, 83.109375, 89.859375, 89.5546875, 74.87890625]"
+    },
+    {
+      "name": "A_small_k4_rss_anon_peak_le_1_75x",
+      "passed": true,
+      "diagnostic": false,
+      "detail": "peak_ratio=1.023"
+    },
+    {
+      "name": "A_small_k4_rss_anon_not_monotonic_unbounded",
+      "passed": true,
+      "diagnostic": true,
+      "detail": "monotonic_unbounded=false"
+    },
+    {
+      "name": "A_small_k4_relay_memcurrent_le_512mib",
+      "passed": true,
+      "diagnostic": false,
+      "detail": "memcurrent_peak=99.0 MiB"
+    },
+    {
+      "name": "A_small_k4_relay_fd_stable",
+      "passed": true,
+      "diagnostic": false,
+      "detail": "fd_first=23 fd_peak=24"
+    },
+    {
+      "name": "A_small_k8_success_100",
+      "passed": true,
+      "diagnostic": false,
+      "detail": "ops_ok=160/160 errors=[]"
+    },
+    {
+      "name": "A_small_k8_http_object_zero",
+      "passed": true,
+      "diagnostic": false,
+      "detail": "http_object_requests=0"
+    },
+    {
+      "name": "A_small_k8_distinct_connections_ge_k",
+      "passed": true,
+      "diagnostic": false,
+      "detail": "distinct=8 expected>=8"
+    },
+    {
+      "name": "A_small_k8_connection_reuse_gt_1",
+      "passed": true,
+      "diagnostic": false,
+      "detail": "max_reuse=170"
+    },
+    {
+      "name": "A_small_k8_rss_anon_median_growth_le_1_25x",
+      "passed": true,
+      "diagnostic": false,
+      "detail": "median_ratio=1.095 rss_anon=[76.5859375, 78.81640625, 93.1796875, 86.3125, 84.9609375]"
+    },
+    {
+      "name": "A_small_k8_rss_anon_peak_le_1_75x",
+      "passed": true,
+      "diagnostic": false,
+      "detail": "peak_ratio=1.182"
+    },
+    {
+      "name": "A_small_k8_rss_anon_not_monotonic_unbounded",
+      "passed": true,
+      "diagnostic": true,
+      "detail": "monotonic_unbounded=false"
+    },
+    {
+      "name": "A_small_k8_relay_memcurrent_le_512mib",
+      "passed": true,
+      "diagnostic": false,
+      "detail": "memcurrent_peak=102.3 MiB"
+    },
+    {
+      "name": "A_small_k8_relay_fd_stable",
+      "passed": true,
+      "diagnostic": false,
+      "detail": "fd_first=25 fd_peak=25"
+    },
+    {
+      "name": "D_resource_k16_success_100",
+      "passed": true,
+      "diagnostic": false,
+      "detail": "ops_ok=80/80 errors=[]"
+    },
+    {
+      "name": "D_resource_k16_http_object_zero",
+      "passed": true,
+      "diagnostic": false,
+      "detail": "http_object_requests=0"
+    },
+    {
+      "name": "D_resource_k16_distinct_connections_ge_k",
+      "passed": true,
+      "diagnostic": false,
+      "detail": "distinct=16 expected>=16"
+    },
+    {
+      "name": "D_resource_k16_connection_reuse_gt_1",
+      "passed": true,
+      "diagnostic": false,
+      "detail": "max_reuse=44"
+    },
+    {
+      "name": "D_resource_k16_rss_anon_median_growth_le_1_25x",
+      "passed": true,
+      "diagnostic": false,
+      "detail": "median_ratio=0.975 rss_anon=[94.12109375, 92.734375, 85.47265625, 90.41796875, 95.296875]"
+    },
+    {
+      "name": "D_resource_k16_rss_anon_peak_le_1_75x",
+      "passed": true,
+      "diagnostic": false,
+      "detail": "peak_ratio=1.028"
+    },
+    {
+      "name": "D_resource_k16_rss_anon_not_monotonic_unbounded",
+      "passed": true,
+      "diagnostic": true,
+      "detail": "monotonic_unbounded=false"
+    },
+    {
+      "name": "D_resource_k16_relay_memcurrent_le_512mib",
+      "passed": true,
+      "diagnostic": false,
+      "detail": "memcurrent_peak=104.7 MiB"
+    },
+    {
+      "name": "D_resource_k16_relay_fd_stable",
+      "passed": true,
+      "diagnostic": false,
+      "detail": "fd_first=25 fd_peak=25"
+    },
+    {
+      "name": "D_resource_k16_rfd_aggregate_rss_le_1_5gib",
+      "passed": true,
+      "diagnostic": false,
+      "detail": "rfd_aggregate_rss=1215.1 MiB"
+    },
+    {
+      "name": "D_resource_k16_rfd_aggregate_fd_le_1024",
+      "passed": true,
+      "diagnostic": false,
+      "detail": "rfd_aggregate_fd=288"
+    },
+    {
+      "name": "D_resource_k16_file_cache_le_redb_plus_32mib",
+      "passed": true,
+      "diagnostic": false,
+      "detail": "max(file-redb)=-158.3 MiB"
+    },
+    {
+      "name": "D_resource_k16_cgroup_components_reconcile",
+      "passed": true,
+      "diagnostic": false,
+      "detail": "memory.current ~= anon+file+kernel (<=64MiB or 15%)"
+    },
+    {
+      "name": "E_churn_first_op_lt_15s",
+      "passed": true,
+      "diagnostic": false,
+      "detail": "first_op=10125ms"
+    },
+    {
+      "name": "E_churn_warm_p95_le_2x_pre",
+      "passed": true,
+      "diagnostic": false,
+      "detail": "post_p95=56ms vs 2x pre=117ms"
+    },
+    {
+      "name": "obj_ipc_01_1mib_request_pre_commit_reject",
+      "passed": true,
+      "diagnostic": false,
+      "detail": "class=pre_commit_reject local_exists=false relay_writes=0"
+    },
+    {
+      "name": "obj_ipc_01_1MiB_request_classified",
+      "passed": true,
+      "diagnostic": false,
+      "detail": "class=pre_commit_reject local_exists=false completed=0 state=unknown relay_writes=0"
+    },
+    {
+      "name": "obj_ipc_01_512KiB_response_classified",
+      "passed": true,
+      "diagnostic": false,
+      "detail": "class=ambiguous_success local_exists=true completed=9 state=complete relay_writes=9"
+    },
+    {
+      "name": "obj_ipc_01_512KiB_128chunk_peerstop_classified",
+      "passed": true,
+      "diagnostic": false,
+      "detail": "class=pre_commit_reject local_exists=false completed=0 state=unknown relay_writes=0"
+    }
+  ]
+}
