@@ -71,7 +71,8 @@ fn mvp_s65_realnet_object_ipc_512kib_put() -> Result<(), Box<dyn std::error::Err
         signaling_turn_tcp: 64_579,
         retention_http: 64_287,
     };
-    let stack = s65_start_stack(project, "s65a_512k_materials", ports, "principal_s65a_owner", None)?;
+    let stack =
+        s65_start_stack(project, "s65a_512k_materials", ports, "principal_s65a_owner", None)?;
     let relay_url = format!("http://127.0.0.1:{}", ports.relay_http);
 
     let runtime = tokio::runtime::Builder::new_multi_thread().enable_all().build()?;
@@ -526,8 +527,16 @@ async fn s65_object_status(
     mvp_s4_rf_json(
         rf_binary,
         &[
-            "--socket", socket_arg, "object", "status", "--account", account, "--object", object_id,
-            "--direction", direction,
+            "--socket",
+            socket_arg,
+            "object",
+            "status",
+            "--account",
+            account,
+            "--object",
+            object_id,
+            "--direction",
+            direction,
         ],
     )
     .await
