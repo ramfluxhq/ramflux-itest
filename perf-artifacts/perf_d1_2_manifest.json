@@ -1,15 +1,18 @@
 {
   "build": "release",
   "git_dirty": true,
-  "git_sha": "4efc50c388959b75268b6ea8641cbb17d65a586f",
-  "large_object_capacity": "blocked_OBJ-IPC-01",
+  "git_sha": "6b8b54595412b40ad96f53d5a2976efcdd747e80",
   "public_envelope_class": "current_verified_64k",
   "runs": [
     {
-      "artifact": "perf_d1_2_macro_cut_grid_r3_run0.json",
-      "run_id": "cut_grid_r3_run0"
+      "artifact": "perf_d1_2_macro_d12b_b1m_r2_run0.json",
+      "run_id": "d12b_b1m_r2_run0"
     }
   ],
   "schema": "ramflux.perf.d1.macrobench.manifest.v1",
-  "task": "PERF-D1-2a"
+  "task": "PERF-D1-2a",
+  "historical_blocked_OBJ_IPC_01": "HISTORY ONLY (was large_object_capacity=blocked_OBJ-IPC-01); resolved by OBJ-IPC-01 A1-A5",
+  "large_object_public_path": "post_obj_ipc_fixed_public_rf_rfd_v3_quic",
+  "post_fix_manifest": "perf_d1_2b_manifest.json",
+  "note": "PERF-D1-2a (64KiB envelope). Large-object post-fix capacity measured in PERF-D1-2b: 512KiB/1MiB measured/pass; 16MiB single-object functional pass but sustained gate fail (gateway_signed_request_expired_under_sustained_large_object_load) \u2014 see perf_d1_2b_manifest.json."
 }

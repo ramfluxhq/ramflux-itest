@@ -1,0 +1,83 @@
+{
+  "schema": "ramflux.perf.d1.macrobench.manifest.v1",
+  "task": "PERF-D1-2b",
+  "ruling": "CTRL-110/CTRL-111",
+  "build": "release",
+  "environment": "mac-dev podman v3 QUIC public rf/rfd path (NOT Linux production SLO)",
+  "git_sha": "6b8b54595412b40ad96f53d5a2976efcdd747e80",
+  "git_dirty": true,
+  "chunk_bytes": 65536,
+  "large_object_public_path": "post_obj_ipc_fixed_public_rf_rfd_v3_quic",
+  "public_object_capacity_512k": "measured/pass",
+  "public_object_capacity_1m": "measured/pass",
+  "public_object_capacity_16m": {
+    "single_object_functional_path": "measured/pass",
+    "sustained_public_path_capacity_gate": "measured/fail",
+    "error_class": "gateway_signed_request_expired_under_sustained_large_object_load",
+    "evidence": "first 14+ 16MiB objects committed byte-identical; C16M K=1 8obj/round x5 sustained gate deterministically fails (2/2 runs) at the gateway 60s signed-request freshness window under sustained rfd local-bus/event-loop saturation",
+    "resolution_gate": "Linux QA/production freshness SLO must re-test; unblocks when GW-token-freshness/re-signing strategy resolved OR owner lowers v1 sustained 16MiB throughput requirement",
+    "root_cause_hypothesis": "UNCONFIRMED (pending GW-TOKEN-01-A0 read-only diagnostic): rfd single event-loop saturated by sustained 16MiB relay upload; gateway signed_request 60s freshness window exceeded on relay v3 token issue; not frame/capture/resource/OBJ-IPC-regression",
+    "error_class_certain": true
+  },
+  "historical_blocked_OBJ_IPC_01": "HISTORY ONLY \u2014 pre-A1-A5 the public path was blocked (request base64 1MiB frame + response Vec<u8> JSON echo ~200KiB + relay 64-128KiB per-chunk); resolved by OBJ-IPC-01 A1-A5 (this D1-2b is the post-fix rerun)",
+  "measured": {
+    "B512_512KiB": {
+      "k1": {
+        "runs": 3,
+        "put_p50_ms": 247.7,
+        "put_p95_ms": 256.1,
+        "put_p99_ms": 273.3,
+        "throughput_mib_s": 2.0,
+        "memcurrent_peak_mib": 97.6,
+        "success_100": true
+      },
+      "k4": {
+        "runs": 3,
+        "put_p50_ms": 425.2,
+        "put_p95_ms": 509.9,
+        "put_p99_ms": 560.2,
+        "throughput_mib_s": 4.5,
+        "memcurrent_peak_mib": 122.8,
+        "success_100": true
+      },
+      "k8": {
+        "runs": 3,
+        "put_p50_ms": 785.0,
+        "put_p95_ms": 975.3,
+        "put_p99_ms": 1132.7,
+        "throughput_mib_s": 4.8,
+        "memcurrent_peak_mib": 138.2,
+        "success_100": true
+      }
+    },
+    "B1M_1MiB": {
+      "k1": {
+        "runs": 3,
+        "put_p50_ms": 546.0,
+        "put_p95_ms": 590.3,
+        "put_p99_ms": 610.8,
+        "throughput_mib_s": 1.8,
+        "memcurrent_peak_mib": 98.9,
+        "success_100": true
+      },
+      "k4": {
+        "runs": 3,
+        "put_p50_ms": 962.2,
+        "put_p95_ms": 1175.5,
+        "put_p99_ms": 1333.2,
+        "throughput_mib_s": 4.0,
+        "memcurrent_peak_mib": 161.0,
+        "success_100": true
+      },
+      "k8": {
+        "runs": 3,
+        "put_p50_ms": 1980.3,
+        "put_p95_ms": 3608.6,
+        "put_p99_ms": 4119.7,
+        "throughput_mib_s": 3.4,
+        "memcurrent_peak_mib": 178.2,
+        "success_100": true
+      }
+    }
+  }
+}

@@ -358,10 +358,10 @@ struct S64Point {
 
 #[cfg(feature = "realnet")]
 const S64_POINTS: &[S64Point] = &[
-    // PERF-D1-2a (CTRL-073): the ONLY public-path object size that round-trips both directions is the
-    // 64 KiB verified envelope. 512 KiB/1 MiB/16 MiB are blocked by OBJ-IPC-01 (request base64 frame,
-    // response Vec<u8> JSON echo, relay per-chunk) and are deferred to D1-2b after the fix. B/C are
-    // therefore NOT run here; their large-object behaviour is captured by the boundary diagnostics.
+    // PERF-D1-2a (CTRL-073): the default grid's verified public-path object size is the 64 KiB
+    // envelope. The larger 512 KiB/1 MiB/16 MiB points that were historically blocked by OBJ-IPC-01
+    // (request base64 frame, response Vec<u8> JSON echo, relay per-chunk) are now unblocked after the
+    // A1-A5 fix and live in `S64_LARGE_POINTS`, run under `RAMFLUX_S64_LARGE=1` (PERF-D1-2b, CTRL-110).
     // A: small-object concurrency across K.
     S64Point {
         name: "A_small",
@@ -381,6 +381,53 @@ const S64_POINTS: &[S64Point] = &[
         rounds: 5,
     },
 ];
+
+/// PERF-D1-2b (CTRL-110): post-OBJ-IPC-01 large-object public-path capacity points, selected only
+/// under `RAMFLUX_S64_LARGE=1` so the default grid is unchanged. All use a 64 KiB relay chunk (the
+/// verified relay per-chunk envelope; the >=128 KiB relay wall is avoided). The public `rf object
+/// put/get` path now spools these through the A1-A5 bounded local-bus protocol (every frame <1 MiB).
+/// B512/B1M fan out across K; C16M's baseline reachability gate is K=1 multi-object/round (K>1 is a
+/// separate stress probe, not the 16 MiB hard gate), plus the relay-restart churn hash-reverify.
+#[cfg(feature = "realnet")]
+const S64_LARGE_POINTS: &[S64Point] = &[
+    S64Point {
+        name: "B512_throughput",
+        ks: &[1, 4, 8],
+        object_bytes: 512 * 1024,
+        chunk_bytes: 64 * 1024,
+        objects_per_daemon_per_round: 4,
+        rounds: 5,
+    },
+    S64Point {
+        name: "B1M_throughput",
+        ks: &[1, 4, 8],
+        object_bytes: 1024 * 1024,
+        chunk_bytes: 64 * 1024,
+        objects_per_daemon_per_round: 4,
+        rounds: 5,
+    },
+    S64Point {
+        name: "C16M_closure",
+        ks: &[1],
+        object_bytes: 16 * 1024 * 1024,
+        chunk_bytes: 64 * 1024,
+        objects_per_daemon_per_round: 8,
+        rounds: 5,
+    },
+];
+
+/// PERF-D1-2b (CTRL-110): select the large-object grid instead of the default 64 KiB grid.
+#[cfg(feature = "realnet")]
+fn s64_large_mode() -> bool {
+    std::env::var("RAMFLUX_S64_LARGE").as_deref() == Ok("1")
+}
+
+/// The active macrobench grid: the default 64 KiB grid, or the D1-2b large-object grid under
+/// `RAMFLUX_S64_LARGE=1`.
+#[cfg(feature = "realnet")]
+fn s64_active_points() -> &'static [S64Point] {
+    if s64_large_mode() { S64_LARGE_POINTS } else { S64_POINTS }
+}
 
 /// CTRL-074: uncounted warmup rounds run BEFORE the `point.rounds` measured rounds so relay RSS is
 /// sampled at steady state, not during cold-start allocation. Their PUTs still must succeed.
@@ -593,7 +640,7 @@ async fn s64_flow(
         let mut points: Vec<S64PointResult> = Vec::new();
         let mut thresholds: Vec<S64Threshold> = Vec::new();
 
-        for point in S64_POINTS {
+        for point in s64_active_points() {
             if point_filter.as_ref().is_some_and(|set| !set.contains(point.name)) {
                 continue;
             }
@@ -620,10 +667,12 @@ async fn s64_flow(
             }
         }
 
-        // Churn (relay restart recovery) — its own K=4 phase using point B object shape.
+        // Churn (relay restart recovery) — K=4 / 64 KiB by default; K=1 / 16 MiB in D1-2b large mode
+        // (CTRL-110), where it is the C16M restart hash-reverify main gate.
+        let churn_k = if s64_large_mode() { 1usize } else { 4usize };
         let churn = if s64_run_churn()
             && point_filter.as_ref().is_none_or(|set| set.contains("E_churn"))
-            && 4 <= kmax
+            && churn_k <= kmax
         {
             Some(
                 s64_run_churn_phase(
@@ -3254,7 +3303,9 @@ async fn s64_run_churn_phase(
     audience_node: &str,
     run_id: &str,
 ) -> Result<S64ChurnResult, Box<dyn std::error::Error>> {
-    let k = 4usize;
+    // PERF-D1-2b (CTRL-110): in large mode the churn phase is the C16M restart hash-reverify main
+    // gate — K=1 at 16 MiB (baseline reachability across a relay restart), not the K=4 stress shape.
+    let k = if s64_large_mode() { 1usize } else { 4usize };
     eprintln!("STEP s64: churn phase k={k}");
     s64_reset_capture()?;
     let mut daemons = s64_spawn_daemons(
@@ -3269,9 +3320,10 @@ async fn s64_run_churn_phase(
         k,
     )
     .await?;
-    // CTRL-073: churn runs inside the 64 KiB verified public envelope (large objects blocked by
-    // OBJ-IPC-01), so it stays a durability/reconnect gate, not a large-object claim.
-    let object_bytes = 64 * 1024u64;
+    // Default: churn runs inside the 64 KiB verified public envelope (durability/reconnect gate).
+    // PERF-D1-2b (CTRL-110): large mode runs it at 16 MiB so the restart hash-reverify proves the
+    // full A1-A5 spooled public path survives a relay restart. Relay chunk stays 64 KiB.
+    let object_bytes = if s64_large_mode() { 16 * 1024 * 1024u64 } else { 64 * 1024u64 };
     let chunk_bytes = 64 * 1024u64;
 
     // Pre-restart warm baseline: two rounds of one PUT each per daemon.
@@ -3382,12 +3434,20 @@ async fn s64_run_churn_phase(
 /// whole run gets a unique account seed (see the device-manifest collision fixed in `s64_spawn_daemons`).
 /// Max slot 33 -> seed byte 0x90+33*2+1 = 0xD3, well within range and clear of the gateway node seeds.
 fn s64_seed_slot(point_name: &str, k: usize, index: usize) -> usize {
+    // PERF-D1-2b (CTRL-110): the large-object grid runs ONLY under RAMFLUX_S64_LARGE=1, where
+    // A_small/D_resource are absent, so a large (point, k) reuses their freed 1-29 slot range. Each
+    // (point, k) gets a distinct base spaced by its daemon count so no two daemons in one run share a
+    // seed byte; all stay in the high 0x90+ range (clear of the 0x33/44/66/88 gateway node seeds). The
+    // default and large phase sets never run together, so the shared bases below never collide.
     let base = match (point_name, k) {
         ("Zprobe", _) => 0,
-        ("A_small", 1) => 1,
-        ("A_small", 4) => 2,
-        ("A_small", 8) => 6,
-        ("D_resource", 16) => 14,
+        ("A_small" | "B512_throughput", 1) => 1,
+        ("A_small" | "B512_throughput", 4) => 2,
+        ("A_small" | "B512_throughput", 8) => 6,
+        ("D_resource", 16) | ("B1M_throughput", 1) => 14,
+        ("B1M_throughput", 4) => 15,
+        ("B1M_throughput", 8) => 19,
+        ("C16M_closure", 1) => 27,
         ("E_churn", _) => 30,
         _ => 34,
     };
@@ -4653,9 +4713,11 @@ mod s64_pure_tests {
 
     #[test]
     fn seed_slots_are_globally_unique() {
-        // Every daemon the run can spawn must get a distinct seed slot (and thus a distinct seed byte
-        // pair) so no two collide on the gateway's persisted device manifest.
-        let phases: &[(&str, usize)] = &[
+        // Every daemon a run can spawn must get a distinct seed slot (and thus a distinct seed byte
+        // pair) so no two collide on the gateway's persisted device manifest. The default grid and the
+        // PERF-D1-2b large grid never run in the same process (RAMFLUX_S64_LARGE switches between
+        // them), so each mode's phase set is checked for internal uniqueness independently.
+        let default_phases: &[(&str, usize)] = &[
             ("Zprobe", 1),
             ("A_small", 1),
             ("A_small", 4),
@@ -4663,17 +4725,31 @@ mod s64_pure_tests {
             ("D_resource", 16),
             ("E_churn", 4),
         ];
-        let mut seen = std::collections::BTreeSet::new();
-        let mut max_slot = 0usize;
-        for &(point, k) in phases {
-            for index in 0..k {
-                let slot = s64_seed_slot(point, k, index);
-                assert!(seen.insert(slot), "seed slot {slot} reused for {point} k{k} d{index}");
-                max_slot = max_slot.max(slot);
+        // Large mode (CTRL-110): A_small/D_resource absent; churn runs at k=1.
+        let large_phases: &[(&str, usize)] = &[
+            ("Zprobe", 1),
+            ("B512_throughput", 1),
+            ("B512_throughput", 4),
+            ("B512_throughput", 8),
+            ("B1M_throughput", 1),
+            ("B1M_throughput", 4),
+            ("B1M_throughput", 8),
+            ("C16M_closure", 1),
+            ("E_churn", 1),
+        ];
+        for phases in [default_phases, large_phases] {
+            let mut seen = std::collections::BTreeSet::new();
+            let mut max_slot = 0usize;
+            for &(point, k) in phases {
+                for index in 0..k {
+                    let slot = s64_seed_slot(point, k, index);
+                    assert!(seen.insert(slot), "seed slot {slot} reused for {point} k{k} d{index}");
+                    max_slot = max_slot.max(slot);
+                }
             }
+            // Highest seed byte must stay in range and clear of gateway node seeds (0x33/44/66/88).
+            assert!(0x91 + max_slot * 2 <= 0xFF, "max seed byte out of range: slot {max_slot}");
         }
-        // Highest seed byte must stay in range and clear of the gateway node seeds (0x33/44/66/88).
-        assert!(0x91 + max_slot * 2 <= 0xFF, "max seed byte out of range: slot {max_slot}");
     }
 
     #[test]
