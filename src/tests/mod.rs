@@ -173,6 +173,8 @@ mod mvp_s64_relay_quic_capacity;
 mod mvp_s65_object_ipc_frame_cap;
 #[path = "mvp_s66_object_ipc_reconcile.rs"]
 mod mvp_s66_object_ipc_reconcile;
+#[path = "mvp_s67_object_ipc_upload_spool.rs"]
+mod mvp_s67_object_ipc_upload_spool;
 #[path = "objects.rs"]
 mod objects;
 #[path = "transport_node_store.rs"]

@@ -9,11 +9,13 @@
 //     ~4.9x). With the compact PUT response it must now SUCCEED end to end: the CLI PUT returns,
 //     the upload transfer reaches `complete`, no HTTP object request reaches the relay (all v3
 //     QUIC), and a GET round-trips the exact plaintext (hash match).
-//   * Gate 2 (mvp_s65_realnet_object_ipc_1mib_reject): a 1 MiB one-shot `rf object put` inflates to
-//     a base64 request frame > 1 MiB, so the SDK writer-side cap rejects it BEFORE emitting any
-//     bytes -> the request never reaches dispatch. The CLI reports "local bus frame too large", the
-//     object is ABSENT from the local store afterward (object list), and the relay's per-client-QUIC
-//     request capture shows ZERO put_chunk (zero relay mutation).
+//   * Gate 2 (mvp_s65_realnet_object_ipc_oversize_reject): T25-A3 makes any file up to 16 MiB
+//     succeed via the auto-routed UPLOAD spool (so a 1 MiB PUT now SUCCEEDS instead of hitting the
+//     one-shot frame cap — see s67). The surviving fail-closed boundary is OVERSIZE: a > 16 MiB
+//     `rf object put` is rejected client-side (`MAX_LOCAL_BUS_OBJECT_BYTES`) BEFORE any local-bus
+//     frame is sent, so no begin/chunk/finish ever reaches dispatch. The CLI reports the object
+//     limit, the object is ABSENT from the local store afterward, and the relay's per-client-QUIC
+//     capture shows ZERO put_chunk (zero relay mutation).
 //
 // The relay is always compiled with `itest-quic-fault`, whose non-sensitive per-request fingerprint
 // capture (RAMFLUX_RELAY_ITEST_CAPTURE_FILE) records every client-QUIC object route; Gate 2 uses it
@@ -226,12 +228,12 @@ fn mvp_s65_realnet_object_ipc_512kib_put() -> Result<(), Box<dyn std::error::Err
     Ok(())
 }
 
-// ---- Gate 2: 1 MiB one-shot PUT rejected client-side BEFORE write; zero local + zero relay mutation ----
+// ---- Gate 2: oversize (> 16 MiB) PUT rejected client-side BEFORE write; zero local + zero relay mutation ----
 
 #[cfg(feature = "realnet")]
 #[test]
 #[allow(clippy::too_many_lines)]
-fn mvp_s65_realnet_object_ipc_1mib_reject() -> Result<(), Box<dyn std::error::Error>> {
+fn mvp_s65_realnet_object_ipc_oversize_reject() -> Result<(), Box<dyn std::error::Error>> {
     if !s65_realnet_enabled() {
         eprintln!(
             "skipping s65 1MiB reject realnet; set RAMFLUX_ITEST_REALNET=1 RAMFLUX_OBJECT_V3=1 RAMFLUX_CROSS_GATEWAY=1"
@@ -273,9 +275,10 @@ fn mvp_s65_realnet_object_ipc_1mib_reject() -> Result<(), Box<dyn std::error::Er
         std::fs::create_dir_all(&data_root)?;
         let socket = PathBuf::from(format!("/tmp/ramflux-s65b-rfd-{}.sock", std::process::id()));
         let input_path = temp_root.join("object-input.bin");
-        // Exactly 1 MiB plaintext -> base64 ~= 1.33 MiB request frame > the 1 MiB cap.
-        let plaintext = s65_deterministic_bytes(1024 * 1024);
-        assert_eq!(plaintext.len(), 1_048_576);
+        // 17 MiB plaintext -> exceeds MAX_LOCAL_BUS_OBJECT_BYTES (16 MiB); rejected client-side
+        // BEFORE any object.put.begin frame is sent (the surviving fail-closed boundary under A3).
+        let plaintext = s65_deterministic_bytes(17 * 1024 * 1024);
+        assert_eq!(plaintext.len(), 17_825_792);
         std::fs::write(&input_path, &plaintext)?;
 
         let rf_binary = mvp_s4_build_rf_binary().await?;
@@ -307,7 +310,7 @@ fn mvp_s65_realnet_object_ipc_1mib_reject() -> Result<(), Box<dyn std::error::Er
             // received would be visible.
             s65_reset_capture(project, capture_path)?;
 
-            // 1 MiB one-shot PUT: rejected client-side BEFORE the write (frame too large).
+            // 17 MiB PUT: rejected client-side BEFORE any local-bus frame (exceeds the object limit).
             let error_text = mvp_s4_rf_failure(
                 &rf_binary,
                 &[
@@ -328,10 +331,10 @@ fn mvp_s65_realnet_object_ipc_1mib_reject() -> Result<(), Box<dyn std::error::Er
             )
             .await?;
             assert!(
-                error_text.contains("frame too large"),
-                "1 MiB PUT must be rejected with a frame-too-large error, got: {error_text}"
+                error_text.contains("object limit"),
+                "17 MiB PUT must be rejected with an object-limit error, got: {error_text}"
             );
-            eprintln!("s65b: 1 MiB PUT rejected client-side: {}", error_text.trim());
+            eprintln!("s65b: 17 MiB PUT rejected client-side: {}", error_text.trim());
 
             // Object ABSENT from the local store (the request never reached dispatch).
             let list = mvp_s4_rf_json(
