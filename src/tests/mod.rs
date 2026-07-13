@@ -175,6 +175,8 @@ mod mvp_s65_object_ipc_frame_cap;
 mod mvp_s66_object_ipc_reconcile;
 #[path = "mvp_s67_object_ipc_upload_spool.rs"]
 mod mvp_s67_object_ipc_upload_spool;
+#[path = "mvp_s68_object_ipc_download_spool.rs"]
+mod mvp_s68_object_ipc_download_spool;
 #[path = "objects.rs"]
 mod objects;
 #[path = "transport_node_store.rs"]
