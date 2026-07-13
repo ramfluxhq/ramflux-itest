@@ -236,7 +236,7 @@ fn mvp_s65_realnet_object_ipc_512kib_put() -> Result<(), Box<dyn std::error::Err
 fn mvp_s65_realnet_object_ipc_oversize_reject() -> Result<(), Box<dyn std::error::Error>> {
     if !s65_realnet_enabled() {
         eprintln!(
-            "skipping s65 1MiB reject realnet; set RAMFLUX_ITEST_REALNET=1 RAMFLUX_OBJECT_V3=1 RAMFLUX_CROSS_GATEWAY=1"
+            "skipping s65 oversize (>16MiB) reject realnet; set RAMFLUX_ITEST_REALNET=1 RAMFLUX_OBJECT_V3=1 RAMFLUX_CROSS_GATEWAY=1"
         );
         return Ok(());
     }
@@ -376,7 +376,7 @@ fn mvp_s65_realnet_object_ipc_oversize_reject() -> Result<(), Box<dyn std::error
 
         let result = tokio::time::timeout(Duration::from_mins(6), flow)
             .await
-            .map_err(|_elapsed| "s65b 1 MiB reject flow timed out".to_owned());
+            .map_err(|_elapsed| "s65b oversize (>16MiB) reject flow timed out".to_owned());
         mvp_s20_stop_rf_daemon(&mut daemon).await?;
         let _ = std::fs::remove_file(&socket);
         std::fs::remove_dir_all(&temp_root).ok();
