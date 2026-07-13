@@ -177,6 +177,8 @@ mod mvp_s66_object_ipc_reconcile;
 mod mvp_s67_object_ipc_upload_spool;
 #[path = "mvp_s68_object_ipc_download_spool.rs"]
 mod mvp_s68_object_ipc_download_spool;
+#[path = "mvp_s69_object_ipc_crash_resume.rs"]
+mod mvp_s69_object_ipc_crash_resume;
 #[path = "objects.rs"]
 mod objects;
 #[path = "transport_node_store.rs"]
