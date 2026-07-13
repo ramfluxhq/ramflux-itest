@@ -169,6 +169,8 @@ mod mvp_s62_object_v3_quic_fault;
 mod mvp_s63_rfd_midflight_crash;
 #[path = "mvp_s64_relay_quic_capacity.rs"]
 mod mvp_s64_relay_quic_capacity;
+#[path = "mvp_s65_object_ipc_frame_cap.rs"]
+mod mvp_s65_object_ipc_frame_cap;
 #[path = "objects.rs"]
 mod objects;
 #[path = "transport_node_store.rs"]
