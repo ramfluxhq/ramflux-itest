@@ -121,14 +121,11 @@ pub(crate) async fn mvp_s15_assert_rf_object_put_get(
                 ],
             )
             .await?;
-            assert_eq!(put["object"]["object_id"], "object_s15_media");
-            let chunks = put["chunks"].as_array().ok_or("missing object chunks")?;
-            assert!(chunks.len() > 1);
-            for chunk in chunks {
-                let ciphertext =
-                    chunk["ciphertext_base64"].as_str().ok_or("missing object chunk ciphertext")?;
-                assert_node_opaque_payload(ciphertext, plaintext);
-            }
+            assert_eq!(put["object_id"], "object_s15_media");
+            // T25-A1 (OBJ-IPC-01): the compact PUT response no longer echoes ciphertext/chunks. Assert
+            // the whole IPC response is node-opaque (leaks no plaintext) — the IPC-layer opacity this
+            // test guards; per-chunk ciphertext opacity is covered by the crypto-layer unit tests.
+            assert_node_opaque_payload(&put.to_string(), plaintext);
             let share = mvp_s4_rf_json(
                 &rf_binary,
                 &[
@@ -254,7 +251,7 @@ pub(crate) async fn mvp_s15_assert_rf_object_store_persistence_after_daemon_rest
             "s15 object persist put before restart",
         )
         .await?;
-        assert_eq!(put["object"]["object_id"], OBJECT_ID);
+        assert_eq!(put["object_id"], OBJECT_ID);
 
         mvp_s20_stop_rf_daemon(&mut alice_daemon).await?;
         alice_daemon = mvp_s20_spawn_rf_daemon(&rf_binary, &alice_socket_arg, &alice_data_arg)?;
@@ -751,21 +748,9 @@ pub(crate) async fn mvp_s16_assert_object_secret_key_slot_dm(
                 ],
             )
             .await?;
-            let object = &put["object"];
-            let ciphertext = object["ciphertext"].as_array().ok_or("missing ciphertext")?;
-            let ciphertext_bytes = ciphertext
-                .iter()
-                .map(|value| {
-                    value
-                        .as_u64()
-                        .and_then(|byte| u8::try_from(byte).ok())
-                        .ok_or("invalid ciphertext byte")
-                })
-                .collect::<Result<Vec<_>, _>>()?;
-            assert_node_opaque_payload(
-                &ramflux_protocol::encode_base64url(&ciphertext_bytes),
-                plaintext,
-            );
+            // T25-A1 (OBJ-IPC-01): compact PUT response carries no ciphertext; assert the IPC response
+            // leaks no plaintext (crypto-layer unit tests cover ciphertext opacity itself).
+            assert_node_opaque_payload(&put.to_string(), plaintext);
 
             let share = mvp_s4_rf_json(
                 &rf_binary,
