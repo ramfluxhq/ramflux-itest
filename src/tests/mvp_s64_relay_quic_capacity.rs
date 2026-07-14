@@ -3812,7 +3812,10 @@ fn s64_evaluate_thresholds(
     let mut push = |name: &str, passed: bool, detail: String| {
         // CTRL-087: the strict-monotonic RssAnon check is a diagnostic flag, not a standalone
         // hard gate. Classified here by name so the field/value is always recorded, never hidden.
-        let diagnostic = name.ends_with("_rss_anon_not_monotonic_unbounded");
+        // A `_diagnostic` suffix (GW-TOKEN-01-A2: the raw large-object churn first-op) is likewise
+        // recorded but never gates.
+        let diagnostic =
+            name.ends_with("_rss_anon_not_monotonic_unbounded") || name.ends_with("_diagnostic");
         out.push(S64Threshold { name: name.to_owned(), passed, diagnostic, detail });
     };
 
@@ -3967,11 +3970,39 @@ fn s64_evaluate_thresholds(
     }
 
     if let Some(churn) = churn {
-        push(
-            "E_churn_first_op_lt_15s",
-            churn.restart_first_op_ns < 15_000_000_000,
-            format!("first_op={}ms", churn.restart_first_op_ns / 1_000_000),
-        );
+        let first_op_ms = churn.restart_first_op_ns / 1_000_000;
+        let warm_p95_pre_ms = churn.warm_p95_pre_ns / 1_000_000;
+        // GW-TOKEN-01-A2 (churn-gate ruling): subtract the SAME-SIZE warm baseline so the gate measures
+        // the relay-restart reconnect cost, not the (large-object) upload time bundled into the first
+        // post-restart op. For a 16 MiB object one warm PUT already costs ~9s, so the raw `first_op`
+        // against a 15s reconnect budget is mis-scoped; `reconnect_overhead = max(0, first_op -
+        // warm_p95_pre)` is the honest reconnect gate.
+        let reconnect_overhead_ms = first_op_ms.saturating_sub(warm_p95_pre_ms);
+        if s64_large_mode() {
+            // Large-object churn: reconnect overhead is the hard gate; the raw first_op is recorded as
+            // a DIAGNOSTIC (never gates) so the value + history stay visible. This supersedes the
+            // mis-scoped `E_churn_first_op_lt_15s` for large objects.
+            push(
+                "E_churn_reconnect_overhead_le_15s",
+                reconnect_overhead_ms <= 15_000,
+                format!(
+                    "reconnect_overhead={reconnect_overhead_ms}ms (first_op={first_op_ms}ms - warm_p95_pre={warm_p95_pre_ms}ms)"
+                ),
+            );
+            push(
+                "E_churn_first_op_ms_diagnostic",
+                first_op_ms < 15_000,
+                format!("first_op={first_op_ms}ms (raw; diagnostic for large-object churn)"),
+            );
+        } else {
+            // 64 KiB default churn: the raw first op is dominated by reconnect, so keep the existing
+            // hard gate unchanged.
+            push(
+                "E_churn_first_op_lt_15s",
+                churn.restart_first_op_ns < 15_000_000_000,
+                format!("first_op={first_op_ms}ms"),
+            );
+        }
         push(
             "E_churn_warm_p95_le_2x_pre",
             churn.warm_p95_post_ns <= 2 * churn.warm_p95_pre_ns,

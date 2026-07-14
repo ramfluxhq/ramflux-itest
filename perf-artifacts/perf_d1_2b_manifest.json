@@ -72,11 +72,25 @@
   "public_object_capacity_512k": "measured/pass",
   "public_object_capacity_1m": "measured/pass",
   "public_object_capacity_16m_single_object": "measured/pass",
-  "public_object_capacity_16m_sustained": "measured/fail",
-  "public_object_capacity_16m_failure": "signed_request_expired_under_sustained_load",
-  "error_class": "gateway_signed_request_expired_under_sustained_large_object_load",
-  "error_class_certain": true,
-  "observed_failure_certain": "C16M K=1 8obj/round x5 deterministically (2/2) fails at the gateway 60s signed_request freshness window under sustained 16MiB load; first 14+ 16MiB objects committed byte-identical",
-  "follow_up_hypothesis": "NOT proven (no constructed_at/received_at/verified_at timestamp evidence yet): rfd/local-bus serialized large-object work is a LIKELY CONTRIBUTOR delaying the token-issue signed request past 60s; GW-TOKEN-01-A0 read-only diagnostic must locate the real latency chain before this is asserted",
-  "follow_up_card": "GW-TOKEN-01-A0 (read-only diagnostic)"
+  "public_object_capacity_16m_sustained": "measured/pass",
+  "public_object_capacity_16m_sustained_fix": {
+    "card": "GW-TOKEN-01-A2",
+    "fix_commit": "0b2baf005d82513861acdfe84f4081d70678438d",
+    "summary": "SDK re-stamps a fresh signed_request auth window (created_at/expires_at) per gateway request via build_gateway_signed_request -> refresh_auth_window, so a persistent gateway session no longer carries a frozen connect-time deadline. No wire/TTL/gateway-expiry/replay change.",
+    "post_fix_evidence": "C16M a2fix_c16m_full_run0 (release, K=1 8obj/round x5): 40/40 ops errors=[], single persistent session reused 43178x, relay HTTP object=0, relay memcurrent 443.3 MiB, fd stable 25, signed_request_expired=0. Independent churn-less rerun a2fix_c16m_run0 also 40/40. Root cause located by GW-TOKEN-01-A0 (frozen session deadline = connect + GATEWAY_SESSION_AUTH_TTL_SECONDS=300).",
+    "post_fix_artifacts": [
+      "perf_d1_2_macro_a2fix_c16m_full_run0.json",
+      "perf_d1_2_macro_a2fix_c16m_run0.json"
+    ]
+  },
+  "public_object_capacity_16m_sustained_history_fail": {
+    "status": "measured/fail (pre-GW-TOKEN-01-A2, superseded)",
+    "failure": "signed_request_expired_under_sustained_load",
+    "error_class": "gateway_signed_request_expired_under_sustained_large_object_load",
+    "observed_failure_certain": "C16M K=1 8obj/round x5 deterministically (2/2) failed at the gateway signed_request freshness window under sustained 16MiB load (session-frozen created_at/expires_at); first 14+ 16MiB objects committed byte-identical.",
+    "root_cause_card": "GW-TOKEN-01-A0 (read-only diagnostic)"
+  },
+  "churn_reconnect_gate_note": "Large-object churn hard gate is now E_churn_reconnect_overhead_le_15s = max(0, first_op - warm_p95_pre); measured 9966ms (first_op 19050ms - warm_p95_pre 9084ms) PASS. The raw E_churn_first_op_lt_15s was mis-scoped for 16MiB (one warm PUT ~9s) and is retained DIAGNOSTIC-only (first_op=19050ms, superseded) for large objects; the 64KiB default churn keeps the original raw first_op gate.",
+  "no_regression": "B512/B1M post-fix smoke (a2fix_b_smoke_run0, K=1): 20/20 each, relay HTTP object=0. s69 object-ipc crash-resume realnet green.",
+  "follow_up_card": "GW-TOKEN-01-A2 (fix; C16M mac-dev sustained gate closed). Linux QA/production SLO re-test remains separate."
 }

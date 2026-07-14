@@ -1,0 +1,225 @@
+{
+  "schema": "ramflux.perf.d1.macrobench.v1",
+  "run_id": "a2fix_c16m_full_run0",
+  "git_sha": "6b8b54595412b40ad96f53d5a2976efcdd747e80",
+  "git_dirty": true,
+  "build": "release",
+  "generated_note": "PERF-D1-2a public-path K-daemon macrobench, CTRL-073 64KiB verified envelope; large objects blocked by OBJ-IPC-01; mac-dev, not an SLO",
+  "public_envelope_class": "current_verified_64k",
+  "supported_public_object_bytes": 65536,
+  "known_limit_local_bus_frame_bytes": 1048576,
+  "large_object_capacity": "blocked_OBJ-IPC-01",
+  "large_object_public_path": "blocked_by_OBJ-IPC-01",
+  "namespace_seed_slots": [
+    {
+      "point": "Zprobe",
+      "k": 1,
+      "account_prefix": "s64_acct_Zprobe_k1_a2fix_c16m_full_run0_d",
+      "seed_slot_first": 0,
+      "seed_slot_last": 0,
+      "root_seed_first": "90",
+      "root_seed_last": "90"
+    },
+    {
+      "point": "A_small",
+      "k": 1,
+      "account_prefix": "s64_acct_A_small_k1_a2fix_c16m_full_run0_d",
+      "seed_slot_first": 1,
+      "seed_slot_last": 1,
+      "root_seed_first": "92",
+      "root_seed_last": "92"
+    },
+    {
+      "point": "A_small",
+      "k": 4,
+      "account_prefix": "s64_acct_A_small_k4_a2fix_c16m_full_run0_d",
+      "seed_slot_first": 2,
+      "seed_slot_last": 5,
+      "root_seed_first": "94",
+      "root_seed_last": "9a"
+    },
+    {
+      "point": "A_small",
+      "k": 8,
+      "account_prefix": "s64_acct_A_small_k8_a2fix_c16m_full_run0_d",
+      "seed_slot_first": 6,
+      "seed_slot_last": 13,
+      "root_seed_first": "9c",
+      "root_seed_last": "aa"
+    },
+    {
+      "point": "D_resource",
+      "k": 16,
+      "account_prefix": "s64_acct_D_resource_k16_a2fix_c16m_full_run0_d",
+      "seed_slot_first": 14,
+      "seed_slot_last": 29,
+      "root_seed_first": "ac",
+      "root_seed_last": "ca"
+    },
+    {
+      "point": "E_churn",
+      "k": 4,
+      "account_prefix": "s64_acct_E_churn_k4_a2fix_c16m_full_run0_d",
+      "seed_slot_first": 30,
+      "seed_slot_last": 33,
+      "root_seed_first": "cc",
+      "root_seed_last": "d2"
+    }
+  ],
+  "points": [
+    {
+      "point": "C16M_closure",
+      "k": 1,
+      "rounds": 5,
+      "object_bytes": 16777216,
+      "chunk_bytes": 65536,
+      "objects_per_daemon_per_round": 8,
+      "ops_total": 40,
+      "ops_ok": 40,
+      "error_classes": [],
+      "put_p50_ns": 9257811958,
+      "put_p95_ns": 11216979292,
+      "put_p99_ns": 11468588125,
+      "get_p50_ns": 6506774000,
+      "get_p95_ns": 7416423084,
+      "get_p99_ns": 7626137125,
+      "round_throughputs_mib_s": [
+        1.7958730150547222,
+        1.5667992465059768,
+        1.6673638910954474,
+        1.700703958903658,
+        1.7178211320490917
+      ],
+      "throughput_mib_s": 1.700703958903658,
+      "verified_objects": 56,
+      "connections": {
+        "distinct_connections": 1,
+        "max_requests_on_one_connection": 43178,
+        "expected_min_distinct": 1,
+        "captured_lines": 43178
+      },
+      "resource": {
+        "measured_rss_mib": [
+          319.40625,
+          328.37109375,
+          427.87109375,
+          433.81640625,
+          443.26953125
+        ],
+        "measured_rss_anon_mib": [
+          135.74609375,
+          143.46875,
+          147.453125,
+          148.921875,
+          152.62890625
+        ],
+        "measured_rss_file_mib": [
+          5.7578125,
+          5.7578125,
+          5.7578125,
+          5.7578125,
+          5.7578125
+        ],
+        "measured_fd": [
+          25,
+          25,
+          25,
+          25,
+          25
+        ],
+        "relay_rss_first_mib": 319.40625,
+        "relay_rss_last_mib": 443.26953125,
+        "relay_rss_median_growth_ratio": 1.3211163056279218,
+        "relay_rss_monotonic_unbounded": true,
+        "relay_fd_last": 25,
+        "relay_cpu_last_pct": 38.81639504953981,
+        "rfd_aggregate_rss_mib": 0.0,
+        "rfd_aggregate_fd": 0
+      },
+      "http_object_requests": 0,
+      "restart_hash_verified": null,
+      "mem_breakdown": []
+    }
+  ],
+  "churn": {
+    "k": 1,
+    "restart_first_op_ns": 19050793500,
+    "warm_p95_pre_ns": 9084363083,
+    "warm_p95_post_ns": 8915755792
+  },
+  "boundary_diagnostics": [],
+  "thresholds": [
+    {
+      "name": "C16M_closure_k1_success_100",
+      "passed": true,
+      "diagnostic": false,
+      "detail": "ops_ok=40/40 errors=[]"
+    },
+    {
+      "name": "C16M_closure_k1_http_object_zero",
+      "passed": true,
+      "diagnostic": false,
+      "detail": "http_object_requests=0"
+    },
+    {
+      "name": "C16M_closure_k1_distinct_connections_ge_k",
+      "passed": true,
+      "diagnostic": false,
+      "detail": "distinct=1 expected>=1"
+    },
+    {
+      "name": "C16M_closure_k1_connection_reuse_gt_1",
+      "passed": true,
+      "diagnostic": false,
+      "detail": "max_reuse=43178"
+    },
+    {
+      "name": "C16M_closure_k1_rss_anon_median_growth_le_1_25x",
+      "passed": true,
+      "diagnostic": false,
+      "detail": "median_ratio=1.038 rss_anon=[135.74609375, 143.46875, 147.453125, 148.921875, 152.62890625]"
+    },
+    {
+      "name": "C16M_closure_k1_rss_anon_peak_le_1_75x",
+      "passed": true,
+      "diagnostic": false,
+      "detail": "peak_ratio=1.064"
+    },
+    {
+      "name": "C16M_closure_k1_rss_anon_not_monotonic_unbounded",
+      "passed": true,
+      "diagnostic": true,
+      "detail": "monotonic_unbounded=false"
+    },
+    {
+      "name": "C16M_closure_k1_relay_memcurrent_le_512mib",
+      "passed": true,
+      "diagnostic": false,
+      "detail": "memcurrent_peak=443.3 MiB"
+    },
+    {
+      "name": "C16M_closure_k1_relay_fd_stable",
+      "passed": true,
+      "diagnostic": false,
+      "detail": "fd_first=25 fd_peak=25"
+    },
+    {
+      "name": "E_churn_reconnect_overhead_le_15s",
+      "passed": true,
+      "diagnostic": false,
+      "detail": "reconnect_overhead=9966ms (first_op=19050ms - warm_p95_pre=9084ms)"
+    },
+    {
+      "name": "E_churn_first_op_ms_diagnostic",
+      "passed": false,
+      "diagnostic": true,
+      "detail": "first_op=19050ms (raw; diagnostic for large-object churn)"
+    },
+    {
+      "name": "E_churn_warm_p95_le_2x_pre",
+      "passed": true,
+      "diagnostic": false,
+      "detail": "post_p95=8915ms vs 2x pre=18168ms"
+    }
+  ]
+}
