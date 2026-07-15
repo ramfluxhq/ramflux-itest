@@ -181,6 +181,8 @@ mod mvp_s68_object_ipc_download_spool;
 mod mvp_s69_object_ipc_crash_resume;
 #[path = "mvp_s70_t22_production_keyless_v3.rs"]
 mod mvp_s70_t22_production_keyless_v3;
+#[path = "mvp_s71_t22_production_keyless_v3_positive.rs"]
+mod mvp_s71_t22_production_keyless_v3_positive;
 #[path = "objects.rs"]
 mod objects;
 #[path = "transport_node_store.rs"]
