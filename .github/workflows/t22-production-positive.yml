@@ -29,7 +29,7 @@ jobs:
         uses: actions/checkout@b9e0990d219a03df7633c93f6f005a8fecbcab22
         with:
           repository: ramfluxhq/ramflux
-          ref: 12c67609132b0041d625803da6eca782544d8abe
+          ref: 58fd911c7320aa275bf1dc012484716211d22f73
           path: ramflux
 
       - name: Checkout ramflux-itest (this repo)
