@@ -1,0 +1,73 @@
+name: Linux realnet (manual)
+
+# Manual-only Linux realnet acceptance for the mvp_s15 / mvp_s16 slices.
+#
+# Unlike ci.yml (which only COMPILES the realnet feature), this workflow RUNS
+# the realnet suite: it checks out ramfluxhq/ramflux and this itest repo as the
+# two sibling directories run-realnet.sh expects, then drives the real 7-service
+# docker compose mesh. It is intentionally NOT wired to push/PR — realnet is
+# heavy (host pre-build of 7 node binaries + compose up --build) and is a QA
+# gate, so it runs only on explicit workflow_dispatch.
+#
+# The product checkout is pinned to a fixed SHA so a green run is attributable
+# to an exact product revision. No secrets are required (public repos, no
+# registry push).
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: linux-realnet-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  realnet:
+    name: realnet ${{ matrix.filter }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        # cargo test name filters; each is a substring match over the realnet
+        # test names (mvp_s15_* -> 4 tests, mvp_s16_* -> 1 test).
+        filter: [mvp_s15, mvp_s16]
+    steps:
+      # run-realnet.sh resolves the itest deploy dir as <parent>/ramflux/deploy
+      # and expects <parent>/ramflux-itest as a sibling, so both repos are
+      # checked out side by side under $GITHUB_WORKSPACE.
+      - name: Checkout ramflux (product, pinned)
+        uses: actions/checkout@b9e0990d219a03df7633c93f6f005a8fecbcab22
+        with:
+          repository: ramfluxhq/ramflux
+          ref: ae74754ce30e73ee61e8634276124fdbaec434cd
+          path: ramflux
+
+      - name: Checkout ramflux-itest (this repo)
+        uses: actions/checkout@b9e0990d219a03df7633c93f6f005a8fecbcab22
+        with:
+          ref: ${{ github.sha }}
+          path: ramflux-itest
+
+      - name: Cache
+        uses: Swatinem/rust-cache@baf1a810e98b6a3001d0d7234864ed75a17c42fb
+        with:
+          workspaces: |
+            ramflux
+            ramflux-itest
+
+      - name: Run realnet (${{ matrix.filter }})
+        run: |
+          mkdir -p realnet-logs
+          sh ramflux/deploy/scripts/run-realnet.sh "${{ matrix.filter }}" \
+            2>&1 | tee "realnet-logs/${{ matrix.filter }}.log"
+
+      - name: Upload realnet log
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: realnet-${{ matrix.filter }}-log
+          path: realnet-logs/
+          if-no-files-found: warn
+          retention-days: 14
