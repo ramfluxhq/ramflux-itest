@@ -3,9 +3,10 @@ name: T22 production positive (manual)
 # Manual-only positive proof for T22-A3-PROD-POSITIVE: bring up the REAL production
 # deploy/docker-compose.yml (not docker-compose.itest*) in keyless v3 mode with
 # test-generated NON-SECRET trust materials and assert the relay client QUIC
-# listener reaches health. Heavier than the s70 static/fail-closed smoke: it
-# host-builds the 7 production node binaries and runs the full production compose,
-# so it needs a Linux runner with docker. Never wired to push/PR.
+# listener reaches health plus public SDK/rf object PUT/GET/ACK/TOMBSTONE over
+# that production deployment. Heavier than the s70 static/fail-closed smoke: it
+# host-builds the 7 production node binaries and runs the full production
+# compose, so it needs a Linux runner with docker. Never wired to push/PR.
 on:
   workflow_dispatch:
 
@@ -18,7 +19,7 @@ permissions:
 
 jobs:
   t22-prod-positive:
-    name: t22 production positive (relay QUIC health)
+    name: t22 production positive (public SDK object)
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
@@ -53,4 +54,4 @@ jobs:
           RAMFLUX_T22_PRODUCTION_POSITIVE: "1"
         run: |
           cargo test --features realnet --no-default-features \
-            t22_production_keyless_v3_positive_relay_quic_health -- --nocapture --test-threads=1
+            t22_production_positive_public_sdk_object_four_ops -- --nocapture --test-threads=1

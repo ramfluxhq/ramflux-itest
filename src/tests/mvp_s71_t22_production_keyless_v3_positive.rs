@@ -2,15 +2,17 @@
 // Copyright (c) 2026 Span Brain
 
 // T22-A3-PROD-POSITIVE: prove the REAL production `deploy/docker-compose.yml` (not any
-// `docker-compose.itest*.yml`) boots in keyless v3 mode and that the relay's client-facing QUIC
-// listener reaches health — using only NON-SECRET, deterministic, test-generated trust materials.
+// `docker-compose.itest*.yml`) boots in keyless v3 mode, that the relay's client-facing QUIC
+// listener reaches health, and that the public SDK/rf object PUT/GET/ACK/TOMBSTONE path completes
+// through that production deployment — using only NON-SECRET, deterministic, test-generated trust
+// materials.
 //
 // Why this exists: at product a03cd45 the production relay fails closed (`compose config` `:?`) unless
 // the keyring-era v3 trust chain is supplied — offline-root-signed provider keyring + provider-signed
 // trust snapshot + gateway v3 issuer cert. The S10/S22 production harness does NOT generate that chain,
-// so there is no runtime evidence that the production compose can start keyless-v3. This test closes
-// that gap for the relay-QUIC-healthy milestone (public-SDK object over production compose is left as a
-// follow-up; see the report in the module `expect`-free `Ok` path at the end).
+// so there is no runtime evidence that the production compose can start keyless-v3 or serve the public
+// SDK object path through the production relay QUIC listener. This test closes that runtime gap while
+// keeping the production relay's legacy HTTP object surface unused.
 //
 // Runtime scope: build-prod-images.sh compiles the 7 node binaries on the host and the thin runtime
 // images run them, so a green run REQUIRES a Linux host with a docker/podman compose provider. On macOS
@@ -26,11 +28,10 @@ use super::*;
 #[cfg(feature = "realnet")]
 #[test]
 #[allow(clippy::too_many_lines)]
-fn t22_production_keyless_v3_positive_relay_quic_health() -> Result<(), Box<dyn std::error::Error>>
-{
+fn t22_production_positive_public_sdk_object_four_ops() -> Result<(), Box<dyn std::error::Error>> {
     if std::env::var("RAMFLUX_T22_PRODUCTION_POSITIVE").as_deref() != Ok("1") {
         eprintln!(
-            "skipping T22 production positive (relay QUIC health); set RAMFLUX_T22_PRODUCTION_POSITIVE=1 (Linux + docker/podman required)"
+            "skipping T22 production positive (public SDK object over production compose); set RAMFLUX_T22_PRODUCTION_POSITIVE=1 (Linux + docker/podman required)"
         );
         return Ok(());
     }
@@ -157,15 +158,225 @@ fn t22_production_keyless_v3_positive_relay_quic_health() -> Result<(), Box<dyn 
         .into());
     }
 
+    // Prove the public SDK/rf owner flow completes against the REAL production compose. The dummy
+    // HTTP relay URL is intentionally unroutable: this path must be driven by the SDK relay QUIC env.
+    let object_result = runtime.block_on(t22_public_sdk_owner_flow(
+        &relay_ca,
+        "127.0.0.1:57443",
+        "http://127.0.0.1:1",
+        &[
+            ("RAMFLUX_SDK_RELAY_QUIC_ADDR".to_owned(), relay_quic_addr),
+            ("RAMFLUX_SDK_RELAY_QUIC_SERVER_NAME".to_owned(), "ramflux-relay".to_owned()),
+            ("RAMFLUX_SDK_RELAY_QUIC_CA_CERT".to_owned(), relay_ca.to_string_lossy().into_owned()),
+            ("RAMFLUX_SDK_RELAY_OWNER_HOME_NODE_ID".to_owned(), issuer_node.to_owned()),
+            ("RAMFLUX_SDK_RELAY_OWNER_PRINCIPAL_ID".to_owned(), "principal_t22_owner".to_owned()),
+            ("RAMFLUX_SDK_RELAY_AUDIENCE_NODE_ID".to_owned(), issuer_node.to_owned()),
+        ],
+    ));
+    if let Err(error) = object_result {
+        return Err(format!(
+            "{error}\n\n--- docker ps ({project}) ---\n{}\n\n--- docker logs ({project}) ---\n{}",
+            t22_docker_ps(project),
+            t22_project_logs(project),
+        )
+        .into());
+    }
+
     // Keyless v3 fail-closed also means the relay never serves an HTTP object surface: assert no
     // client HTTP object request reached the relay while it was up.
     let relay_logs = t22_container_logs(project, "ramflux-relay");
     assert!(
-        !relay_logs.contains("/relay/v1/object"),
+        !relay_logs.contains("POST /relay/v1/object/"),
         "production relay must not serve any HTTP object request in keyless v3 mode:\n{relay_logs}"
     );
 
     Ok(())
+}
+
+#[cfg(feature = "realnet")]
+#[allow(clippy::too_many_lines)]
+async fn t22_public_sdk_owner_flow(
+    relay_ca: &std::path::Path,
+    gateway_quic_addr: &str,
+    relay_url: &str,
+    sdk_env: &[(String, String)],
+) -> Result<(), Box<dyn std::error::Error>> {
+    let temp_root = temp_root("t22_production_positive_sdk")?;
+    let data_root = temp_root.join("owner/data");
+    std::fs::create_dir_all(&data_root)?;
+    let socket = PathBuf::from(format!("/tmp/ramflux-t22-rfd-{}.sock", std::process::id()));
+    let input_path = temp_root.join("object-input.bin");
+    let output_path = temp_root.join("object-output.bin");
+    std::fs::create_dir_all(&temp_root)?;
+    let plaintext = b"t22_production_public_sdk_object_do_not_leak_plaintext".repeat(64);
+    std::fs::write(&input_path, &plaintext)?;
+
+    let rf_binary = mvp_s4_build_rf_binary().await?;
+    let ca_cert_arg = mvp_s4_path_arg(relay_ca);
+    let socket_arg = mvp_s4_path_arg(&socket);
+    let data_root_arg = mvp_s4_path_arg(&data_root);
+    let input_arg = mvp_s4_path_arg(&input_path);
+    let output_arg = mvp_s4_path_arg(&output_path);
+
+    let mut daemon =
+        t22_spawn_rf_daemon_with_env(&rf_binary, &socket_arg, &data_root_arg, sdk_env)?;
+
+    let flow = async {
+        mvp_s4_wait_for_socket(&socket).await?;
+        mvp_s10_create_rf_account(
+            &rf_binary,
+            &socket_arg,
+            "owner_t22_account",
+            "principal_t22_owner",
+            "owner_device_t22",
+            "target_t22_owner",
+            gateway_quic_addr,
+            &ca_cert_arg,
+            "50",
+            "51",
+        )
+        .await?;
+
+        // PUT: owner uploads via gateway-issued v3 token + production relay QUIC.
+        mvp_s4_rf_json(
+            &rf_binary,
+            &[
+                "--socket",
+                &socket_arg,
+                "object",
+                "put",
+                "--account",
+                "owner_t22_account",
+                "--object",
+                "object_t22_public",
+                "--chunk-size",
+                "1024",
+                "--relay-url",
+                relay_url,
+                &input_arg,
+            ],
+        )
+        .await?;
+        let upload = t22_object_status(&rf_binary, &socket_arg, "upload").await?;
+        assert_eq!(upload["transfer"]["state"], "complete", "put must complete over QUIC");
+
+        // GET + ACK: owner downloads and acknowledges via the same v3 QUIC path.
+        mvp_s4_rf_json(
+            &rf_binary,
+            &[
+                "--socket",
+                &socket_arg,
+                "object",
+                "get",
+                "--account",
+                "owner_t22_account",
+                "--object",
+                "object_t22_public",
+                "--relay-url",
+                relay_url,
+                "--relay-ack",
+                &output_arg,
+            ],
+        )
+        .await?;
+        assert_eq!(std::fs::read(&output_path)?, plaintext, "roundtrip plaintext must match");
+        let download = t22_object_status(&rf_binary, &socket_arg, "download").await?;
+        assert_eq!(download["transfer"]["state"], "complete", "get must complete over QUIC");
+
+        // TOMBSTONE: owner-session tombstone via v3 QUIC (fail-closed, no HTTP fallback).
+        mvp_s4_rf_json(
+            &rf_binary,
+            &[
+                "--socket",
+                &socket_arg,
+                "object",
+                "delete",
+                "--account",
+                "owner_t22_account",
+                "--object",
+                "object_t22_public",
+                "--relay-url",
+                relay_url,
+            ],
+        )
+        .await?;
+
+        let redownload = mvp_s4_rf_failure(
+            &rf_binary,
+            &[
+                "--socket",
+                &socket_arg,
+                "object",
+                "get",
+                "--account",
+                "owner_t22_account",
+                "--object",
+                "object_t22_public",
+                "--relay-url",
+                relay_url,
+                &output_arg,
+            ],
+        )
+        .await?;
+        assert!(
+            !redownload.is_empty(),
+            "post-tombstone get must fail rather than silently return stale plaintext"
+        );
+
+        Ok::<(), Box<dyn std::error::Error>>(())
+    };
+
+    let result = tokio::time::timeout(Duration::from_mins(5), flow)
+        .await
+        .map_err(|_elapsed| "t22 public SDK production object flow timed out".to_owned());
+    mvp_s20_stop_rf_daemon(&mut daemon).await?;
+    let _ = std::fs::remove_file(&socket);
+    std::fs::remove_dir_all(&temp_root).ok();
+    result??;
+    Ok(())
+}
+
+#[cfg(feature = "realnet")]
+fn t22_spawn_rf_daemon_with_env(
+    rf_binary: &std::path::Path,
+    socket: &str,
+    data_root: &str,
+    env: &[(String, String)],
+) -> Result<tokio::process::Child, Box<dyn std::error::Error>> {
+    let child = tokio::process::Command::new(rf_binary)
+        .args(["--socket", socket, "daemon", "start", "--data-root", data_root])
+        .envs(env.iter().map(|(key, value)| (key.clone(), value.clone())))
+        // GatewayIssued is the production path under test; never let LocalMint be selected.
+        .env_remove("RAMFLUX_SDK_OBJECT_RELAY_LOCAL_MINT")
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .kill_on_drop(true)
+        .spawn()?;
+    Ok(child)
+}
+
+#[cfg(feature = "realnet")]
+async fn t22_object_status(
+    rf_binary: &std::path::Path,
+    socket_arg: &str,
+    direction: &str,
+) -> Result<serde_json::Value, Box<dyn std::error::Error>> {
+    mvp_s4_rf_json(
+        rf_binary,
+        &[
+            "--socket",
+            socket_arg,
+            "object",
+            "status",
+            "--account",
+            "owner_t22_account",
+            "--object",
+            "object_t22_public",
+            "--direction",
+            direction,
+        ],
+    )
+    .await
 }
 
 /// RAII holder for the test-generated production trust material. Writes the three files the production
