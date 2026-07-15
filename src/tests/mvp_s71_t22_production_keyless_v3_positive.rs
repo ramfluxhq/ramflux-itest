@@ -26,6 +26,71 @@
 use super::*;
 
 #[cfg(feature = "realnet")]
+const T22_PRODUCT_PIN: &str = "04181b66e49bed8a9cf1da75b083d78c7cd0ccbf";
+#[cfg(feature = "realnet")]
+const T22_MEASUREMENT_SCHEMA: &str = "ramflux.perf.t22.production.measure.v1";
+
+#[cfg(feature = "realnet")]
+#[derive(Debug, serde::Serialize)]
+struct T22ProductionMeasurementArtifact {
+    schema: String,
+    generated_note: String,
+    environment: String,
+    product_pin: String,
+    product_git_sha: String,
+    product_git_dirty: bool,
+    itest_git_sha: String,
+    itest_git_dirty: bool,
+    object_count: usize,
+    object_bytes: usize,
+    chunk_bytes: usize,
+    total_bytes: usize,
+    http_object_requests: usize,
+    docker_ps: String,
+    docker_stats: Vec<T22DockerStats>,
+    runs: Vec<T22ProductionMeasurementRun>,
+    summary: T22ProductionMeasurementSummary,
+}
+
+#[cfg(feature = "realnet")]
+#[derive(Debug, serde::Serialize)]
+struct T22ProductionMeasurementRun {
+    run_index: usize,
+    object_id: String,
+    put_ns: u128,
+    get_ack_ns: u128,
+    tombstone_ns: u128,
+    put_mib_s: f64,
+    get_mib_s: f64,
+    upload_state: String,
+    download_state: String,
+    post_tombstone_get_failed: bool,
+}
+
+#[cfg(feature = "realnet")]
+#[derive(Debug, serde::Serialize)]
+struct T22ProductionMeasurementSummary {
+    put_p50_ns: u128,
+    put_p95_ns: u128,
+    put_p99_ns: u128,
+    get_ack_p50_ns: u128,
+    get_ack_p95_ns: u128,
+    get_ack_p99_ns: u128,
+    tombstone_p50_ns: u128,
+    tombstone_p95_ns: u128,
+    tombstone_p99_ns: u128,
+    put_throughput_mib_s: f64,
+    get_throughput_mib_s: f64,
+}
+
+#[cfg(feature = "realnet")]
+#[derive(Debug, serde::Serialize)]
+struct T22DockerStats {
+    container: String,
+    stats_json: String,
+}
+
+#[cfg(feature = "realnet")]
 #[test]
 #[allow(clippy::too_many_lines)]
 fn t22_production_positive_public_sdk_object_four_ops() -> Result<(), Box<dyn std::error::Error>> {
@@ -194,6 +259,188 @@ fn t22_production_positive_public_sdk_object_four_ops() -> Result<(), Box<dyn st
 }
 
 #[cfg(feature = "realnet")]
+#[test]
+#[allow(clippy::too_many_lines)]
+fn t22_production_measure_public_sdk_object() -> Result<(), Box<dyn std::error::Error>> {
+    if std::env::var("RAMFLUX_T22_PRODUCTION_MEASURE").as_deref() != Ok("1") {
+        eprintln!(
+            "skipping T22 production measurement; set RAMFLUX_T22_PRODUCTION_MEASURE=1 (Linux + docker/podman required)"
+        );
+        return Ok(());
+    }
+
+    let object_count = t22_env_usize("RAMFLUX_T22_MEASURE_OBJECTS", 1).max(1);
+    let object_bytes = t22_env_usize("RAMFLUX_T22_MEASURE_OBJECT_BYTES", 1024 * 1024).max(1);
+    let chunk_bytes = t22_env_usize("RAMFLUX_T22_MEASURE_CHUNK_BYTES", 64 * 1024).max(1);
+
+    let code_root = code_root();
+    let deploy_root = code_root.join("ramflux/deploy");
+    let compose_path = deploy_root.join("docker-compose.yml");
+    let compose = std::fs::read_to_string(&compose_path)?;
+    assert!(
+        !compose.contains("RAMFLUX_RELAY_SERVICE_KEY_REF"),
+        "production compose must not configure the legacy relay object HMAC key"
+    );
+
+    let issuer_node = "localhost";
+    let gateway_instance_id = "gw-localhost";
+    let root_seed = [0x44_u8; 32];
+    let attestation_seed = [0x33_u8; 32];
+    let provider_seed = [0x66_u8; 32];
+    let offline_root_seed = [0x88_u8; 32];
+
+    run_deploy_script(&code_root, "ramflux/deploy/scripts/bootstrap-ca.sh")?;
+    run_deploy_script(&code_root, "ramflux/deploy/scripts/issue-certs.sh")?;
+    run_deploy_script(&code_root, "ramflux/deploy/scripts/build-prod-images.sh")?;
+
+    let now = ramflux_node_core::now_unix_seconds();
+    let valid_for = 3_600_u64;
+    let certificate = t22_certificate(
+        now,
+        valid_for,
+        issuer_node,
+        gateway_instance_id,
+        root_seed,
+        attestation_seed,
+    )?;
+    let envelope =
+        t22_trust_envelope(now, valid_for, issuer_node, root_seed, provider_seed, &certificate)?;
+    let keyring =
+        t22_provider_keyring(now, valid_for, issuer_node, offline_root_seed, provider_seed)?;
+    let _materials =
+        T22ProductionMaterials::write(&deploy_root, &certificate, &envelope, &keyring)?;
+
+    let relay_quic_port = 57_457_u16;
+    let env = vec![
+        ("RAMFLUX_FEDERATION_TRUST_ENDPOINT".to_owned(), "ramflux-federation:7443".to_owned()),
+        (
+            "RAMFLUX_FEDERATION_PROVIDER_OFFLINE_ROOT_PUBLIC_KEY".to_owned(),
+            ramflux_crypto::public_key_base64url_from_seed(offline_root_seed),
+        ),
+        ("RAMFLUX_FEDERATION_TRUST_ISSUER_NODE_ID".to_owned(), issuer_node.to_owned()),
+        (
+            "RAMFLUX_GATEWAY_V3_ISSUER_SEED".to_owned(),
+            ramflux_protocol::encode_base64url(attestation_seed),
+        ),
+        ("RAMFLUX_RELAY_CLIENT_QUIC_PORT".to_owned(), relay_quic_port.to_string()),
+        ("RAMFLUX_GATEWAY_TCP_PORT".to_owned(), "57463".to_owned()),
+        ("RAMFLUX_GATEWAY_QUIC_PORT".to_owned(), "57463".to_owned()),
+        ("RAMFLUX_SIGNALING_TURN_UDP_PORT".to_owned(), "57488".to_owned()),
+        ("RAMFLUX_SIGNALING_TURN_TCP_PORT".to_owned(), "57489".to_owned()),
+        ("RAMFLUX_FEDERATION_ADMIN_PORT".to_owned(), "57492".to_owned()),
+        ("RAMFLUX_FEDERATION_MESH_PORT".to_owned(), "57473".to_owned()),
+    ];
+
+    let project = "ramflux-t22-prod-measure";
+    run_production_compose_project(&deploy_root, project, &env, &["up", "--build", "-d"])?;
+    let _guard = ProductionComposeDownGuard::new(deploy_root.clone(), project.to_owned(), env);
+
+    let relay_ca = code_root.join("ramflux/deploy/certs/ca.pem");
+    let relay_quic_addr = format!("127.0.0.1:{relay_quic_port}");
+    let runtime = tokio::runtime::Builder::new_multi_thread().enable_all().build()?;
+    let health_result = runtime.block_on(async {
+        let config = ramflux_transport::RelayClientQuicConfig::new(
+            &relay_quic_addr,
+            "ramflux-relay",
+            &relay_ca,
+        )?;
+        let mut last_error: String = "relay QUIC health never attempted".to_owned();
+        for _attempt in 0..30_u32 {
+            match ramflux_transport::relay_client_quic_health(
+                &config,
+                std::time::Duration::from_secs(5),
+            )
+            .await
+            {
+                Ok(health) if health.status == 200 => return Ok(()),
+                Ok(health) => last_error = format!("relay QUIC health status {}", health.status),
+                Err(error) => last_error = format!("relay QUIC health error: {error}"),
+            }
+            tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+        }
+        Err::<(), Box<dyn std::error::Error>>(
+            format!("relay client QUIC listener never became healthy: {last_error}").into(),
+        )
+    });
+    if let Err(error) = health_result {
+        return Err(format!(
+            "{error}\n\n--- docker ps ({project}) ---\n{}\n\n--- docker logs ({project}) ---\n{}",
+            t22_docker_ps(project),
+            t22_project_logs(project),
+        )
+        .into());
+    }
+
+    let runs = runtime.block_on(t22_public_sdk_measurement_flow(
+        &relay_ca,
+        "127.0.0.1:57463",
+        "http://127.0.0.1:1",
+        &[
+            ("RAMFLUX_SDK_RELAY_QUIC_ADDR".to_owned(), relay_quic_addr),
+            ("RAMFLUX_SDK_RELAY_QUIC_SERVER_NAME".to_owned(), "ramflux-relay".to_owned()),
+            ("RAMFLUX_SDK_RELAY_QUIC_CA_CERT".to_owned(), relay_ca.to_string_lossy().into_owned()),
+            ("RAMFLUX_SDK_RELAY_OWNER_HOME_NODE_ID".to_owned(), issuer_node.to_owned()),
+            (
+                "RAMFLUX_SDK_RELAY_OWNER_PRINCIPAL_ID".to_owned(),
+                "principal_t22_measure_owner".to_owned(),
+            ),
+            ("RAMFLUX_SDK_RELAY_AUDIENCE_NODE_ID".to_owned(), issuer_node.to_owned()),
+        ],
+        object_count,
+        object_bytes,
+        chunk_bytes,
+    ));
+    let runs = match runs {
+        Ok(runs) => runs,
+        Err(error) => {
+            return Err(format!(
+                "{error}\n\n--- docker ps ({project}) ---\n{}\n\n--- docker logs ({project}) ---\n{}",
+                t22_docker_ps(project),
+                t22_project_logs(project),
+            )
+            .into());
+        }
+    };
+
+    let relay_logs = t22_container_logs(project, "ramflux-relay");
+    let http_object_requests = relay_logs.matches("POST /relay/v1/object/").count();
+    assert_eq!(
+        http_object_requests, 0,
+        "production relay must not serve any HTTP object request in keyless v3 mode:\n{relay_logs}"
+    );
+
+    let (product_git_sha, product_git_dirty) = t22_git_state(&code_root.join("ramflux"));
+    let (itest_git_sha, itest_git_dirty) = t22_git_state(&code_root.join("ramflux-itest"));
+    let artifact = T22ProductionMeasurementArtifact {
+        schema: T22_MEASUREMENT_SCHEMA.to_owned(),
+        generated_note:
+            "T22 production compose public SDK object measurement only; NOT a production SLO verdict"
+                .to_owned(),
+        environment:
+            "GitHub ubuntu-latest shared runner or local Linux compose host; measurement only, NOT isolated production SLO"
+                .to_owned(),
+        product_pin: T22_PRODUCT_PIN.to_owned(),
+        product_git_sha,
+        product_git_dirty,
+        itest_git_sha,
+        itest_git_dirty,
+        object_count,
+        object_bytes,
+        chunk_bytes,
+        total_bytes: object_count.saturating_mul(object_bytes),
+        http_object_requests,
+        docker_ps: t22_docker_ps(project),
+        docker_stats: t22_docker_stats(project),
+        summary: t22_measurement_summary(&runs),
+        runs,
+    };
+    let path = t22_write_measurement_artifact(&artifact)?;
+    eprintln!("STEP t22 measurement: wrote artifact {}", path.display());
+
+    Ok(())
+}
+
+#[cfg(feature = "realnet")]
 #[allow(clippy::too_many_lines)]
 async fn t22_public_sdk_owner_flow(
     relay_ca: &std::path::Path,
@@ -257,7 +504,14 @@ async fn t22_public_sdk_owner_flow(
             ],
         )
         .await?;
-        let upload = t22_object_status(&rf_binary, &socket_arg, "upload").await?;
+        let upload = t22_object_status(
+            &rf_binary,
+            &socket_arg,
+            "owner_t22_account",
+            "object_t22_public",
+            "upload",
+        )
+        .await?;
         assert_eq!(upload["transfer"]["state"], "complete", "put must complete over QUIC");
 
         // GET + ACK: owner downloads and acknowledges via the same v3 QUIC path.
@@ -280,7 +534,14 @@ async fn t22_public_sdk_owner_flow(
         )
         .await?;
         assert_eq!(std::fs::read(&output_path)?, plaintext, "roundtrip plaintext must match");
-        let download = t22_object_status(&rf_binary, &socket_arg, "download").await?;
+        let download = t22_object_status(
+            &rf_binary,
+            &socket_arg,
+            "owner_t22_account",
+            "object_t22_public",
+            "download",
+        )
+        .await?;
         assert_eq!(download["transfer"]["state"], "complete", "get must complete over QUIC");
 
         // TOMBSTONE: owner-session tombstone via v3 QUIC (fail-closed, no HTTP fallback).
@@ -337,6 +598,191 @@ async fn t22_public_sdk_owner_flow(
 }
 
 #[cfg(feature = "realnet")]
+#[allow(clippy::too_many_arguments, clippy::too_many_lines)]
+async fn t22_public_sdk_measurement_flow(
+    relay_ca: &std::path::Path,
+    gateway_quic_addr: &str,
+    relay_url: &str,
+    sdk_env: &[(String, String)],
+    object_count: usize,
+    object_bytes: usize,
+    chunk_bytes: usize,
+) -> Result<Vec<T22ProductionMeasurementRun>, Box<dyn std::error::Error>> {
+    let temp_root = temp_root("t22_production_measure_sdk")?;
+    let data_root = temp_root.join("owner/data");
+    std::fs::create_dir_all(&data_root)?;
+    let socket = PathBuf::from(format!("/tmp/ramflux-t22-measure-rfd-{}.sock", std::process::id()));
+    let input_path = temp_root.join("object-input.bin");
+    let output_path = temp_root.join("object-output.bin");
+    std::fs::create_dir_all(&temp_root)?;
+
+    let rf_binary = mvp_s4_build_rf_binary().await?;
+    let ca_cert_arg = mvp_s4_path_arg(relay_ca);
+    let socket_arg = mvp_s4_path_arg(&socket);
+    let data_root_arg = mvp_s4_path_arg(&data_root);
+    let input_arg = mvp_s4_path_arg(&input_path);
+    let output_arg = mvp_s4_path_arg(&output_path);
+    let chunk_arg = chunk_bytes.to_string();
+
+    let mut daemon =
+        t22_spawn_rf_daemon_with_env(&rf_binary, &socket_arg, &data_root_arg, sdk_env)?;
+
+    let flow = async {
+        mvp_s4_wait_for_socket(&socket).await?;
+        mvp_s10_create_rf_account(
+            &rf_binary,
+            &socket_arg,
+            "owner_t22_measure_account",
+            "principal_t22_measure_owner",
+            "owner_device_t22_measure",
+            "target_t22_measure_owner",
+            gateway_quic_addr,
+            &ca_cert_arg,
+            "60",
+            "61",
+        )
+        .await?;
+
+        let mut runs = Vec::with_capacity(object_count);
+        for run_index in 0..object_count {
+            let object_id = format!("object_t22_measure_{run_index}");
+            let plaintext = t22_measurement_plaintext(object_bytes, run_index);
+            std::fs::write(&input_path, &plaintext)?;
+
+            let started = std::time::Instant::now();
+            mvp_s4_rf_json(
+                &rf_binary,
+                &[
+                    "--socket",
+                    &socket_arg,
+                    "object",
+                    "put",
+                    "--account",
+                    "owner_t22_measure_account",
+                    "--object",
+                    &object_id,
+                    "--chunk-size",
+                    &chunk_arg,
+                    "--relay-url",
+                    relay_url,
+                    &input_arg,
+                ],
+            )
+            .await?;
+            let put_ns = started.elapsed().as_nanos();
+            let upload = t22_object_status(
+                &rf_binary,
+                &socket_arg,
+                "owner_t22_measure_account",
+                &object_id,
+                "upload",
+            )
+            .await?;
+            let upload_state = upload["transfer"]["state"].as_str().unwrap_or("unknown").to_owned();
+            assert_eq!(upload_state, "complete", "put must complete over QUIC");
+
+            let started = std::time::Instant::now();
+            mvp_s4_rf_json(
+                &rf_binary,
+                &[
+                    "--socket",
+                    &socket_arg,
+                    "object",
+                    "get",
+                    "--account",
+                    "owner_t22_measure_account",
+                    "--object",
+                    &object_id,
+                    "--relay-url",
+                    relay_url,
+                    "--relay-ack",
+                    &output_arg,
+                ],
+            )
+            .await?;
+            let get_ack_ns = started.elapsed().as_nanos();
+            assert_eq!(std::fs::read(&output_path)?, plaintext, "roundtrip plaintext must match");
+            let download = t22_object_status(
+                &rf_binary,
+                &socket_arg,
+                "owner_t22_measure_account",
+                &object_id,
+                "download",
+            )
+            .await?;
+            let download_state =
+                download["transfer"]["state"].as_str().unwrap_or("unknown").to_owned();
+            assert_eq!(download_state, "complete", "get must complete over QUIC");
+
+            let started = std::time::Instant::now();
+            mvp_s4_rf_json(
+                &rf_binary,
+                &[
+                    "--socket",
+                    &socket_arg,
+                    "object",
+                    "delete",
+                    "--account",
+                    "owner_t22_measure_account",
+                    "--object",
+                    &object_id,
+                    "--relay-url",
+                    relay_url,
+                ],
+            )
+            .await?;
+            let tombstone_ns = started.elapsed().as_nanos();
+
+            let redownload = mvp_s4_rf_failure(
+                &rf_binary,
+                &[
+                    "--socket",
+                    &socket_arg,
+                    "object",
+                    "get",
+                    "--account",
+                    "owner_t22_measure_account",
+                    "--object",
+                    &object_id,
+                    "--relay-url",
+                    relay_url,
+                    &output_arg,
+                ],
+            )
+            .await?;
+            let post_tombstone_get_failed = !redownload.is_empty();
+            assert!(
+                post_tombstone_get_failed,
+                "post-tombstone get must fail rather than silently return stale plaintext"
+            );
+
+            runs.push(T22ProductionMeasurementRun {
+                run_index,
+                object_id,
+                put_ns,
+                get_ack_ns,
+                tombstone_ns,
+                put_mib_s: t22_throughput_mib_s(object_bytes, put_ns),
+                get_mib_s: t22_throughput_mib_s(object_bytes, get_ack_ns),
+                upload_state,
+                download_state,
+                post_tombstone_get_failed,
+            });
+        }
+
+        Ok::<Vec<T22ProductionMeasurementRun>, Box<dyn std::error::Error>>(runs)
+    };
+
+    let result = tokio::time::timeout(Duration::from_mins(10), flow)
+        .await
+        .map_err(|_elapsed| "t22 public SDK production measurement flow timed out".to_owned());
+    mvp_s20_stop_rf_daemon(&mut daemon).await?;
+    let _ = std::fs::remove_file(&socket);
+    std::fs::remove_dir_all(&temp_root).ok();
+    result?
+}
+
+#[cfg(feature = "realnet")]
 fn t22_spawn_rf_daemon_with_env(
     rf_binary: &std::path::Path,
     socket: &str,
@@ -359,6 +805,8 @@ fn t22_spawn_rf_daemon_with_env(
 async fn t22_object_status(
     rf_binary: &std::path::Path,
     socket_arg: &str,
+    account: &str,
+    object: &str,
     direction: &str,
 ) -> Result<serde_json::Value, Box<dyn std::error::Error>> {
     mvp_s4_rf_json(
@@ -369,14 +817,121 @@ async fn t22_object_status(
             "object",
             "status",
             "--account",
-            "owner_t22_account",
+            account,
             "--object",
-            "object_t22_public",
+            object,
             "--direction",
             direction,
         ],
     )
     .await
+}
+
+#[cfg(feature = "realnet")]
+fn t22_env_usize(name: &str, default: usize) -> usize {
+    std::env::var(name).ok().and_then(|value| value.parse().ok()).unwrap_or(default)
+}
+
+#[cfg(feature = "realnet")]
+fn t22_measurement_plaintext(bytes: usize, run_index: usize) -> Vec<u8> {
+    let mut plaintext = Vec::with_capacity(bytes);
+    let seed = format!("t22-production-measurement-run-{run_index}:");
+    while plaintext.len() < bytes {
+        plaintext.extend_from_slice(seed.as_bytes());
+    }
+    plaintext.truncate(bytes);
+    plaintext
+}
+
+#[cfg(feature = "realnet")]
+#[allow(clippy::cast_precision_loss, clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+fn t22_nearest_rank(latencies: &[u128], percentile: f64) -> u128 {
+    if latencies.is_empty() {
+        return 0;
+    }
+    let mut sorted = latencies.to_vec();
+    sorted.sort_unstable();
+    let rank = (percentile / 100.0 * sorted.len() as f64).ceil() as usize;
+    let index = rank.saturating_sub(1).min(sorted.len() - 1);
+    sorted[index]
+}
+
+#[cfg(feature = "realnet")]
+#[allow(clippy::cast_precision_loss)]
+fn t22_throughput_mib_s(bytes: usize, elapsed_ns: u128) -> f64 {
+    if elapsed_ns == 0 {
+        return 0.0;
+    }
+    let mib = bytes as f64 / (1024.0 * 1024.0);
+    let seconds = elapsed_ns as f64 / 1_000_000_000.0;
+    mib / seconds
+}
+
+#[cfg(feature = "realnet")]
+#[allow(clippy::cast_precision_loss)]
+fn t22_measurement_summary(
+    runs: &[T22ProductionMeasurementRun],
+) -> T22ProductionMeasurementSummary {
+    let put = runs.iter().map(|run| run.put_ns).collect::<Vec<_>>();
+    let get = runs.iter().map(|run| run.get_ack_ns).collect::<Vec<_>>();
+    let tombstone = runs.iter().map(|run| run.tombstone_ns).collect::<Vec<_>>();
+    let put_throughput_mib_s =
+        runs.iter().map(|run| run.put_mib_s).fold(0.0_f64, |acc, value| acc + value);
+    let get_throughput_mib_s =
+        runs.iter().map(|run| run.get_mib_s).fold(0.0_f64, |acc, value| acc + value);
+    let divisor = runs.len().max(1) as f64;
+    T22ProductionMeasurementSummary {
+        put_p50_ns: t22_nearest_rank(&put, 50.0),
+        put_p95_ns: t22_nearest_rank(&put, 95.0),
+        put_p99_ns: t22_nearest_rank(&put, 99.0),
+        get_ack_p50_ns: t22_nearest_rank(&get, 50.0),
+        get_ack_p95_ns: t22_nearest_rank(&get, 95.0),
+        get_ack_p99_ns: t22_nearest_rank(&get, 99.0),
+        tombstone_p50_ns: t22_nearest_rank(&tombstone, 50.0),
+        tombstone_p95_ns: t22_nearest_rank(&tombstone, 95.0),
+        tombstone_p99_ns: t22_nearest_rank(&tombstone, 99.0),
+        put_throughput_mib_s: put_throughput_mib_s / divisor,
+        get_throughput_mib_s: get_throughput_mib_s / divisor,
+    }
+}
+
+#[cfg(feature = "realnet")]
+fn t22_git_state(root: &std::path::Path) -> (String, bool) {
+    let sha = std::process::Command::new("git")
+        .args(["-C"])
+        .arg(root)
+        .args(["rev-parse", "HEAD"])
+        .output()
+        .ok()
+        .map(|output| String::from_utf8_lossy(&output.stdout).trim().to_owned())
+        .filter(|value| !value.is_empty())
+        .unwrap_or_else(|| "unknown".to_owned());
+    let dirty = std::process::Command::new("git")
+        .args(["-C"])
+        .arg(root)
+        .args(["status", "--porcelain"])
+        .output()
+        .ok()
+        .is_some_and(|output| !String::from_utf8_lossy(&output.stdout).trim().is_empty());
+    (sha, dirty)
+}
+
+#[cfg(feature = "realnet")]
+fn t22_write_measurement_artifact(
+    artifact: &T22ProductionMeasurementArtifact,
+) -> Result<PathBuf, Box<dyn std::error::Error>> {
+    let dir = code_root().join("ramflux-itest/perf-artifacts");
+    std::fs::create_dir_all(&dir)?;
+    let file = format!(
+        "perf_t22_production_measure_{}_o{}_b{}_c{}.json",
+        artifact.itest_git_sha.chars().take(12).collect::<String>(),
+        artifact.object_count,
+        artifact.object_bytes,
+        artifact.chunk_bytes
+    );
+    let path = dir.join(file);
+    std::fs::write(&path, serde_json::to_vec_pretty(artifact)?)?;
+    Ok(path)
 }
 
 /// RAII holder for the test-generated production trust material. Writes the three files the production
@@ -601,6 +1156,45 @@ fn t22_docker_ps(project: &str) -> String {
                 )
             },
         )
+}
+
+#[cfg(feature = "realnet")]
+fn t22_docker_stats(project: &str) -> Vec<T22DockerStats> {
+    let names = std::process::Command::new(container_runtime())
+        .args([
+            "ps",
+            "-a",
+            "--filter",
+            &format!("label=com.docker.compose.project={project}"),
+            "--format",
+            "{{.Names}}",
+        ])
+        .output();
+    let Ok(names) = names else {
+        return Vec::new();
+    };
+
+    String::from_utf8_lossy(&names.stdout)
+        .lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty())
+        .map(|container| {
+            let stats = std::process::Command::new(container_runtime())
+                .args(["stats", "--no-stream", "--format", "{{json .}}", container])
+                .output()
+                .map_or_else(
+                    |error| format!("failed to collect docker stats for {container}: {error}"),
+                    |output| {
+                        format!(
+                            "{}{}",
+                            String::from_utf8_lossy(&output.stdout),
+                            String::from_utf8_lossy(&output.stderr)
+                        )
+                    },
+                );
+            T22DockerStats { container: container.to_owned(), stats_json: stats }
+        })
+        .collect()
 }
 
 #[cfg(feature = "realnet")]
