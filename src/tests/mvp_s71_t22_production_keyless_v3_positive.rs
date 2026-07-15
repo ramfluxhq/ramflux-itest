@@ -122,7 +122,7 @@ fn t22_production_keyless_v3_positive_relay_quic_health() -> Result<(), Box<dyn 
     let relay_ca = code_root.join("ramflux/deploy/certs/ca.pem");
     let relay_quic_addr = format!("127.0.0.1:{relay_quic_port}");
     let runtime = tokio::runtime::Builder::new_multi_thread().enable_all().build()?;
-    runtime.block_on(async {
+    let health_result = runtime.block_on(async {
         let config = ramflux_transport::RelayClientQuicConfig::new(
             &relay_quic_addr,
             "ramflux-relay",
@@ -147,7 +147,15 @@ fn t22_production_keyless_v3_positive_relay_quic_health() -> Result<(), Box<dyn 
         Err::<(), Box<dyn std::error::Error>>(
             format!("relay client QUIC listener never became healthy: {last_error}").into(),
         )
-    })?;
+    });
+    if let Err(error) = health_result {
+        return Err(format!(
+            "{error}\n\n--- docker ps ({project}) ---\n{}\n\n--- docker logs ({project}) ---\n{}",
+            t22_docker_ps(project),
+            t22_project_logs(project),
+        )
+        .into());
+    }
 
     // Keyless v3 fail-closed also means the relay never serves an HTTP object surface: assert no
     // client HTTP object request reached the relay while it was up.
@@ -314,15 +322,107 @@ fn t22_provider_keyring(
 
 #[cfg(feature = "realnet")]
 fn t22_container_logs(project: &str, service: &str) -> String {
-    let container = format!("{project}_{service}_1");
-    std::process::Command::new(container_runtime()).args(["logs", &container]).output().map_or_else(
-        |error| format!("failed to collect {service} logs: {error}"),
-        |output| {
-            format!(
-                "{}{}",
-                String::from_utf8_lossy(&output.stdout),
-                String::from_utf8_lossy(&output.stderr)
-            )
-        },
-    )
+    let container = t22_compose_service_container(project, service);
+    let Some(container) = container else {
+        return format!("failed to find {service} container for project {project}");
+    };
+    t22_logs_for_container(&container)
+}
+
+#[cfg(feature = "realnet")]
+fn t22_compose_service_container(project: &str, service: &str) -> Option<String> {
+    let output = std::process::Command::new(container_runtime())
+        .args([
+            "ps",
+            "-a",
+            "--filter",
+            &format!("label=com.docker.compose.project={project}"),
+            "--filter",
+            &format!("label=com.docker.compose.service={service}"),
+            "--format",
+            "{{.Names}}",
+        ])
+        .output()
+        .ok()?;
+    String::from_utf8_lossy(&output.stdout)
+        .lines()
+        .map(str::trim)
+        .find(|line| !line.is_empty())
+        .map(str::to_owned)
+}
+
+#[cfg(feature = "realnet")]
+fn t22_logs_for_container(container: &str) -> String {
+    std::process::Command::new(container_runtime())
+        .args(["logs", "--tail", "200", container])
+        .output()
+        .map_or_else(
+            |error| format!("failed to collect logs for {container}: {error}"),
+            |output| {
+                format!(
+                    "{}{}",
+                    String::from_utf8_lossy(&output.stdout),
+                    String::from_utf8_lossy(&output.stderr)
+                )
+            },
+        )
+}
+
+#[cfg(feature = "realnet")]
+fn t22_docker_ps(project: &str) -> String {
+    std::process::Command::new(container_runtime())
+        .args([
+            "ps",
+            "-a",
+            "--filter",
+            &format!("label=com.docker.compose.project={project}"),
+            "--format",
+            "{{.Names}}\t{{.Status}}\t{{.Ports}}",
+        ])
+        .output()
+        .map_or_else(
+            |error| format!("failed to collect docker ps: {error}"),
+            |output| {
+                format!(
+                    "{}{}",
+                    String::from_utf8_lossy(&output.stdout),
+                    String::from_utf8_lossy(&output.stderr)
+                )
+            },
+        )
+}
+
+#[cfg(feature = "realnet")]
+fn t22_project_logs(project: &str) -> String {
+    use std::fmt::Write as _;
+
+    let names = std::process::Command::new(container_runtime())
+        .args([
+            "ps",
+            "-a",
+            "--filter",
+            &format!("label=com.docker.compose.project={project}"),
+            "--format",
+            "{{.Names}}",
+        ])
+        .output();
+    let Ok(names) = names else {
+        return "failed to list project containers".to_owned();
+    };
+    let names = String::from_utf8_lossy(&names.stdout)
+        .lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty())
+        .map(str::to_owned)
+        .collect::<Vec<_>>();
+    if names.is_empty() {
+        return "no project containers found".to_owned();
+    }
+
+    let mut logs = String::new();
+    for name in names {
+        let _ = write!(logs, "\n===== {name} =====\n");
+        logs.push_str(&t22_logs_for_container(&name));
+    }
+    logs
 }
