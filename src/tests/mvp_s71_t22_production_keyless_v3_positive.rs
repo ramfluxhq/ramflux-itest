@@ -276,6 +276,8 @@ fn t22_production_measure_public_sdk_object() -> Result<(), Box<dyn std::error::
     let code_root = code_root();
     let deploy_root = code_root.join("ramflux/deploy");
     let compose_path = deploy_root.join("docker-compose.yml");
+    let (product_git_sha, product_git_dirty) = t22_git_state(&code_root.join("ramflux"));
+    let (itest_git_sha, itest_git_dirty) = t22_git_state(&code_root.join("ramflux-itest"));
     let compose = std::fs::read_to_string(&compose_path)?;
     assert!(
         !compose.contains("RAMFLUX_RELAY_SERVICE_KEY_REF"),
@@ -409,8 +411,6 @@ fn t22_production_measure_public_sdk_object() -> Result<(), Box<dyn std::error::
         "production relay must not serve any HTTP object request in keyless v3 mode:\n{relay_logs}"
     );
 
-    let (product_git_sha, product_git_dirty) = t22_git_state(&code_root.join("ramflux"));
-    let (itest_git_sha, itest_git_dirty) = t22_git_state(&code_root.join("ramflux-itest"));
     let artifact = T22ProductionMeasurementArtifact {
         schema: T22_MEASUREMENT_SCHEMA.to_owned(),
         generated_note:
