@@ -1,0 +1,50 @@
+name: T22 production compose (manual)
+
+# Manual-only smoke for the T22/RQ-04 production compose keyless/fail-closed
+# scaffold. This does not run the full realnet mesh or production SLO; it only
+# executes the focused itest that verifies production docker-compose.yml uses
+# no legacy relay HMAC key and fails closed when v3 keyring material is absent.
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: t22-production-compose-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  t22-compose-smoke:
+    name: t22 production compose smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      # The test resolves the product deploy dir as <parent>/ramflux/deploy,
+      # so checkout the product and itest repos as siblings.
+      - name: Checkout ramflux (product, pinned)
+        uses: actions/checkout@b9e0990d219a03df7633c93f6f005a8fecbcab22
+        with:
+          repository: ramfluxhq/ramflux
+          ref: ae74754ce30e73ee61e8634276124fdbaec434cd
+          path: ramflux
+
+      - name: Checkout ramflux-itest (this repo)
+        uses: actions/checkout@b9e0990d219a03df7633c93f6f005a8fecbcab22
+        with:
+          ref: ${{ github.sha }}
+          path: ramflux-itest
+
+      - name: Cache
+        uses: Swatinem/rust-cache@baf1a810e98b6a3001d0d7234864ed75a17c42fb
+        with:
+          workspaces: |
+            ramflux-itest
+
+      - name: Run T22 production compose smoke
+        working-directory: ramflux-itest
+        env:
+          RAMFLUX_T22_PRODUCTION_SMOKE: "1"
+        run: |
+          cargo test --features realnet --no-default-features \
+            t22_production_keyless_v3_compose_smoke -- --nocapture
