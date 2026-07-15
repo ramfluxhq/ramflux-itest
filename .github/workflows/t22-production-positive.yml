@@ -1,0 +1,56 @@
+name: T22 production positive (manual)
+
+# Manual-only positive proof for T22-A3-PROD-POSITIVE: bring up the REAL production
+# deploy/docker-compose.yml (not docker-compose.itest*) in keyless v3 mode with
+# test-generated NON-SECRET trust materials and assert the relay client QUIC
+# listener reaches health. Heavier than the s70 static/fail-closed smoke: it
+# host-builds the 7 production node binaries and runs the full production compose,
+# so it needs a Linux runner with docker. Never wired to push/PR.
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: t22-production-positive-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  t22-prod-positive:
+    name: t22 production positive (relay QUIC health)
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      # The test resolves the product deploy dir as <parent>/ramflux/deploy and runs
+      # its bootstrap/issue-certs/build-prod-images scripts, so check out product and
+      # itest as siblings.
+      - name: Checkout ramflux (product, pinned)
+        uses: actions/checkout@b9e0990d219a03df7633c93f6f005a8fecbcab22
+        with:
+          repository: ramfluxhq/ramflux
+          ref: ae74754ce30e73ee61e8634276124fdbaec434cd
+          path: ramflux
+
+      - name: Checkout ramflux-itest (this repo)
+        uses: actions/checkout@b9e0990d219a03df7633c93f6f005a8fecbcab22
+        with:
+          ref: ${{ github.sha }}
+          path: ramflux-itest
+
+      - name: Cache
+        uses: Swatinem/rust-cache@baf1a810e98b6a3001d0d7234864ed75a17c42fb
+        with:
+          # Both workspaces build: the product node binaries (build-prod-images.sh)
+          # and the itest test binary.
+          workspaces: |
+            ramflux
+            ramflux-itest
+
+      - name: Run T22 production positive
+        working-directory: ramflux-itest
+        env:
+          RAMFLUX_T22_PRODUCTION_POSITIVE: "1"
+        run: |
+          cargo test --features realnet --no-default-features \
+            t22_production_keyless_v3_positive_relay_quic_health -- --nocapture --test-threads=1
