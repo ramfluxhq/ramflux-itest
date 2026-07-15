@@ -5,7 +5,7 @@
 // `docker-compose.itest*.yml`) boots in keyless v3 mode and that the relay's client-facing QUIC
 // listener reaches health — using only NON-SECRET, deterministic, test-generated trust materials.
 //
-// Why this exists: at product b5f048f the production relay fails closed (`compose config` `:?`) unless
+// Why this exists: at product e7960e4 the production relay fails closed (`compose config` `:?`) unless
 // the keyring-era v3 trust chain is supplied — offline-root-signed provider keyring + provider-signed
 // trust snapshot + gateway v3 issuer cert. The S10/S22 production harness does NOT generate that chain,
 // so there is no runtime evidence that the production compose can start keyless-v3. This test closes
