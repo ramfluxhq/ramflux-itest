@@ -196,12 +196,14 @@ fn relay_chunk_cache_restart_recovers_encrypted_chunk() -> Result<(), Box<dyn st
     drop(store);
 
     let reopened = ramflux_node_core::RelayRedbStore::open(&store_path)?;
-    let mut state = reopened.load_state()?.ok_or_else(|| "missing relay cache state".to_owned())?;
+    let mut state = reopened
+        .load_state(ramflux_node_core::RELAY_METADATA_MAX_BYTES_DEFAULT)?
+        .ok_or_else(|| "missing relay cache state".to_owned())?;
     let chunk = state
         .get_available_chunk("chunk_itest_1", 1_760_000_010)
         .ok_or_else(|| "missing relay chunk".to_owned())?;
     assert_eq!(chunk.object_id, "object_itest_1");
-    assert_eq!(chunk.encrypted_chunk, b"encrypted relay chunk");
+    assert_eq!(chunk.chunk_cipher_hash, "chunk_cipher_hash_itest");
     assert_eq!(state.expire_chunks(1_760_000_121), 1);
     assert_eq!(state.available_count(1_760_000_121), 0);
     Ok(())
