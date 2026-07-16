@@ -441,6 +441,45 @@ fn add_itest_compose_files(command: &mut std::process::Command, overrides: Itest
 fn compose_env_with_required_defaults(env: &[(String, String)]) -> Vec<(String, String)> {
     let mut compose_env = env.to_vec();
     ensure_itest_node_service_signing_seed_env(&mut compose_env);
+    ensure_compose_default_env(&mut compose_env, "RAMFLUX_VERSION", "dev");
+    ensure_compose_default_env(
+        &mut compose_env,
+        "RAMFLUX_GATEWAY_V3_ISSUER_CERT_FILE",
+        "/etc/ramflux/gateway-v3/issuer-cert.json",
+    );
+    ensure_compose_default_env(
+        &mut compose_env,
+        "RAMFLUX_FEDERATION_ADMIN_TOKEN",
+        "ramflux-local-admin-token",
+    );
+    ensure_compose_default_env(&mut compose_env, "RAMFLUX_FEDERATION_NODE_ID", "localhost");
+    ensure_compose_default_env(
+        &mut compose_env,
+        "RAMFLUX_FEDERATION_PUBLIC_ENDPOINT",
+        "ramflux-federation:7443",
+    );
+    ensure_compose_default_env(
+        &mut compose_env,
+        "RAMFLUX_FEDERATION_TRUST_SNAPSHOT_FILE",
+        "/etc/ramflux/federation/trust-snapshot.json",
+    );
+    ensure_compose_default_env(&mut compose_env, "RAMFLUX_FEDERATION_FORCE_TCP_MESH", "0");
+    ensure_compose_default_env(&mut compose_env, "RAMFLUX_FEDERATION_DISABLE_TCP_FALLBACK", "0");
+    ensure_compose_default_env(
+        &mut compose_env,
+        "RAMFLUX_FEDERATION_PROVIDER_KEYRING_FILE",
+        "/etc/ramflux/federation/provider-keyring.json",
+    );
+    ensure_compose_default_env(
+        &mut compose_env,
+        "RAMFLUX_RELAY_TRUST_SNAPSHOT_CACHE_FILE",
+        "/var/lib/ramflux/relay/trust-snapshot.json",
+    );
+    ensure_compose_default_env(
+        &mut compose_env,
+        "RAMFLUX_RELAY_TRUST_SNAPSHOT_REFRESH_INTERVAL_SECONDS",
+        "30",
+    );
     if !compose_env.iter().any(|(key, _value)| key == "RAMFLUX_FEDERATION_NODE_SIGNING_SEED_B64URL")
     {
         compose_env.push((
@@ -452,6 +491,13 @@ fn compose_env_with_required_defaults(env: &[(String, String)]) -> Vec<(String, 
         compose_env.push(("RAMFLUX_NODE_ID".to_owned(), "localhost".to_owned()));
     }
     compose_env
+}
+
+#[cfg(all(test, feature = "realnet"))]
+fn ensure_compose_default_env(compose_env: &mut Vec<(String, String)>, key: &str, value: &str) {
+    if !compose_env.iter().any(|(existing_key, _value)| existing_key == key) {
+        compose_env.push((key.to_owned(), value.to_owned()));
+    }
 }
 
 #[cfg(all(test, feature = "realnet"))]
