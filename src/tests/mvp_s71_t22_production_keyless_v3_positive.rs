@@ -164,6 +164,14 @@ fn t22_production_positive_public_sdk_object_four_ops() -> Result<(), Box<dyn st
             "RAMFLUX_FEDERATION_PROVIDER_OFFLINE_ROOT_PUBLIC_KEY".to_owned(),
             ramflux_crypto::public_key_base64url_from_seed(offline_root_seed),
         ),
+        (
+            "RAMFLUX_FEDERATION_PROVIDER_KEYRING_FILE".to_owned(),
+            "/etc/ramflux/federation/provider-keyring.json".to_owned(),
+        ),
+        (
+            "RAMFLUX_RELAY_TRUST_SNAPSHOT_CACHE_FILE".to_owned(),
+            "/var/lib/ramflux/relay/trust-snapshot.json".to_owned(),
+        ),
         ("RAMFLUX_FEDERATION_TRUST_ISSUER_NODE_ID".to_owned(), issuer_node.to_owned()),
         // Gateway v3 issuance material (gateway fails closed without it).
         (
@@ -318,6 +326,14 @@ fn t22_production_measure_public_sdk_object() -> Result<(), Box<dyn std::error::
         (
             "RAMFLUX_FEDERATION_PROVIDER_OFFLINE_ROOT_PUBLIC_KEY".to_owned(),
             ramflux_crypto::public_key_base64url_from_seed(offline_root_seed),
+        ),
+        (
+            "RAMFLUX_FEDERATION_PROVIDER_KEYRING_FILE".to_owned(),
+            "/etc/ramflux/federation/provider-keyring.json".to_owned(),
+        ),
+        (
+            "RAMFLUX_RELAY_TRUST_SNAPSHOT_CACHE_FILE".to_owned(),
+            "/var/lib/ramflux/relay/trust-snapshot.json".to_owned(),
         ),
         ("RAMFLUX_FEDERATION_TRUST_ISSUER_NODE_ID".to_owned(), issuer_node.to_owned()),
         (
