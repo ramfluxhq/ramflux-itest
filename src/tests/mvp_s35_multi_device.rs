@@ -605,6 +605,8 @@ async fn mvp_s35_create_account(
     spec: MvpS35AccountSpec<'_>,
 ) -> Result<String, Box<dyn std::error::Error>> {
     let request = ramflux_sdk::LocalBusAccountCreateRequest {
+        label: None,
+        kind: None,
         node_id: None,
         local_account_id: spec.local_account_id.to_owned(),
         principal_id: spec.principal_id.to_owned(),

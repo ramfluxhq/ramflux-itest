@@ -334,6 +334,8 @@ async fn mvp_s48_create_account(
             "account",
             "account.create",
             serde_json::to_value(ramflux_sdk::LocalBusAccountCreateRequest {
+                label: None,
+                kind: None,
                 node_id: None,
                 local_account_id: spec.local_account_id.to_owned(),
                 principal_id: spec.principal_id.to_owned(),
