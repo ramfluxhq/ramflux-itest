@@ -111,6 +111,16 @@ fn signed_gateway_materials(
     Ok(SignedGatewayMaterials { directory: materials, environment: env })
 }
 
+pub(crate) fn client_directory_relay_environment(
+    ca_cert: &Path,
+) -> [(String, std::ffi::OsString); 3] {
+    [
+        ("RAMFLUX_SDK_RELAY_QUIC_ADDR".to_owned(), S73_RELAY_QUIC.into()),
+        ("RAMFLUX_SDK_RELAY_QUIC_SERVER_NAME".to_owned(), "ramflux-relay".into()),
+        ("RAMFLUX_SDK_RELAY_QUIC_CA_CERT".to_owned(), ca_cert.as_os_str().to_owned()),
+    ]
+}
+
 pub(crate) fn client_directory_daemon_command(
     rf_binary: &Path,
     socket: &Path,
@@ -130,10 +140,7 @@ pub(crate) fn client_directory_daemon_command(
     ] {
         command.env_remove(key);
     }
-    command
-        .env("RAMFLUX_SDK_RELAY_QUIC_ADDR", S73_RELAY_QUIC)
-        .env("RAMFLUX_SDK_RELAY_QUIC_SERVER_NAME", "ramflux-relay")
-        .env("RAMFLUX_SDK_RELAY_QUIC_CA_CERT", ca_cert);
+    command.envs(client_directory_relay_environment(ca_cert));
     if let Some(principal) = owner_principal {
         command
             .env("RAMFLUX_SDK_RELAY_OWNER_HOME_NODE_ID", ISSUER_NODE)
@@ -150,6 +157,20 @@ pub(crate) fn client_directory_daemon_command(
 #[cfg(test)]
 mod issuer_tests {
     use super::*;
+
+    #[test]
+    fn relay_environment_sets_address_server_name_and_ca_before_daemon_start() {
+        let ca = Path::new("test certificates/relay-ca.pem");
+        let env = client_directory_relay_environment(ca)
+            .into_iter()
+            .collect::<std::collections::BTreeMap<_, _>>();
+        assert_eq!(env["RAMFLUX_SDK_RELAY_QUIC_ADDR"], std::ffi::OsStr::new(S73_RELAY_QUIC));
+        assert_eq!(
+            env["RAMFLUX_SDK_RELAY_QUIC_SERVER_NAME"],
+            std::ffi::OsStr::new("ramflux-relay")
+        );
+        assert_eq!(env["RAMFLUX_SDK_RELAY_QUIC_CA_CERT"], ca.as_os_str());
+    }
 
     #[test]
     fn signed_materials_bind_selected_gateway_seed_and_owner_trust()

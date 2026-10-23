@@ -12,22 +12,22 @@ fn mvp_s48_realnet_own_device_history_group_key_sync() -> Result<(), Box<dyn std
         return Ok(());
     }
 
-    // The in-process daemons need the same explicit owner lineage as spawned v3 fixtures.
-    // Re-exec before starting them rather than mutating process environment around async work.
-    if std::env::var("RAMFLUX_S48_OWNER_ENV_READY").as_deref() != Ok("1") {
-        let status = std::process::Command::new(std::env::current_exe()?)
-            .args([
-                "--exact",
-                "tests::mvp_s48_own_device_sync::mvp_s48_realnet_own_device_history_group_key_sync",
-                "--nocapture",
-            ])
-            .env("RAMFLUX_S48_OWNER_ENV_READY", "1")
-            .env("RAMFLUX_SDK_RELAY_OWNER_HOME_NODE_ID", "node_a.realnet")
-            .env("RAMFLUX_SDK_RELAY_OWNER_PRINCIPAL_ID", "principal_s48_alice")
-            .env("RAMFLUX_SDK_RELAY_AUDIENCE_NODE_ID", "node_a.realnet")
-            .status()?;
-        assert!(status.success(), "s48 owner-lineage child failed: {status}");
-        return Ok(());
+    // The parent owns the stack. The exact-test child owns every SDK client and inherits a
+    // complete relay transport and owner configuration before any async daemon is created.
+    if std::env::var("RAMFLUX_S48_CLIENT_ENV_READY").as_deref() == Ok("1") {
+        let node = S48ClientEndpoints {
+            gateway_quic_addr: std::env::var("RAMFLUX_S48_GATEWAY_QUIC_ADDR")?.parse()?,
+            ca_cert: std::env::var_os("RAMFLUX_SDK_RELAY_QUIC_CA_CERT")
+                .ok_or("s48 relay CA missing")?
+                .into(),
+        };
+        let relay_url = std::env::var("RAMFLUX_S48_RELAY_HTTP_URL")?;
+        let runtime = tokio::runtime::Builder::new_current_thread().enable_all().build()?;
+        return runtime.block_on(async {
+            wait_for_private_gateway_quic(node.gateway_quic_addr, &node.ca_cert).await?;
+            wait_relay_quic_healthy(S73_RELAY_QUIC, "ramflux-relay", &node.ca_cert).await?;
+            Box::pin(mvp_s48_assert_own_device_sync(&node, &relay_url)).await
+        });
     }
 
     let ports = S8ComposePorts {
@@ -59,20 +59,35 @@ fn mvp_s48_realnet_own_device_history_group_key_sync() -> Result<(), Box<dyn std
     let node = &stack.node;
 
     let relay_url = format!("http://127.0.0.1:{}", ports.relay_http);
-    let runtime = tokio::runtime::Builder::new_current_thread().enable_all().build()?;
-    runtime.block_on(async {
-        wait_for_private_gateway_quic(node.gateway_quic_addr, &node.ca_cert).await?;
-        Box::pin(mvp_s48_assert_own_device_sync(node, &relay_url)).await?;
-        Ok::<(), Box<dyn std::error::Error>>(())
-    })?;
+    let status = std::process::Command::new(std::env::current_exe()?)
+        .args([
+            "--exact",
+            "tests::mvp_s48_own_device_sync::mvp_s48_realnet_own_device_history_group_key_sync",
+            "--nocapture",
+        ])
+        .env("RAMFLUX_S48_CLIENT_ENV_READY", "1")
+        .env("RAMFLUX_S48_GATEWAY_QUIC_ADDR", node.gateway_quic_addr.to_string())
+        .env("RAMFLUX_S48_RELAY_HTTP_URL", relay_url)
+        .env("RAMFLUX_SDK_RELAY_OWNER_HOME_NODE_ID", "node_a.realnet")
+        .env("RAMFLUX_SDK_RELAY_OWNER_PRINCIPAL_ID", "principal_s48_alice")
+        .env("RAMFLUX_SDK_RELAY_AUDIENCE_NODE_ID", "node_a.realnet")
+        .envs(client_directory_relay_environment(&node.ca_cert))
+        .status()?;
+    assert!(status.success(), "s48 configured client child failed: {status}");
     stack.node.guard.mark_success();
     Ok(())
 }
 
 #[cfg(all(test, feature = "realnet"))]
+struct S48ClientEndpoints {
+    gateway_quic_addr: std::net::SocketAddr,
+    ca_cert: PathBuf,
+}
+
+#[cfg(all(test, feature = "realnet"))]
 #[allow(clippy::too_many_lines)]
 async fn mvp_s48_assert_own_device_sync(
-    node: &S8RealnetNode,
+    node: &S48ClientEndpoints,
     relay_url: &str,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let temp_root = temp_root("s48_own_device_sync")?;
@@ -310,7 +325,7 @@ struct MvpS48AccountSpec<'a> {
 #[cfg(all(test, feature = "realnet"))]
 async fn mvp_s48_create_account(
     bus: &mut ramflux_sdk::LocalBusClient,
-    node: &S8RealnetNode,
+    node: &S48ClientEndpoints,
     spec: MvpS48AccountSpec<'_>,
 ) -> Result<String, Box<dyn std::error::Error>> {
     let response: ramflux_sdk::LocalBusAccountCreateResponse = serde_json::from_value(
