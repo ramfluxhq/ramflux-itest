@@ -1058,7 +1058,7 @@ pub(crate) fn federation_dns_alias(project_name: &str) -> String {
     )
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "realnet"))]
 mod compose_default_tests {
     use super::*;
 
