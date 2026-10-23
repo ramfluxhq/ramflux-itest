@@ -25,7 +25,15 @@ impl Drop for MaterialDirectory {
 pub(crate) fn start_client_directory_stack(
     ports: S8ComposePorts,
 ) -> Result<ClientDirectoryStack, Box<dyn std::error::Error>> {
-    let materials = MaterialDirectory(temp_root("s73_v3_materials")?);
+    start_client_directory_stack_named("ramflux-s73-client-directory", ports, &[])
+}
+
+pub(crate) fn start_client_directory_stack_named(
+    project: &str,
+    ports: S8ComposePorts,
+    extra_env: &[(String, String)],
+) -> Result<ClientDirectoryStack, Box<dyn std::error::Error>> {
+    let materials = MaterialDirectory(temp_root("client_directory_v3_materials")?);
     let now = ramflux_node_core::now_unix_seconds();
     let root_seed = [0x44; 32];
     let attestation_seed = [0x33; 32];
@@ -53,34 +61,29 @@ pub(crate) fn start_client_directory_stack(
         serde_json::to_vec_pretty(&keyring)?,
     )?;
     realnet_step("s73 start signed v3 stack", "issuer=node_b.realnet audience=node_a.realnet");
-    let node = start_s8_realnet_compose_project_with_env(
-        "ramflux-s73-client-directory",
-        ports,
-        &[
-            ("RAMFLUX_V3_MATERIALS_DIR".to_owned(), materials.0.to_string_lossy().into_owned()),
-            (
-                "RAMFLUX_GATEWAY_B_V3_ISSUER_SEED".to_owned(),
-                ramflux_protocol::encode_base64url(attestation_seed),
-            ),
-            (
-                "RAMFLUX_V3_FEDERATION_PROVIDER_OFFLINE_ROOT_PUBLIC_KEY".to_owned(),
-                ramflux_crypto::public_key_base64url_from_seed(offline_root_seed),
-            ),
-            (
-                "RAMFLUX_V3_FEDERATION_PROVIDER_KEYRING_FILE".to_owned(),
-                "/etc/ramflux/federation/provider-keyring.json".to_owned(),
-            ),
-            ("RAMFLUX_V3_FEDERATION_TRUST_ISSUER_NODE_ID".to_owned(), ISSUER_NODE.to_owned()),
-            (
-                "RAMFLUX_V3_FEDERATION_TRUST_ENDPOINT".to_owned(),
-                "ramflux-federation:7443".to_owned(),
-            ),
-            (
-                "RAMFLUX_RELAY_ITEST_CAPTURE_JSON".to_owned(),
-                "/tmp/ramflux-relay-itest-capture-s73.jsonl".to_owned(),
-            ),
-        ],
-    )?;
+    let mut env = vec![
+        ("RAMFLUX_V3_MATERIALS_DIR".to_owned(), materials.0.to_string_lossy().into_owned()),
+        (
+            "RAMFLUX_GATEWAY_B_V3_ISSUER_SEED".to_owned(),
+            ramflux_protocol::encode_base64url(attestation_seed),
+        ),
+        (
+            "RAMFLUX_V3_FEDERATION_PROVIDER_OFFLINE_ROOT_PUBLIC_KEY".to_owned(),
+            ramflux_crypto::public_key_base64url_from_seed(offline_root_seed),
+        ),
+        (
+            "RAMFLUX_V3_FEDERATION_PROVIDER_KEYRING_FILE".to_owned(),
+            "/etc/ramflux/federation/provider-keyring.json".to_owned(),
+        ),
+        ("RAMFLUX_V3_FEDERATION_TRUST_ISSUER_NODE_ID".to_owned(), ISSUER_NODE.to_owned()),
+        ("RAMFLUX_V3_FEDERATION_TRUST_ENDPOINT".to_owned(), "ramflux-federation:7443".to_owned()),
+        (
+            "RAMFLUX_RELAY_ITEST_CAPTURE_JSON".to_owned(),
+            "/tmp/ramflux-relay-itest-capture-s73.jsonl".to_owned(),
+        ),
+    ];
+    env.extend_from_slice(extra_env);
+    let node = start_s8_realnet_compose_project_with_env(project, ports, &env)?;
     Ok(ClientDirectoryStack { node, _materials: materials })
 }
 
