@@ -25,6 +25,7 @@ struct Identity {
     provider: [u8; 32],
     offline: [u8; 32],
     discovery: [u8; 32],
+    service: [u8; 32],
     admin: [u8; 32],
 }
 
@@ -52,6 +53,7 @@ fn initialize(dir: &Path, node_id: &str) -> Result {
             provider: random_seed()?,
             offline: random_seed()?,
             discovery: random_seed()?,
+            service: random_seed()?,
             admin: random_seed()?,
         };
         let mut file = std::fs::OpenOptions::new()
@@ -107,7 +109,7 @@ fn initialize(dir: &Path, node_id: &str) -> Result {
     validate_saved_trust(dir, &identity, timestamp)?;
     let env = format!(
         "RAMFLUX_NODE_SERVICE_SIGNING_SEED_B64URL={}\nRAMFLUX_GATEWAY_V3_ISSUER_SEED={}\nRAMFLUX_FEDERATION_PROVIDER_OFFLINE_ROOT_PUBLIC_KEY={}\nRAMFLUX_FEDERATION_NODE_SIGNING_SEED_B64URL={}\nRAMFLUX_ROUTER_ADMIN_TOKEN={}\nRAMFLUX_FEDERATION_ADMIN_TOKEN={}\nDEMO_EXPECTED_NODE_PUBLIC_KEY={}\n",
-        encode_base64url(identity.root),
+        encode_base64url(identity.service),
         encode_base64url(identity.attestation),
         ramflux_crypto::public_key_base64url_from_seed(identity.offline),
         encode_base64url(identity.discovery),
@@ -280,6 +282,13 @@ mod tests {
         for file in ["identity.json", "identity.env"] {
             assert_eq!(std::fs::metadata(dir.0.join(file))?.permissions().mode() & 0o777, 0o600);
         }
+        let identity: Identity =
+            serde_json::from_slice(&std::fs::read(dir.0.join("identity.json"))?)?;
+        let environment = std::fs::read_to_string(dir.0.join("identity.env"))?;
+        for seed in [identity.root, identity.provider, identity.offline] {
+            assert!(!environment.contains(&encode_base64url(seed)));
+        }
+        assert!(environment.contains(&encode_base64url(identity.service)));
         assert!(initialize(&dir.0, "other.invalid").is_err());
         Ok(())
     }
