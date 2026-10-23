@@ -138,3 +138,8 @@ pub(crate) use client_discovery_topology::*;
 mod client_record_origin;
 #[cfg(feature = "realnet")]
 pub(crate) use client_record_origin::*;
+
+#[cfg(feature = "realnet")]
+mod client_directory_topology;
+#[cfg(feature = "realnet")]
+pub(crate) use client_directory_topology::*;

@@ -189,3 +189,6 @@ mod mvp_s72_client_node_discovery;
 mod objects;
 #[path = "transport_node_store.rs"]
 mod transport_node_store;
+
+#[path = "mvp_s73_client_read_model.rs"]
+mod mvp_s73_client_read_model;
