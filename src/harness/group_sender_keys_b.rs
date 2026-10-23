@@ -236,10 +236,10 @@ pub(crate) async fn mvp_s24_assert_group_out_of_order_key(
                     Some("alice_s24_account".to_owned()),
                     "group",
                     "group.sender_key.export",
-                    &ramflux_sdk::LocalBusGroupSenderKeyExportRequest {
+                    serde_json::to_value(ramflux_sdk::LocalBusGroupSenderKeyExportRequest {
                         group_id: "group_s24_out_of_order".to_owned(),
                         sender_id: "alice_device_s24".to_owned(),
-                    },
+                    })?,
                 )
                 .await?;
             let distribution_base64 = exported["distribution_base64"]
@@ -251,9 +251,9 @@ pub(crate) async fn mvp_s24_assert_group_out_of_order_key(
                     Some("bob_s24_account".to_owned()),
                     "group",
                     "group.sender_key.import",
-                    &ramflux_sdk::LocalBusGroupSenderKeyImportRequest {
+                    serde_json::to_value(ramflux_sdk::LocalBusGroupSenderKeyImportRequest {
                         distribution_base64: distribution_base64.to_owned(),
-                    },
+                    })?,
                 )
                 .await?;
             assert_eq!(sender_key["group_id"], "group_s24_out_of_order");
@@ -276,9 +276,9 @@ pub(crate) async fn mvp_s24_assert_group_out_of_order_key(
                     Some("bob_s24_account".to_owned()),
                     "message",
                     "message.read",
-                    &ramflux_sdk::LocalBusConversationRequest {
+                    serde_json::to_value(ramflux_sdk::LocalBusConversationRequest {
                         conversation_id: "conv_s24_group".to_owned(),
-                    },
+                    })?,
                 )
                 .await?;
             let projected = projected_state["messages"].as_array().ok_or("missing S24 messages")?;

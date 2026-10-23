@@ -186,12 +186,12 @@ async fn mvp_s48_assert_own_device_sync(
                     Some("alice_s48_account".to_owned()),
                     "device",
                     "device.sync.export",
-                    &ramflux_sdk::LocalBusDeviceSyncExportRequest {
+                    serde_json::to_value(ramflux_sdk::LocalBusDeviceSyncExportRequest {
                         target_device_id: "alice_device_s48_b".to_owned(),
                         relay_endpoint: relay_url.to_owned(),
                         relay_service_key_base64: None,
                         chunk_size: Some(4096),
-                    },
+                    })?,
                 )
                 .await?;
             assert_eq!(exported["envelope"]["target_device_id"], "alice_device_s48_b");
@@ -202,10 +202,10 @@ async fn mvp_s48_assert_own_device_sync(
                     Some("alice_s48_account".to_owned()),
                     "device",
                     "device.sync.import",
-                    &ramflux_sdk::LocalBusDeviceSyncImportRequest {
+                    serde_json::to_value(ramflux_sdk::LocalBusDeviceSyncImportRequest {
                         envelope: exported["envelope"].clone(),
                         relay_service_key_base64: None,
-                    },
+                    })?,
                 )
                 .await?;
             assert!(imported["imported_messages"].as_u64().unwrap_or(0) >= 2);
@@ -234,7 +234,9 @@ async fn mvp_s48_assert_own_device_sync(
                     Some("alice_s48_account".to_owned()),
                     "group",
                     "group.members",
-                    &ramflux_sdk::LocalBusGroupRequest { group_id: "group_s48".to_owned() },
+                    serde_json::to_value(ramflux_sdk::LocalBusGroupRequest {
+                        group_id: "group_s48".to_owned(),
+                    })?,
                 )
                 .await?;
             assert_eq!(members["roles"]["alice_device_s48_b"], "owner");
@@ -293,7 +295,7 @@ async fn mvp_s48_create_account(
             None,
             "account",
             "account.create",
-            &ramflux_sdk::LocalBusAccountCreateRequest {
+            serde_json::to_value(ramflux_sdk::LocalBusAccountCreateRequest {
                 node_id: None,
                 local_account_id: spec.local_account_id.to_owned(),
                 principal_id: spec.principal_id.to_owned(),
@@ -314,7 +316,7 @@ async fn mvp_s48_create_account(
                     target_delivery_id: spec.target_delivery_id.to_owned(),
                     prekey_http_url: None,
                 },
-            },
+            })?,
         )
         .await?,
     )?;
@@ -335,11 +337,11 @@ async fn mvp_s48_add_contact(
             Some(account.to_owned()),
             "contact",
             "contact.add",
-            &ramflux_sdk::LocalBusContactAddRequest {
+            serde_json::to_value(ramflux_sdk::LocalBusContactAddRequest {
                 link_id: format!("friend_link_s48_{requester}_{target}"),
                 requester_id: requester.to_owned(),
                 target_id: target.to_owned(),
-            },
+            })?,
         )
         .await?;
     assert_eq!(added["state"], "accepted");
@@ -365,7 +367,7 @@ async fn mvp_s48_send_dm(
             Some("bob_s48_account".to_owned()),
             "message",
             "message.submit",
-            &ramflux_sdk::LocalBusMessageSubmitRequest {
+            serde_json::to_value(ramflux_sdk::LocalBusMessageSubmitRequest {
                 conversation_id: conversation_id.to_owned(),
                 message_id: message_id.to_owned(),
                 envelope_id: message_id.to_owned(),
@@ -380,7 +382,7 @@ async fn mvp_s48_send_dm(
                 ttl: 3600,
                 attachments: Vec::new(),
                 federation: None,
-            },
+            })?,
         )
         .await?;
     assert_eq!(submitted["envelope"]["envelope_id"], message_id);
@@ -398,12 +400,12 @@ async fn mvp_s48_receive_dm(
             Some(account.to_owned()),
             "message",
             "message.receive",
-            &ramflux_sdk::LocalBusMessageReceiveRequest {
+            serde_json::to_value(ramflux_sdk::LocalBusMessageReceiveRequest {
                 limit: 16,
                 conversation_id: Some(conversation_id.to_owned()),
                 auto_fetch_attachments: false,
                 relay_service_key_base64: None,
-            },
+            })?,
         )
         .await?)
 }
@@ -419,9 +421,9 @@ async fn mvp_s48_message_list(
             Some(account.to_owned()),
             "message",
             "message.list",
-            &ramflux_sdk::LocalBusConversationRequest {
+            serde_json::to_value(ramflux_sdk::LocalBusConversationRequest {
                 conversation_id: conversation_id.to_owned(),
-            },
+            })?,
         )
         .await?)
 }
@@ -436,12 +438,12 @@ async fn mvp_s48_seed_group(
             Some("alice_s48_account".to_owned()),
             "group",
             "group.create",
-            &ramflux_sdk::LocalBusGroupCreateRequest {
+            serde_json::to_value(ramflux_sdk::LocalBusGroupCreateRequest {
                 group_id: "group_s48".to_owned(),
                 creator_id: "alice_device_s48_a".to_owned(),
                 creator_target_delivery_id: Some("target_s48_alice_a".to_owned()),
                 creator_signing_public_key: None,
-            },
+            })?,
         )
         .await?;
     assert_eq!(created["roles"]["alice_device_s48_a"], "owner");
@@ -450,7 +452,7 @@ async fn mvp_s48_seed_group(
             Some("alice_s48_account".to_owned()),
             "group",
             "group.member.add",
-            &ramflux_sdk::LocalBusGroupMemberAddRequest {
+            serde_json::to_value(ramflux_sdk::LocalBusGroupMemberAddRequest {
                 group_id: "group_s48".to_owned(),
                 member_id: "bob_device_s48".to_owned(),
                 role: "member".to_owned(),
@@ -458,7 +460,7 @@ async fn mvp_s48_seed_group(
                 member_principal_commitment: Some(bob_commitment.to_owned()),
                 member_signing_public_key: None,
                 federation: None,
-            },
+            })?,
         )
         .await?;
     assert_eq!(added["roles"]["bob_device_s48"], "member");
@@ -478,7 +480,7 @@ async fn mvp_s48_send_group(
             Some(account.to_owned()),
             "group",
             "group.send",
-            &ramflux_sdk::LocalBusGroupSendRequest {
+            serde_json::to_value(ramflux_sdk::LocalBusGroupSendRequest {
                 group_id: group_id.to_owned(),
                 conversation_id: group_id.to_owned(),
                 message_id: message_id.to_owned(),
@@ -490,7 +492,7 @@ async fn mvp_s48_send_group(
                 target_delivery_id: None,
                 federation: None,
                 ttl: Some(3600),
-            },
+            })?,
         )
         .await?)
 }
@@ -506,10 +508,10 @@ async fn mvp_s48_backup_and_activate_restored_device(
             Some("alice_s48_account".to_owned()),
             "account",
             "account.backup.export",
-            &ramflux_sdk::LocalBusAccountBackupExportRequest {
+            serde_json::to_value(ramflux_sdk::LocalBusAccountBackupExportRequest {
                 output_path: backup_path.display().to_string(),
                 passphrase: "s48-backup-passphrase-strong".to_owned(),
-            },
+            })?,
         )
         .await?;
     alice_restored
@@ -517,10 +519,10 @@ async fn mvp_s48_backup_and_activate_restored_device(
             None,
             "account",
             "account.backup.import",
-            &ramflux_sdk::LocalBusAccountBackupImportRequest {
+            serde_json::to_value(ramflux_sdk::LocalBusAccountBackupImportRequest {
                 input_path: backup_path.display().to_string(),
                 passphrase: "s48-backup-passphrase-strong".to_owned(),
-            },
+            })?,
         )
         .await?;
     let activated: ramflux_sdk::LocalBusDeviceActivateResponse = serde_json::from_value(
@@ -529,13 +531,13 @@ async fn mvp_s48_backup_and_activate_restored_device(
                 Some("alice_s48_account".to_owned()),
                 "device",
                 "device.activate",
-                &ramflux_sdk::LocalBusDeviceActivateRequest {
+                serde_json::to_value(ramflux_sdk::LocalBusDeviceActivateRequest {
                     node_id: None,
                     device_id: "alice_device_s48_b".to_owned(),
                     target_delivery_id: "target_s48_alice_b".to_owned(),
                     device_seed: [0x4a; 32],
                     device_epoch: Some(2),
-                },
+                })?,
             )
             .await?,
     )?;

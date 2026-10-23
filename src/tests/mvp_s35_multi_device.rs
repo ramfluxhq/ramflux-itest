@@ -104,10 +104,10 @@ async fn mvp_s35_assert_multi_device_activation(
                     Some("bob_s35_account".to_owned()),
                     "account",
                     "account.backup.export",
-                    &ramflux_sdk::LocalBusAccountBackupExportRequest {
+                    serde_json::to_value(ramflux_sdk::LocalBusAccountBackupExportRequest {
                         output_path: backup_path.display().to_string(),
                         passphrase: "s35-backup-passphrase-strong".to_owned(),
-                    },
+                    })?,
                 )
                 .await?;
             bob_restored
@@ -115,10 +115,10 @@ async fn mvp_s35_assert_multi_device_activation(
                     None,
                     "account",
                     "account.backup.import",
-                    &ramflux_sdk::LocalBusAccountBackupImportRequest {
+                    serde_json::to_value(ramflux_sdk::LocalBusAccountBackupImportRequest {
                         input_path: backup_path.display().to_string(),
                         passphrase: "s35-backup-passphrase-strong".to_owned(),
-                    },
+                    })?,
                 )
                 .await?;
             let activated: ramflux_sdk::LocalBusDeviceActivateResponse = serde_json::from_value(
@@ -127,13 +127,13 @@ async fn mvp_s35_assert_multi_device_activation(
                         Some("bob_s35_account".to_owned()),
                         "device",
                         "device.activate",
-                        &ramflux_sdk::LocalBusDeviceActivateRequest {
+                        serde_json::to_value(ramflux_sdk::LocalBusDeviceActivateRequest {
                             node_id: None,
                             device_id: "bob_device_s35_b".to_owned(),
                             target_delivery_id: "target_s35_bob_b".to_owned(),
                             device_seed: [0x37; 32],
                             device_epoch: Some(1),
-                        },
+                        })?,
                     )
                     .await?,
             )?;
@@ -146,7 +146,7 @@ async fn mvp_s35_assert_multi_device_activation(
                         Some("bob_s35_account".to_owned()),
                         "device",
                         "device.list",
-                        &serde_json::json!({}),
+                        serde_json::json!({}),
                     )
                     .await?,
             )?;
@@ -183,9 +183,9 @@ async fn mvp_s35_assert_multi_device_activation(
                     Some("bob_s35_account".to_owned()),
                     "contact",
                     "contact.safety_number",
-                    &ramflux_sdk::LocalBusContactSafetyRequest {
+                    serde_json::to_value(ramflux_sdk::LocalBusContactSafetyRequest {
                         contact_identity_commitment: alice_commitment.clone(),
-                    },
+                    })?,
                 )
                 .await?;
             assert_eq!(safety["self_device_count"], 2);
@@ -195,7 +195,7 @@ async fn mvp_s35_assert_multi_device_activation(
                     Some("alice_s35_account".to_owned()),
                     "message",
                     "message.submit",
-                    &ramflux_sdk::LocalBusMessageSubmitRequest {
+                    serde_json::to_value(ramflux_sdk::LocalBusMessageSubmitRequest {
                         conversation_id: "conv_s35_alice_bob".to_owned(),
                         message_id: "msg_s35_alice_to_bob".to_owned(),
                         envelope_id: "env_s35_alice_to_bob".to_owned(),
@@ -212,7 +212,7 @@ async fn mvp_s35_assert_multi_device_activation(
                         ttl: 300,
                         attachments: Vec::new(),
                         federation: None,
-                    },
+                    })?,
                 )
                 .await?;
             assert_eq!(submitted["envelope"]["envelope_id"], "env_s35_alice_to_bob");
@@ -221,12 +221,12 @@ async fn mvp_s35_assert_multi_device_activation(
                     Some("bob_s35_account".to_owned()),
                     "message",
                     "message.receive",
-                    &ramflux_sdk::LocalBusMessageReceiveRequest {
+                    serde_json::to_value(ramflux_sdk::LocalBusMessageReceiveRequest {
                         limit: 10,
                         conversation_id: Some("conv_s35_alice_bob".to_owned()),
                         auto_fetch_attachments: false,
                         relay_service_key_base64: None,
-                    },
+                    })?,
                 )
                 .await?;
             assert_s35_decrypted_body(&bob_primary_received, b"s35 hello both devices")?;
@@ -257,12 +257,12 @@ async fn mvp_s35_assert_multi_device_activation(
                     Some("bob_s35_account".to_owned()),
                     "message",
                     "message.receive",
-                    &ramflux_sdk::LocalBusMessageReceiveRequest {
+                    serde_json::to_value(ramflux_sdk::LocalBusMessageReceiveRequest {
                         limit: 10,
                         conversation_id: None,
                         auto_fetch_attachments: false,
                         relay_service_key_base64: None,
-                    },
+                    })?,
                 )
                 .await?;
             let entries = bob_restored_received["entries"]
@@ -633,8 +633,9 @@ async fn mvp_s35_create_account(
             prekey_http_url: None,
         },
     };
-    let response: ramflux_sdk::LocalBusAccountCreateResponse =
-        serde_json::from_value(bus.request(None, "account", "account.create", &request).await?)?;
+    let response: ramflux_sdk::LocalBusAccountCreateResponse = serde_json::from_value(
+        bus.request(None, "account", "account.create", serde_json::to_value(request)?).await?,
+    )?;
     assert_eq!(response.local_account_id, spec.local_account_id);
     let transport = response.active_transport_kind.as_str();
     assert!(
@@ -656,11 +657,11 @@ async fn mvp_s35_add_contact(
             Some(account.to_owned()),
             "contact",
             "contact.add",
-            &ramflux_sdk::LocalBusContactAddRequest {
+            serde_json::to_value(ramflux_sdk::LocalBusContactAddRequest {
                 link_id: format!("friend_link_s35_{requester}_{target}"),
                 requester_id: requester.to_owned(),
                 target_id: target.to_owned(),
-            },
+            })?,
         )
         .await?;
     assert_eq!(added["state"], "accepted");

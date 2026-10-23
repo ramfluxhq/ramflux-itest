@@ -466,14 +466,14 @@ async fn mvp_s3_add_contact(
             Some(requester.local_account_id.to_owned()),
             "contact",
             "contact.add",
-            &ramflux_sdk::LocalBusContactAddRequest {
+            serde_json::to_value(ramflux_sdk::LocalBusContactAddRequest {
                 link_id: format!(
                     "friend_link_s3_{}_{}",
                     requester.principal_id, target.principal_id
                 ),
                 requester_id: requester_commitment,
                 target_id: target_commitment,
-            },
+            })?,
         )
         .await?;
     assert_eq!(added["state"], "accepted");
@@ -487,7 +487,9 @@ pub(crate) async fn mvp_s3_create_alice_account(
 ) -> Result<(), Box<dyn std::error::Error>> {
     let alice_create = mvp_s3_account_create_request(config, MvpS3AccountSpec::alice());
     let alice_created: ramflux_sdk::LocalBusAccountCreateResponse = serde_json::from_value(
-        alice_bus.request(None, "account", "account.create", &alice_create).await?,
+        alice_bus
+            .request(None, "account", "account.create", serde_json::to_value(alice_create)?)
+            .await?,
     )?;
     assert_eq!(alice_created.client_mode, ramflux_sdk::LocalBusClientMode::AttendedCli);
     mvp_s3_assert_create_response_transport_quic(
@@ -505,7 +507,9 @@ pub(crate) async fn mvp_s3_create_bob_account(
 ) -> Result<(), Box<dyn std::error::Error>> {
     let bob_create = mvp_s3_account_create_request(config, MvpS3AccountSpec::bob());
     let bob_created: ramflux_sdk::LocalBusAccountCreateResponse = serde_json::from_value(
-        bob_bus.request(None, "account", "account.create", &bob_create).await?,
+        bob_bus
+            .request(None, "account", "account.create", serde_json::to_value(bob_create)?)
+            .await?,
     )?;
     assert_eq!(bob_created.target_delivery_id, "target_s3_bob");
     mvp_s3_assert_create_response_transport_quic(&bob_created, "bob_s3_account", "create response");
@@ -533,14 +537,21 @@ pub(crate) async fn mvp_s3_assert_offline_resume_catchup(
     );
     let submitted: ramflux_sdk::GatewayInboxEntry = serde_json::from_value(
         alice_bus
-            .request(Some("alice_s3_account".to_owned()), "message", "message.submit", &submit)
+            .request(
+                Some("alice_s3_account".to_owned()),
+                "message",
+                "message.submit",
+                serde_json::to_value(submit)?,
+            )
             .await?,
     )?;
     assert_eq!(submitted.target_delivery_id, "target_s3_carol_offline");
     assert_node_opaque_payload(&submitted.envelope.encrypted_payload, offline_plaintext);
     let carol_create = mvp_s3_account_create_request(config, MvpS3AccountSpec::carol_offline());
     let carol_created: ramflux_sdk::LocalBusAccountCreateResponse = serde_json::from_value(
-        bob_bus.request(None, "account", "account.create", &carol_create).await?,
+        bob_bus
+            .request(None, "account", "account.create", serde_json::to_value(carol_create)?)
+            .await?,
     )?;
     assert_eq!(carol_created.target_delivery_id, "target_s3_carol_offline");
     mvp_s3_assert_create_response_transport_quic(
@@ -561,7 +572,12 @@ pub(crate) async fn mvp_s3_assert_offline_resume_catchup(
         relay_service_key_base64: None,
     };
     let body = bob_bus
-        .request(Some("carol_s3_account".to_owned()), "message", "message.receive", &receive)
+        .request(
+            Some("carol_s3_account".to_owned()),
+            "message",
+            "message.receive",
+            serde_json::to_value(&receive)?,
+        )
         .await?;
     let entries = mvp_s3_entries_from_body(&body)?;
     assert_eq!(entries.len(), 1);
@@ -583,7 +599,12 @@ pub(crate) async fn mvp_s3_open_bob_subscription(
     let subscription =
         ramflux_sdk::LocalBusSubscriptionOpenRequest { topics: vec!["gateway.deliver".to_owned()] };
     let subscribed = bob_bus
-        .request(Some("bob_s3_account".to_owned()), "daemon", "subscription.open", &subscription)
+        .request(
+            Some("bob_s3_account".to_owned()),
+            "daemon",
+            "subscription.open",
+            serde_json::to_value(subscription)?,
+        )
         .await?;
     assert_eq!(subscribed["subscribed"], serde_json::Value::Bool(true));
     Ok(())
@@ -602,7 +623,12 @@ pub(crate) async fn mvp_s3_submit_and_receive(
     let submit = mvp_s3_submit_request(&serde_json::to_vec(&dm_ciphertext)?);
     let submitted: ramflux_sdk::GatewayInboxEntry = serde_json::from_value(
         alice_bus
-            .request(Some("alice_s3_account".to_owned()), "message", "message.submit", &submit)
+            .request(
+                Some("alice_s3_account".to_owned()),
+                "message",
+                "message.submit",
+                serde_json::to_value(submit)?,
+            )
             .await?,
     )?;
     assert_eq!(submitted.envelope.envelope_id, "env_s3_bus_dm_1");
@@ -615,7 +641,12 @@ pub(crate) async fn mvp_s3_submit_and_receive(
         relay_service_key_base64: None,
     };
     let received_body = bob_bus
-        .request(Some("bob_s3_account".to_owned()), "message", "message.receive", &receive)
+        .request(
+            Some("bob_s3_account".to_owned()),
+            "message",
+            "message.receive",
+            serde_json::to_value(&receive)?,
+        )
         .await?;
     let received_entries = mvp_s3_entries_from_body(&received_body)?;
     assert_eq!(received_entries.len(), 1);
@@ -625,7 +656,12 @@ pub(crate) async fn mvp_s3_submit_and_receive(
     assert_eq!(event.method, "gateway.deliver");
     assert_eq!(mvp_s3_entries_from_body(&event.body)?, received_entries);
     let duplicate_body = bob_bus
-        .request(Some("bob_s3_account".to_owned()), "message", "message.receive", &receive)
+        .request(
+            Some("bob_s3_account".to_owned()),
+            "message",
+            "message.receive",
+            serde_json::to_value(&receive)?,
+        )
         .await?;
     let duplicate_entries = mvp_s3_entries_from_body(&duplicate_body)?;
     assert_eq!(duplicate_entries.len(), 1);
@@ -653,7 +689,14 @@ pub(crate) async fn mvp_s3_decrypt_ack_and_assert_cursor(
         received_at: itest_now_unix_seconds(),
     };
     let cursor: ramflux_sdk::GatewayCursor = serde_json::from_value(
-        bob_bus.request(Some("bob_s3_account".to_owned()), "message", "message.ack", &ack).await?,
+        bob_bus
+            .request(
+                Some("bob_s3_account".to_owned()),
+                "message",
+                "message.ack",
+                serde_json::to_value(ack)?,
+            )
+            .await?,
     )?;
     assert_eq!(cursor.inbox_seq, 1);
     assert!(cursor.acked_envelope_ids.contains(&"env_s3_bus_dm_1".to_owned()));
@@ -664,7 +707,12 @@ pub(crate) async fn mvp_s3_decrypt_ack_and_assert_cursor(
         relay_service_key_base64: None,
     };
     let after_ack_body = bob_bus
-        .request(Some("bob_s3_account".to_owned()), "message", "message.receive", &receive)
+        .request(
+            Some("bob_s3_account".to_owned()),
+            "message",
+            "message.receive",
+            serde_json::to_value(&receive)?,
+        )
         .await?;
     assert_eq!(mvp_s3_entries_from_body(&after_ack_body)?.len(), 0);
     Ok(())
@@ -710,7 +758,14 @@ pub(crate) async fn mvp_s3_assert_account_transport_quic(
     phase: &str,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let empty = serde_json::json!({});
-    let status = bus.request(Some(account.to_owned()), "account", "account.status", &empty).await?;
+    let status = bus
+        .request(
+            Some(account.to_owned()),
+            "account",
+            "account.status",
+            serde_json::to_value(empty)?,
+        )
+        .await?;
     assert_eq!(
         status["active_transport_kind"].as_str(),
         Some(ramflux_sdk::GatewaySessionTransportKind::Quic.wire_name()),

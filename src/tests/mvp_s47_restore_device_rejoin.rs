@@ -131,7 +131,7 @@ async fn mvp_s47_assert_restore_device_rejoin(
                     Some("bob_s47_account".to_owned()),
                     "contact",
                     "contact.verify",
-                    &serde_json::json!({ "contact_identity_commitment": alice_commitment.clone() }),
+                    serde_json::json!({ "contact_identity_commitment": alice_commitment.clone() }),
                 )
                 .await?;
             assert_eq!(verified["verification_state"], "verified");
@@ -150,10 +150,10 @@ async fn mvp_s47_assert_restore_device_rejoin(
                     Some("alice_s47_account".to_owned()),
                     "account",
                     "account.backup.export",
-                    &ramflux_sdk::LocalBusAccountBackupExportRequest {
+                    serde_json::to_value(ramflux_sdk::LocalBusAccountBackupExportRequest {
                         output_path: backup_path.display().to_string(),
                         passphrase: "s47-backup-passphrase-strong".to_owned(),
-                    },
+                    })?,
                 )
                 .await?;
             alice_restored
@@ -161,10 +161,10 @@ async fn mvp_s47_assert_restore_device_rejoin(
                     None,
                     "account",
                     "account.backup.import",
-                    &ramflux_sdk::LocalBusAccountBackupImportRequest {
+                    serde_json::to_value(ramflux_sdk::LocalBusAccountBackupImportRequest {
                         input_path: backup_path.display().to_string(),
                         passphrase: "s47-backup-passphrase-strong".to_owned(),
-                    },
+                    })?,
                 )
                 .await?;
 
@@ -174,13 +174,13 @@ async fn mvp_s47_assert_restore_device_rejoin(
                         Some("alice_s47_account".to_owned()),
                         "device",
                         "device.activate",
-                        &ramflux_sdk::LocalBusDeviceActivateRequest {
+                        serde_json::to_value(ramflux_sdk::LocalBusDeviceActivateRequest {
                             node_id: None,
                             device_id: "alice_device_s47_b".to_owned(),
                             target_delivery_id: "target_s47_alice_b".to_owned(),
                             device_seed: [0x49; 32],
                             device_epoch: Some(2),
-                        },
+                        })?,
                     )
                     .await?,
             )?;
@@ -204,9 +204,9 @@ async fn mvp_s47_assert_restore_device_rejoin(
                     Some("bob_s47_account".to_owned()),
                     "contact",
                     "contact.verification.status",
-                    &ramflux_sdk::LocalBusContactSafetyRequest {
+                    serde_json::to_value(ramflux_sdk::LocalBusContactSafetyRequest {
                         contact_identity_commitment: alice_commitment.clone(),
-                    },
+                    })?,
                 )
                 .await?;
             assert_eq!(stale["stored_verification_state"], "verified");
@@ -217,7 +217,7 @@ async fn mvp_s47_assert_restore_device_rejoin(
                     Some("bob_s47_account".to_owned()),
                     "contact",
                     "contact.verify",
-                    &serde_json::json!({ "contact_identity_commitment": alice_commitment.clone() }),
+                    serde_json::json!({ "contact_identity_commitment": alice_commitment.clone() }),
                 )
                 .await?;
             assert_eq!(reverified["verification_state"], "verified");
@@ -246,9 +246,9 @@ async fn mvp_s47_assert_restore_device_rejoin(
                     Some("alice_s47_account".to_owned()),
                     "device",
                     "device.revoke",
-                    &ramflux_sdk::LocalBusDeviceRevokeRequest {
+                    serde_json::to_value(ramflux_sdk::LocalBusDeviceRevokeRequest {
                         device_id: "alice_device_s47_b".to_owned(),
-                    },
+                    })?,
                 )
                 .await?;
             assert_eq!(revoked["device_id"], "alice_device_s47_b");
@@ -270,9 +270,9 @@ async fn mvp_s47_assert_restore_device_rejoin(
                     Some("bob_s47_account".to_owned()),
                     "contact",
                     "contact.verification.status",
-                    &ramflux_sdk::LocalBusContactSafetyRequest {
+                    serde_json::to_value(ramflux_sdk::LocalBusContactSafetyRequest {
                         contact_identity_commitment: alice_commitment.clone(),
-                    },
+                    })?,
                 )
                 .await?;
             assert_eq!(stale_after_revoke["stored_verification_state"], "verified");
@@ -351,8 +351,9 @@ async fn mvp_s47_create_account(
             prekey_http_url: None,
         },
     };
-    let response: ramflux_sdk::LocalBusAccountCreateResponse =
-        serde_json::from_value(bus.request(None, "account", "account.create", &request).await?)?;
+    let response: ramflux_sdk::LocalBusAccountCreateResponse = serde_json::from_value(
+        bus.request(None, "account", "account.create", serde_json::to_value(request)?).await?,
+    )?;
     let derived = ramflux_sdk::identity_root_public_key_commitment_for_seed(
         spec.principal_id,
         spec.root_seed,
@@ -378,11 +379,11 @@ async fn mvp_s47_add_contact(
             Some(account.to_owned()),
             "contact",
             "contact.add",
-            &ramflux_sdk::LocalBusContactAddRequest {
+            serde_json::to_value(ramflux_sdk::LocalBusContactAddRequest {
                 link_id: format!("friend_link_s47_{requester}_{target}"),
                 requester_id: requester.to_owned(),
                 target_id: target.to_owned(),
-            },
+            })?,
         )
         .await?;
     assert_eq!(added["state"], "accepted");
@@ -400,9 +401,9 @@ async fn mvp_s47_safety(
             Some(account.to_owned()),
             "contact",
             "contact.safety_number",
-            &ramflux_sdk::LocalBusContactSafetyRequest {
+            serde_json::to_value(ramflux_sdk::LocalBusContactSafetyRequest {
                 contact_identity_commitment: contact_identity_commitment.to_owned(),
-            },
+            })?,
         )
         .await?)
 }
@@ -503,7 +504,7 @@ async fn mvp_s47_send_dm(
             Some("bob_s47_account".to_owned()),
             "message",
             "message.submit",
-            &ramflux_sdk::LocalBusMessageSubmitRequest {
+            serde_json::to_value(ramflux_sdk::LocalBusMessageSubmitRequest {
                 conversation_id: "conv_s47_bob_alice".to_owned(),
                 message_id: message_id.to_owned(),
                 envelope_id: format!("env_{message_id}"),
@@ -518,7 +519,7 @@ async fn mvp_s47_send_dm(
                 ttl: 300,
                 attachments: Vec::new(),
                 federation: None,
-            },
+            })?,
         )
         .await?;
     assert_eq!(submitted["envelope"]["envelope_id"], format!("env_{message_id}"));
@@ -564,12 +565,12 @@ async fn mvp_s47_receive(
             Some(account.to_owned()),
             "message",
             "message.receive",
-            &ramflux_sdk::LocalBusMessageReceiveRequest {
+            serde_json::to_value(ramflux_sdk::LocalBusMessageReceiveRequest {
                 limit: 10,
                 conversation_id: Some(conversation_id.to_owned()),
                 auto_fetch_attachments: false,
                 relay_service_key_base64: None,
-            },
+            })?,
         )
         .await?)
 }

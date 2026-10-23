@@ -126,12 +126,12 @@ async fn mvp_s37_assert_tui_compose_mode(
                     Some("bob_s37_account".to_owned()),
                     "message",
                     "message.receive",
-                    &ramflux_sdk::LocalBusMessageReceiveRequest {
+                    serde_json::to_value(ramflux_sdk::LocalBusMessageReceiveRequest {
                         limit: 10,
                         conversation_id: Some(S37_CONVERSATION_ID.to_owned()),
                         auto_fetch_attachments: false,
                         relay_service_key_base64: None,
-                    },
+                    })?,
                 )
                 .await?;
             assert_s37_bob_decrypted_body(&bob_received)?;
@@ -198,8 +198,9 @@ async fn mvp_s37_create_account(
             prekey_http_url: None,
         },
     };
-    let response: ramflux_sdk::LocalBusAccountCreateResponse =
-        serde_json::from_value(bus.request(None, "account", "account.create", &request).await?)?;
+    let response: ramflux_sdk::LocalBusAccountCreateResponse = serde_json::from_value(
+        bus.request(None, "account", "account.create", serde_json::to_value(request)?).await?,
+    )?;
     assert_eq!(response.local_account_id, spec.local_account_id);
     let transport = response.active_transport_kind.as_str();
     assert!(
@@ -221,11 +222,11 @@ async fn mvp_s37_add_contact(
             Some(account.to_owned()),
             "contact",
             "contact.add",
-            &ramflux_sdk::LocalBusContactAddRequest {
+            serde_json::to_value(ramflux_sdk::LocalBusContactAddRequest {
                 link_id: format!("friend_link_s37_{requester}_{target}"),
                 requester_id: requester.to_owned(),
                 target_id: target.to_owned(),
-            },
+            })?,
         )
         .await?;
     assert_eq!(added["state"], "accepted");

@@ -49,7 +49,13 @@ async fn mvp_s38_assert_standing_auto_approval(
                 mvp_s4_wait_for_socket(&socket).await?;
                 let mut bus = ramflux_sdk::LocalBusClient::connect(&socket).await?;
                 let created: ramflux_sdk::LocalBusAccountCreateResponse = serde_json::from_value(
-                    bus.request(None, "account", "account.create", &account_request).await?,
+                    bus.request(
+                        None,
+                        "account",
+                        "account.create",
+                        serde_json::to_value(&account_request)?,
+                    )
+                    .await?,
                 )?;
                 assert_eq!(created.local_account_id, "alice_s38_account");
 
@@ -91,7 +97,7 @@ async fn mvp_s38_assert_standing_auto_approval(
                         Some("alice_s38_account".to_owned()),
                         "grant",
                         "grant.revoke_standing_approval",
-                        &serde_json::json!({
+                        serde_json::json!({
                             "standing_approval_id": standing["standing_approval_id"],
                         }),
                     )
@@ -120,7 +126,7 @@ async fn mvp_s38_assert_standing_auto_approval(
                         Some("alice_s38_account".to_owned()),
                         "grant",
                         "grant.revoke_standing_approval",
-                        &serde_json::json!({
+                        serde_json::json!({
                             "standing_approval_id": revokable["standing_approval_id"],
                         }),
                     )
@@ -156,7 +162,13 @@ async fn mvp_s38_assert_standing_auto_approval(
                 mvp_s4_wait_for_socket(&socket_restore).await?;
                 let mut bus = ramflux_sdk::LocalBusClient::connect(&socket_restore).await?;
                 let restored: ramflux_sdk::LocalBusAccountCreateResponse = serde_json::from_value(
-                    bus.request(None, "account", "account.create", &account_request).await?,
+                    bus.request(
+                        None,
+                        "account",
+                        "account.create",
+                        serde_json::to_value(&account_request)?,
+                    )
+                    .await?,
                 )?;
                 assert_eq!(restored.local_account_id, "alice_s38_account");
                 let standings = bus
@@ -164,7 +176,7 @@ async fn mvp_s38_assert_standing_auto_approval(
                         Some("alice_s38_account".to_owned()),
                         "grant",
                         "grant.list_standing_approvals",
-                        &serde_json::json!({}),
+                        serde_json::json!({}),
                     )
                     .await?;
                 assert!(
@@ -236,7 +248,7 @@ async fn mvp_s38_install_tool(
             Some("alice_s38_account".to_owned()),
             "mcp",
             "mcp.server.add",
-            &serde_json::json!({
+            serde_json::json!({
                 "server_id": "srv_s38",
                 "command": format!("stdio-{tool_name}"),
                 "tool_name": tool_name,
@@ -262,7 +274,7 @@ async fn mvp_s38_create_standing(
             Some("alice_s38_account".to_owned()),
             "grant",
             "grant.create_standing_approval",
-            &serde_json::json!({
+            serde_json::json!({
                 "server_id": "srv_s38",
                 "tool_name": tool_name,
                 "tool_scope": tool_scope,
@@ -282,7 +294,7 @@ async fn mvp_s38_call_tool(
             Some("alice_s38_account".to_owned()),
             "mcp",
             "mcp.tool.started",
-            &serde_json::json!({
+            serde_json::json!({
                 "server_id": "srv_s38",
                 "tool_name": tool_name,
                 "arguments": {"text": "s38"},
@@ -301,7 +313,7 @@ async fn mvp_s38_pending_approvals(
             Some("alice_s38_account".to_owned()),
             "mcp",
             "mcp.approval.list",
-            &serde_json::json!({}),
+            serde_json::json!({}),
         )
         .await?;
     Ok(response["approvals"].as_array().cloned().unwrap_or_default())
@@ -316,7 +328,7 @@ async fn mvp_s38_audit(
             Some("alice_s38_account".to_owned()),
             "mcp",
             "mcp.audit.list",
-            &serde_json::json!({}),
+            serde_json::json!({}),
         )
         .await?;
     Ok(response["audit"].as_array().cloned().unwrap_or_default())

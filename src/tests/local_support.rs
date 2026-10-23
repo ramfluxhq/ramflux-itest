@@ -363,7 +363,7 @@ async fn mvp7_real_franking_evidence_from_received_dm(
                     Some("alice_mvp7_franking_account".to_owned()),
                     "message",
                     "message.submit",
-                    &ramflux_sdk::LocalBusMessageSubmitRequest {
+                    serde_json::to_value(ramflux_sdk::LocalBusMessageSubmitRequest {
                         conversation_id: "conv_mvp7_franking".to_owned(),
                         message_id: "env_mvp7_franking_report".to_owned(),
                         envelope_id: "env_mvp7_franking_report".to_owned(),
@@ -380,7 +380,7 @@ async fn mvp7_real_franking_evidence_from_received_dm(
                         ttl: 3_600,
                         attachments: Vec::new(),
                         federation: None,
-                    },
+                    })?,
                 )
                 .await?;
             assert_eq!(submitted["envelope"]["envelope_id"], "env_mvp7_franking_report");
@@ -390,12 +390,12 @@ async fn mvp7_real_franking_evidence_from_received_dm(
                     Some("bob_mvp7_franking_account".to_owned()),
                     "message",
                     "message.receive",
-                    &ramflux_sdk::LocalBusMessageReceiveRequest {
+                    serde_json::to_value(ramflux_sdk::LocalBusMessageReceiveRequest {
                         limit: 8,
                         conversation_id: Some("conv_mvp7_franking".to_owned()),
                         auto_fetch_attachments: false,
                         relay_service_key_base64: None,
-                    },
+                    })?,
                 )
                 .await?;
             let decrypted = received["decrypted_messages"]
@@ -411,7 +411,7 @@ async fn mvp7_real_franking_evidence_from_received_dm(
                     Some("bob_mvp7_franking_account".to_owned()),
                     "message",
                     "message.franking_evidence",
-                    &serde_json::json!({
+                    serde_json::json!({
                         "conversation_id": "conv_mvp7_franking",
                         "message_id": "env_mvp7_franking_report"
                     }),
@@ -456,7 +456,7 @@ async fn mvp7_create_bus_account(
             None,
             "account",
             "account.create",
-            &ramflux_sdk::LocalBusAccountCreateRequest {
+            serde_json::to_value(ramflux_sdk::LocalBusAccountCreateRequest {
                 node_id: None,
                 local_account_id: local_account_id.to_owned(),
                 principal_id: principal_id.to_owned(),
@@ -477,7 +477,7 @@ async fn mvp7_create_bus_account(
                     target_delivery_id: target_delivery_id.to_owned(),
                     prekey_http_url: None,
                 },
-            },
+            })?,
         )
         .await?,
     )?;
@@ -499,11 +499,11 @@ async fn mvp7_add_bus_contact(
             Some(account_id.to_owned()),
             "contact",
             "contact.add",
-            &ramflux_sdk::LocalBusContactAddRequest {
+            serde_json::to_value(ramflux_sdk::LocalBusContactAddRequest {
                 link_id: link_id.to_owned(),
                 requester_id: requester_id.to_owned(),
                 target_id: target_id.to_owned(),
-            },
+            })?,
         )
         .await?;
     assert_eq!(contact["state"], "accepted");

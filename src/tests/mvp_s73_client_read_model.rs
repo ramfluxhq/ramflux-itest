@@ -79,16 +79,16 @@ async fn run(node: &S8RealnetNode) -> TestResult {
     Ok(())
 }
 
-async fn call(
+pub(super) async fn call(
     bus: &mut ramflux_sdk::LocalBusClient,
     account: &str,
     method: &str,
     body: Value,
 ) -> TestResult<Value> {
-    Ok(bus.request(Some(account.to_owned()), "client", method, &body).await?)
+    Ok(bus.request(Some(account.to_owned()), "client", method, serde_json::to_value(body)?).await?)
 }
 
-async fn create(
+pub(super) async fn create(
     bus: &mut ramflux_sdk::LocalBusClient,
     node: &S8RealnetNode,
     id: &str,
@@ -122,7 +122,8 @@ async fn create(
     let mut request = serde_json::to_value(request)?;
     request["label"] = json!(format!("Profile {id}"));
     request["kind"] = json!("human");
-    let response = bus.request(None, "account", "account.create", &request).await?;
+    let response =
+        bus.request(None, "account", "account.create", serde_json::to_value(request)?).await?;
     assert_eq!(response["local_account_id"], id);
     Ok(response)
 }

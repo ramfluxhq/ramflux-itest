@@ -195,3 +195,5 @@ mod mvp_s73_client_read_model;
 
 #[path = "k12_deferred_attachment_fetch.rs"]
 mod k12_deferred_attachment_fetch;
+mod mvp_s74_event_stream;
+

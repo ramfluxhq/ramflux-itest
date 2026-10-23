@@ -111,12 +111,12 @@ async fn mvp_s34_assert_tui_live_daemon(
                     Some("bob_s34_account".to_owned()),
                     "message",
                     "message.receive",
-                    &ramflux_sdk::LocalBusMessageReceiveRequest {
+                    serde_json::to_value(ramflux_sdk::LocalBusMessageReceiveRequest {
                         limit: 10,
                         conversation_id: None,
                         auto_fetch_attachments: false,
                         relay_service_key_base64: None,
-                    },
+                    })?,
                 )
                 .await?;
             assert!(
@@ -141,7 +141,7 @@ async fn mvp_s34_assert_tui_live_daemon(
                     Some("alice_s34_account".to_owned()),
                     "message",
                     "message.receive",
-                    &receive,
+                    serde_json::to_value(receive)?,
                 )
                 .await?;
             assert!(
@@ -239,8 +239,9 @@ async fn mvp_s34_create_account(
             prekey_http_url: None,
         },
     };
-    let response: ramflux_sdk::LocalBusAccountCreateResponse =
-        serde_json::from_value(bus.request(None, "account", "account.create", &request).await?)?;
+    let response: ramflux_sdk::LocalBusAccountCreateResponse = serde_json::from_value(
+        bus.request(None, "account", "account.create", serde_json::to_value(request)?).await?,
+    )?;
     assert_eq!(response.local_account_id, spec.local_account_id);
     // QUIC-first with mandatory TCP fallback: either established transport is valid.
     let transport = response.active_transport_kind.as_str();
@@ -264,7 +265,12 @@ async fn mvp_s34_seed_tui_projections(
         target_id: bob_commitment.to_owned(),
     };
     let added = alice_bus
-        .request(Some("alice_s34_account".to_owned()), "contact", "contact.add", &alice_contact)
+        .request(
+            Some("alice_s34_account".to_owned()),
+            "contact",
+            "contact.add",
+            serde_json::to_value(alice_contact)?,
+        )
         .await?;
     assert_eq!(added["state"], "accepted");
 
@@ -274,7 +280,12 @@ async fn mvp_s34_seed_tui_projections(
         target_id: alice_commitment.to_owned(),
     };
     let added = bob_bus
-        .request(Some("bob_s34_account".to_owned()), "contact", "contact.add", &bob_contact)
+        .request(
+            Some("bob_s34_account".to_owned()),
+            "contact",
+            "contact.add",
+            serde_json::to_value(bob_contact)?,
+        )
         .await?;
     assert_eq!(added["state"], "accepted");
 
@@ -285,7 +296,12 @@ async fn mvp_s34_seed_tui_projections(
         creator_target_delivery_id: None,
     };
     let created = alice_bus
-        .request(Some("alice_s34_account".to_owned()), "group", "group.create", &group)
+        .request(
+            Some("alice_s34_account".to_owned()),
+            "group",
+            "group.create",
+            serde_json::to_value(group)?,
+        )
         .await?;
     assert_eq!(created["group_id"], "group_s34");
     Ok(())
@@ -312,7 +328,12 @@ async fn mvp_s34_send_bob_to_alice(
         federation: None,
     };
     let submitted = bob_bus
-        .request(Some("bob_s34_account".to_owned()), "message", "message.submit", &submit)
+        .request(
+            Some("bob_s34_account".to_owned()),
+            "message",
+            "message.submit",
+            serde_json::to_value(submit)?,
+        )
         .await?;
     assert_eq!(submitted["envelope"]["envelope_id"], "env_s34_bob_to_alice");
     Ok(())
@@ -327,7 +348,7 @@ async fn mvp_s34_create_mcp_approval(
             Some("alice_s34_account".to_owned()),
             "mcp",
             "mcp.server.add",
-            &serde_json::json!({
+            serde_json::json!({
                 "server_id": "srv_s34",
                 "command": "stdio-echo",
                 "tool_name": "echo",
@@ -343,7 +364,7 @@ async fn mvp_s34_create_mcp_approval(
             Some("alice_s34_account".to_owned()),
             "mcp",
             "mcp.tool.started",
-            &serde_json::json!({
+            serde_json::json!({
                 "server_id": "srv_s34",
                 "tool_name": "echo",
                 "arguments": {"text": "hello tui"},

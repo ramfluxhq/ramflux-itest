@@ -143,7 +143,7 @@ async fn mvp_s49_assert_tui_account_switch_and_contact_add(
 
             let account_list = ramflux_sdk::LocalBusClient::connect(&alice_socket)
                 .await?
-                .request(None, "account", "account.list", &serde_json::json!({}))
+                .request(None, "account", "account.list", serde_json::json!({}))
                 .await?;
             assert_eq!(
                 account_list["active_account_id"].as_str(),

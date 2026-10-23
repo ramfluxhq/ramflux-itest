@@ -282,7 +282,7 @@ pub(crate) async fn mvp_s6_assert_mcp_grant_persistence_after_daemon_restart(
                 Some(ACCOUNT.to_owned()),
                 "subscription",
                 "subscription.open",
-                &serde_json::json!({
+                serde_json::json!({
                     "topics": ["mcp.approval.request"],
                     "attended_frontend": true,
                 }),
@@ -295,7 +295,7 @@ pub(crate) async fn mvp_s6_assert_mcp_grant_persistence_after_daemon_restart(
                 Some(ACCOUNT.to_owned()),
                 "mcp",
                 "mcp.server.add",
-                &serde_json::json!({
+                serde_json::json!({
                     "server_id": SERVER_ID,
                     "command": "stdio-notes",
                     "tool_name": TOOL_NAME,
@@ -318,7 +318,7 @@ pub(crate) async fn mvp_s6_assert_mcp_grant_persistence_after_daemon_restart(
                 Some(ACCOUNT.to_owned()),
                 "mcp",
                 "mcp.tool.started",
-                &serde_json::json!({
+                serde_json::json!({
                     "server_id": SERVER_ID,
                     "tool_name": TOOL_NAME,
                     "arguments": {"text": "before restart"},
@@ -337,7 +337,7 @@ pub(crate) async fn mvp_s6_assert_mcp_grant_persistence_after_daemon_restart(
                 Some(ACCOUNT.to_owned()),
                 "grant",
                 "grant.approve",
-                &serde_json::json!({ "approval_id": approval_id }),
+                serde_json::json!({ "approval_id": approval_id }),
             ),
         )
         .await?;
@@ -369,7 +369,7 @@ pub(crate) async fn mvp_s6_assert_mcp_grant_persistence_after_daemon_restart(
                 Some(ACCOUNT.to_owned()),
                 "mcp",
                 "mcp.tool.list",
-                &serde_json::json!({}),
+                serde_json::json!({}),
             ),
         )
         .await?;
@@ -381,7 +381,7 @@ pub(crate) async fn mvp_s6_assert_mcp_grant_persistence_after_daemon_restart(
                 Some(ACCOUNT.to_owned()),
                 "mcp",
                 "mcp.tool.started",
-                &serde_json::json!({
+                serde_json::json!({
                     "server_id": SERVER_ID,
                     "tool_name": TOOL_NAME,
                     "arguments": {"text": "after restart"},
@@ -406,7 +406,7 @@ pub(crate) async fn mvp_s6_assert_mcp_grant_persistence_after_daemon_restart(
                 Some(ACCOUNT.to_owned()),
                 "grant",
                 "grant.revoke",
-                &serde_json::json!({ "grant_id": grant_id }),
+                serde_json::json!({ "grant_id": grant_id }),
             ),
         )
         .await?;
@@ -431,7 +431,7 @@ pub(crate) async fn mvp_s6_assert_mcp_grant_persistence_after_daemon_restart(
                 Some(ACCOUNT.to_owned()),
                 "mcp",
                 "mcp.tool.started",
-                &serde_json::json!({
+                serde_json::json!({
                     "server_id": SERVER_ID,
                     "tool_name": TOOL_NAME,
                     "arguments": {"text": "after revoke restart"},
@@ -456,7 +456,7 @@ pub(crate) async fn mvp_s6_assert_mcp_grant_persistence_after_daemon_restart(
                 Some(ACCOUNT.to_owned()),
                 "mcp",
                 "mcp.audit.list",
-                &serde_json::json!({}),
+                serde_json::json!({}),
             ),
         )
         .await?;
@@ -641,7 +641,7 @@ pub(crate) async fn mvp_s6_assert_rf_mcp_commands(
             Some("alice_s4_account".to_owned()),
             "subscription",
             "subscription.open",
-            &serde_json::json!({
+            serde_json::json!({
                 "topics": ["mcp.approval.request"],
                 "attended_frontend": true,
             }),
@@ -654,7 +654,7 @@ pub(crate) async fn mvp_s6_assert_rf_mcp_commands(
             Some("alice_s4_account".to_owned()),
             "mcp",
             "mcp.server.add",
-            &serde_json::json!({
+            serde_json::json!({
                 "server_id": "srv_s6",
                 "command": "stdio-echo",
                 "tool_name": "echo",
@@ -728,7 +728,7 @@ pub(crate) async fn mvp_s6_assert_rf_mcp_commands(
         Some("alice_s4_account".to_owned()),
         "mcp",
         "mcp.server.add",
-        &serde_json::json!({
+        serde_json::json!({
             "server_id": "srv_s6",
             "command": "stdio-echo",
             "tool_name": "notes",
@@ -749,7 +749,7 @@ pub(crate) async fn mvp_s6_assert_rf_mcp_commands(
             Some("alice_s4_account".to_owned()),
             "grant",
             "grant.approve",
-            &serde_json::json!({ "approval_id": notes_approval_id }),
+            serde_json::json!({ "approval_id": notes_approval_id }),
         )
         .await?;
     let notes_grant_record: ramflux_sdk::LocalMcpGrantRecord =
@@ -776,7 +776,7 @@ pub(crate) async fn mvp_s6_assert_rf_mcp_commands(
         Some("alice_s4_account".to_owned()),
         "mcp",
         "mcp.server.add",
-        &serde_json::json!({
+        serde_json::json!({
             "server_id": "srv_s6",
             "command": "stdio-echo",
             "tool_name": "notes",
@@ -804,7 +804,7 @@ pub(crate) async fn mvp_s6_assert_rf_mcp_commands(
         Some("alice_s4_account".to_owned()),
         "mcp",
         "mcp.server.add",
-        &serde_json::json!({
+        serde_json::json!({
             "server_id": "srv_s6",
             "command": "stdio-echo",
             "tool_name": "summarize",
@@ -818,7 +818,7 @@ pub(crate) async fn mvp_s6_assert_rf_mcp_commands(
         Some("alice_s4_account".to_owned()),
         "mcp",
         "mcp.server.add",
-        &serde_json::json!({
+        serde_json::json!({
             "server_id": "srv_s6",
             "command": "stdio-echo",
             "tool_name": "run_shell",
@@ -832,7 +832,7 @@ pub(crate) async fn mvp_s6_assert_rf_mcp_commands(
             Some("alice_s4_account".to_owned()),
             "grant",
             "grant.request",
-            &serde_json::json!({
+            serde_json::json!({
                 "grant_id": "grant_s6_full",
                 "server_id": serde_json::Value::Null,
                 "tool_name": serde_json::Value::Null,
@@ -892,7 +892,7 @@ pub(crate) async fn mvp_s6_assert_rf_mcp_commands(
             Some("alice_s4_account".to_owned()),
             "grant",
             "grant.revoke",
-            &serde_json::json!({ "grant_id": "grant_s6_full" }),
+            serde_json::json!({ "grant_id": "grant_s6_full" }),
         )
         .await?;
     assert_eq!(revoked["state"]["revoked"], true);
@@ -916,7 +916,7 @@ pub(crate) async fn mvp_s6_assert_rf_mcp_commands(
     );
 
     let grants = bus
-        .request(Some("alice_s4_account".to_owned()), "grant", "grant.list", &serde_json::json!({}))
+        .request(Some("alice_s4_account".to_owned()), "grant", "grant.list", serde_json::json!({}))
         .await?;
     assert!(grants["grants"].as_array().is_some_and(|items| items.len() >= 2));
     Ok(())
@@ -934,7 +934,7 @@ pub(crate) async fn mvp_s6_call_tool(
             Some("alice_s4_account".to_owned()),
             "mcp",
             "mcp.tool.started",
-            &serde_json::json!({
+            serde_json::json!({
                 "server_id": "srv_s6",
                 "tool_name": tool_name,
                 "arguments": arguments,
@@ -971,7 +971,12 @@ pub(crate) async fn mvp_s6_bus_failure(
     mvp_s6_step(&format!("{method} expected-failure before"));
     let result = tokio::time::timeout(
         Duration::from_secs(10),
-        bus.request(Some("alice_s4_account".to_owned()), sdk_api, method, &body),
+        bus.request(
+            Some("alice_s4_account".to_owned()),
+            sdk_api,
+            method,
+            serde_json::to_value(body)?,
+        ),
     )
     .await
     .map_err(|_elapsed| mvp_s6_timeout(method))?;
@@ -1010,7 +1015,7 @@ pub(crate) async fn mvp_s6_submit_app_signed_grant(
             Some("alice_s4_account".to_owned()),
             "mcp",
             "mcp.approval.granted",
-            &serde_json::to_value(signed)?,
+            serde_json::to_value(serde_json::to_value(signed)?)?,
         )
         .await?;
     assert_eq!(grant["signing_body"]["approval_id"], approval_id);

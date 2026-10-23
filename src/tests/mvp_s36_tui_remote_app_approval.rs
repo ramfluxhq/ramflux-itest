@@ -141,8 +141,9 @@ async fn mvp_s36_create_account(
             prekey_http_url: None,
         },
     };
-    let response: ramflux_sdk::LocalBusAccountCreateResponse =
-        serde_json::from_value(bus.request(None, "account", "account.create", &request).await?)?;
+    let response: ramflux_sdk::LocalBusAccountCreateResponse = serde_json::from_value(
+        bus.request(None, "account", "account.create", serde_json::to_value(request)?).await?,
+    )?;
     assert_eq!(response.local_account_id, "alice_s4_account");
     Ok(())
 }
@@ -156,7 +157,7 @@ async fn mvp_s36_create_remote_app_approval(
             Some("alice_s4_account".to_owned()),
             "mcp",
             "mcp.server.add",
-            &serde_json::json!({
+            serde_json::json!({
                 "server_id": "srv_s36",
                 "command": "stdio-shell",
                 "tool_name": "shell",
@@ -172,7 +173,7 @@ async fn mvp_s36_create_remote_app_approval(
             Some("alice_s4_account".to_owned()),
             "mcp",
             "mcp.tool.started",
-            &serde_json::json!({
+            serde_json::json!({
                 "server_id": "srv_s36",
                 "tool_name": "shell",
                 "arguments": {"cmd": "echo hello"},

@@ -117,7 +117,7 @@ async fn mvp_s39_assert_device_aware_safety_number(
                     Some("bob_s39_account".to_owned()),
                     "contact",
                     "contact.verify",
-                    &serde_json::json!({ "contact_identity_commitment": alice_commitment.clone() }),
+                    serde_json::json!({ "contact_identity_commitment": alice_commitment.clone() }),
                 )
                 .await?;
             assert_eq!(verified["verification_state"], "verified");
@@ -128,13 +128,13 @@ async fn mvp_s39_assert_device_aware_safety_number(
                         Some("alice_s39_account".to_owned()),
                         "device",
                         "device.activate",
-                        &ramflux_sdk::LocalBusDeviceActivateRequest {
+                        serde_json::to_value(ramflux_sdk::LocalBusDeviceActivateRequest {
                             node_id: None,
                             device_id: "alice_device_s39_b".to_owned(),
                             target_delivery_id: "target_s39_alice_b".to_owned(),
                             device_seed: [0x3b; 32],
                             device_epoch: Some(2),
-                        },
+                        })?,
                     )
                     .await?,
             )?;
@@ -155,9 +155,9 @@ async fn mvp_s39_assert_device_aware_safety_number(
                     Some("bob_s39_account".to_owned()),
                     "contact",
                     "contact.verification.status",
-                    &ramflux_sdk::LocalBusContactSafetyRequest {
+                    serde_json::to_value(ramflux_sdk::LocalBusContactSafetyRequest {
                         contact_identity_commitment: alice_commitment.clone(),
-                    },
+                    })?,
                 )
                 .await?;
             assert_eq!(bob_status["stored_verification_state"], "verified");
@@ -247,8 +247,9 @@ async fn mvp_s39_create_account(
             prekey_http_url: None,
         },
     };
-    let response: ramflux_sdk::LocalBusAccountCreateResponse =
-        serde_json::from_value(bus.request(None, "account", "account.create", &request).await?)?;
+    let response: ramflux_sdk::LocalBusAccountCreateResponse = serde_json::from_value(
+        bus.request(None, "account", "account.create", serde_json::to_value(request)?).await?,
+    )?;
     let derived = ramflux_sdk::identity_root_public_key_commitment_for_seed(
         spec.principal_id,
         spec.root_seed,
@@ -274,11 +275,11 @@ async fn mvp_s39_add_contact(
             Some(account.to_owned()),
             "contact",
             "contact.add",
-            &ramflux_sdk::LocalBusContactAddRequest {
+            serde_json::to_value(ramflux_sdk::LocalBusContactAddRequest {
                 link_id: format!("friend_link_s39_{requester}_{target}"),
                 requester_id: requester.to_owned(),
                 target_id: target.to_owned(),
-            },
+            })?,
         )
         .await?;
     assert_eq!(added["state"], "accepted");
@@ -296,9 +297,9 @@ async fn mvp_s39_safety(
             Some(account.to_owned()),
             "contact",
             "contact.safety_number",
-            &ramflux_sdk::LocalBusContactSafetyRequest {
+            serde_json::to_value(ramflux_sdk::LocalBusContactSafetyRequest {
                 contact_identity_commitment: contact_identity_commitment.to_owned(),
-            },
+            })?,
         )
         .await?)
 }
