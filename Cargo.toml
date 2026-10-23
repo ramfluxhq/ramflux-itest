@@ -37,6 +37,7 @@ p256 = { version = "0.13", features = ["ecdh"] }
 proptest = "1.11.0"
 quinn = "0.11.9"
 ratatui = "0.29"
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"] }
 rcgen = "0.14"
 rustls = { version = "0.23", default-features = false, features = ["ring", "std"] }
 rustls-pki-types = "1.13"
@@ -75,3 +76,7 @@ expect_used = "deny"
 panic = "deny"
 todo = "deny"
 dbg_macro = "deny"
+
+[[bin]]
+name = "demo-node-tool"
+path = "src/bin/demo_node_tool.rs"
