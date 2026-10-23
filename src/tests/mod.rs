@@ -195,3 +195,6 @@ mod mvp_s73_client_read_model;
 
 #[path = "k12_deferred_attachment_fetch.rs"]
 mod k12_deferred_attachment_fetch;
+
+#[path = "k5a_agent_host.rs"]
+mod k5a_agent_host;
