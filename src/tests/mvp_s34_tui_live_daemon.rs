@@ -153,18 +153,19 @@ async fn mvp_s34_assert_tui_live_daemon(
                 )),
                 "Alice daemon did not receive Bob's S34 delivery: {alice_received}",
             );
-            let delivery_event =
-                mvp_s34_next_tui_event(&mut tui_bus, "gateway.deliver after Bob message").await?;
-            app.handle_bus_event(&delivery_event)?;
+            mvp_s34_handle_next_tui_event(
+                &mut tui_bus,
+                &mut app,
+                "gateway.deliver after Bob message",
+            )
+            .await?;
             assert!(
                 app.state.messages.iter().any(|message| message.id == "env_s34_bob_to_alice"),
                 "TUI did not append gateway.deliver event to message view",
             );
 
             mvp_s34_create_mcp_approval(&mut alice_setup_bus).await?;
-            let approval_event =
-                mvp_s34_next_tui_event(&mut tui_bus, "mcp.approval.request").await?;
-            app.handle_bus_event(&approval_event)?;
+            mvp_s34_handle_next_tui_event(&mut tui_bus, &mut app, "mcp.approval.request").await?;
             assert!(
                 app.state.approvals.iter().any(|approval| approval.id == "approval_srv_s34_echo_1"),
                 "TUI did not append MCP approval event",
@@ -357,11 +358,15 @@ async fn mvp_s34_create_mcp_approval(
 }
 
 #[cfg(all(test, feature = "realnet"))]
-async fn mvp_s34_next_tui_event(
+async fn mvp_s34_handle_next_tui_event(
     bus: &mut ramflux_cli_pro::SdkLocalBus,
+    app: &mut ramflux_cli_pro::TuiApp,
     label: &str,
-) -> Result<ramflux_sdk_tui::LocalBusFrame, Box<dyn std::error::Error>> {
-    Ok(tokio::time::timeout(Duration::from_secs(5), ramflux_cli_pro::TuiBus::next_event(bus))
-        .await
-        .map_err(|_elapsed| format!("timed out waiting for TUI event: {label}"))??)
+) -> Result<(), Box<dyn std::error::Error>> {
+    let event =
+        tokio::time::timeout(Duration::from_secs(5), ramflux_cli_pro::TuiBus::next_event(bus))
+            .await
+            .map_err(|_elapsed| format!("timed out waiting for TUI event: {label}"))??;
+    app.handle_bus_event(&event)?;
+    Ok(())
 }

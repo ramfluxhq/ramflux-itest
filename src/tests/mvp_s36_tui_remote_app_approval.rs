@@ -49,9 +49,12 @@ async fn mvp_s36_assert_tui_remote_app_approval(
             app.refresh_all(&mut tui_bus).await?;
 
             let first_call = mvp_s36_create_remote_app_approval(&mut alice_setup_bus).await?;
-            let approval_event =
-                mvp_s36_next_tui_event(&mut tui_bus, "mcp.approval.request remote_app").await?;
-            app.handle_bus_event(&approval_event)?;
+            mvp_s36_handle_next_tui_event(
+                &mut tui_bus,
+                &mut app,
+                "mcp.approval.request remote_app",
+            )
+            .await?;
             app.state.selected_panel = ramflux_cli_pro::Panel::Approvals;
             assert!(
                 app.state.approvals.iter().any(|approval| {
@@ -184,13 +187,17 @@ async fn mvp_s36_create_remote_app_approval(
 }
 
 #[cfg(all(test, feature = "realnet"))]
-async fn mvp_s36_next_tui_event(
+async fn mvp_s36_handle_next_tui_event(
     bus: &mut ramflux_cli_pro::SdkLocalBus,
+    app: &mut ramflux_cli_pro::TuiApp,
     label: &str,
-) -> Result<ramflux_sdk_tui::LocalBusFrame, Box<dyn std::error::Error>> {
-    Ok(tokio::time::timeout(Duration::from_secs(5), ramflux_cli_pro::TuiBus::next_event(bus))
-        .await
-        .map_err(|_elapsed| format!("timed out waiting for TUI event: {label}"))??)
+) -> Result<(), Box<dyn std::error::Error>> {
+    let event =
+        tokio::time::timeout(Duration::from_secs(5), ramflux_cli_pro::TuiBus::next_event(bus))
+            .await
+            .map_err(|_elapsed| format!("timed out waiting for TUI event: {label}"))??;
+    app.handle_bus_event(&event)?;
+    Ok(())
 }
 
 #[cfg(all(test, feature = "realnet"))]
