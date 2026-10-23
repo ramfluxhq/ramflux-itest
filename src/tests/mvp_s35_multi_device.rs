@@ -12,23 +12,57 @@ fn mvp_s35_realnet_multi_device_activation_fanout() -> Result<(), Box<dyn std::e
         return Ok(());
     }
 
-    let realnet = start_realnet_compose()?;
-    let ca_cert = code_root().join("ramflux/deploy/certs/ca.pem");
-    let gateway_quic_addr: std::net::SocketAddr = std::env::var("RAMFLUX_ITEST_GATEWAY_QUIC_ADDR")
-        .unwrap_or_else(|_| "127.0.0.1:18443".to_owned())
-        .parse()?;
+    let ports = S8ComposePorts {
+        gateway_http: 63_351,
+        gateway_quic: 63_361,
+        router_http: 63_350,
+        router_mesh: 63_362,
+        notify_http: 63_353,
+        federation_http: 63_352,
+        federation_mesh: 63_363,
+        relay_http: 63_354,
+        relay_media_udp: 63_355,
+        signaling_turn_udp: 63_356,
+        signaling_turn_tcp: 63_359,
+        retention_http: 63_357,
+    };
+    // The v3 overlay requires signed provider material even though this slice sends no objects.
+    // Reuse the shared material owner so compose teardown precedes removal of its bind mounts.
+    let mut stack = start_client_directory_stack_named(
+        "ramflux-s35-multi-device",
+        ports,
+        &[
+            ("RAMFLUX_ITEST_GATEWAY_B_HTTP_PORT".to_owned(), "63358".to_owned()),
+            ("RAMFLUX_ITEST_GATEWAY_B_QUIC_PORT".to_owned(), "63364".to_owned()),
+            ("RAMFLUX_ITEST_GATEWAY_B_TCP_PORT".to_owned(), "63364".to_owned()),
+            ("RAMFLUX_ITEST_RELAY_CLIENT_QUIC_PORT".to_owned(), "63365".to_owned()),
+            (
+                COMPOSE_FAILURE_LOG_SERVICES_ENV.to_owned(),
+                "ramflux-relay,ramflux-gateway,ramflux-gateway-b".to_owned(),
+            ),
+        ],
+    )?;
+    let node = &stack.node;
+    wait_for_itest_service(&format!("http://127.0.0.1:{}", ports.notify_http), "notify")?;
+    wait_for_itest_service(&format!("http://127.0.0.1:{}", ports.relay_http), "relay")?;
+    wait_for_itest_service(&format!("http://127.0.0.1:{}", ports.retention_http), "retention")?;
     let runtime = tokio::runtime::Builder::new_current_thread().enable_all().build()?;
     runtime.block_on(async {
-        wait_for_private_gateway_quic(gateway_quic_addr, &ca_cert).await?;
+        if std::env::var("RAMFLUX_OBJECT_V3").is_ok_and(|value| {
+            matches!(value.trim().to_ascii_lowercase().as_str(), "1" | "true" | "yes" | "on")
+        }) {
+            wait_relay_quic_healthy("127.0.0.1:63365", "ramflux-relay", &node.ca_cert).await?;
+        }
+        wait_for_private_gateway_quic(node.gateway_quic_addr, &node.ca_cert).await?;
         Box::pin(mvp_s35_assert_multi_device_activation(
-            gateway_quic_addr,
-            &ca_cert,
-            &realnet.gateway_url,
+            node.gateway_quic_addr,
+            &node.ca_cert,
+            &node.gateway_url,
         ))
         .await?;
         Ok::<(), Box<dyn std::error::Error>>(())
     })?;
-    drop(realnet);
+    stack.node.guard.mark_success();
     Ok(())
 }
 
