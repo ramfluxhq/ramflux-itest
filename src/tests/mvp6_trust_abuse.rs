@@ -256,7 +256,7 @@ fn mvp6_realnet_gateway_preauth_dos_cookie_slowloris() -> Result<(), Box<dyn std
     assert_eq!(challenge.status, 401);
     let challenge_body: ramflux_node_core::GatewayPreAuthChallengeResponse =
         serde_json::from_slice(&challenge.body)?;
-    assert!(!challenge_body.pre_auth_cookie.is_empty());
+    assert_ne!(challenge_body.pre_auth_cookie, "");
 
     let accepted =
         mvp6_preauth_probe(gateway_url, Some(&challenge_body.pre_auth_cookie), 1_760_000_002)?;

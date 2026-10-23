@@ -110,7 +110,7 @@ pub(crate) async fn mvp_s14_assert_friend_block_remove_revoke(
                     .iter()
                     .any(|message| { message["message_id"] == "env_s14_before_block" })
             );
-            assert!(mvp_s14_rejected(&before)?.is_empty());
+            assert_eq!(mvp_s14_rejected(&before)?.len(), 0);
 
             let blocked = mvp_s4_rf_json(
                 &rf_binary,

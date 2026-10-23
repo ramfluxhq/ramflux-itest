@@ -423,7 +423,7 @@ pub(crate) fn assert_mvp9_history_has_no_transient_events(
     db: &ramflux_storage::AccountDb,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let bundle = db.export_history_bundle("device_mvp9_source", "device_mvp9_target")?;
-    assert!(bundle.encrypted_event_batch.is_empty());
+    assert_eq!(bundle.encrypted_event_batch.len(), 0);
     Ok(())
 }
 

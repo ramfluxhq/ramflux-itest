@@ -62,7 +62,7 @@ fn message_delete_tombstone_projection() -> Result<(), Box<dyn std::error::Error
         .find(|message| message.message_id == "msg_2")
         .ok_or_else(|| "deleted message missing from audit projection".to_owned())?;
     assert!(deleted.deleted);
-    assert!(deleted.encrypted_body.is_empty());
+    assert_eq!(deleted.encrypted_body.len(), 0);
     Ok(())
 }
 
@@ -159,14 +159,14 @@ fn typing_state_ttl_and_stop_are_volatile() -> Result<(), Box<dyn std::error::Er
     assert_eq!(active[0].actor_identity, "alice");
     assert_eq!(active[0].privacy_scope, "contacts");
 
-    assert!(db.active_typing("conv_1", 1_760_000_011).is_empty());
+    assert_eq!(db.active_typing("conv_1", 1_760_000_011).len(), 0);
     db.typing_started("conv_1", "alice", 1_760_000_020, 10, "contacts");
     db.typing_stopped("conv_1", "alice");
-    assert!(db.active_typing("conv_1", 1_760_000_021).is_empty());
+    assert_eq!(db.active_typing("conv_1", 1_760_000_021).len(), 0);
 
     db.typing_started("conv_1", "alice", 1_760_000_030, 10, "contacts");
     let reopened = ramflux_storage::AccountDb::open(&index, "acct", &key)?;
-    assert!(reopened.active_typing("conv_1", 1_760_000_031).is_empty());
+    assert_eq!(reopened.active_typing("conv_1", 1_760_000_031).len(), 0);
     Ok(())
 }
 

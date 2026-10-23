@@ -136,7 +136,7 @@ async fn mvp_s42_assert_tui_object_attachment(
                 .refresh_all(&mut alice_bus)
                 .await
                 .map_err(s42_context("alice refresh_all"))?;
-            assert!(!alice_tui.state.conversations.is_empty());
+            assert_ne!(alice_tui.state.conversations.len(), 0);
             alice_tui.state.conversations[0].id = S42_CONVERSATION_ID.to_owned();
             alice_tui.state.conversations[0].title = "Bob S42".to_owned();
             alice_tui.state.conversations[0].recipient_device_id =

@@ -178,6 +178,6 @@ fn disappearing_message_expiry_tombstone_projection() -> Result<(), Box<dyn std:
         .find(|message| message.message_id == "msg_expiring")
         .ok_or_else(|| "expired message missing from audit projection".to_owned())?;
     assert!(expired.deleted);
-    assert!(expired.encrypted_body.is_empty());
+    assert_eq!(expired.encrypted_body.len(), 0);
     Ok(())
 }

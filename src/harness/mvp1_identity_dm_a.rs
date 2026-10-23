@@ -479,7 +479,7 @@ pub(crate) fn mvp10_assert_group_delete_tombstone_realnet(
         .find(|message| message.message_id == "msg_mvp10_group_001")
         .ok_or_else(|| "group message missing after tombstone".to_owned())?;
     assert!(deleted.deleted);
-    assert!(deleted.encrypted_body.is_empty());
+    assert_eq!(deleted.encrypted_body.len(), 0);
     Ok(())
 }
 

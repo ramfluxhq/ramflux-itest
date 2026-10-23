@@ -100,8 +100,8 @@ fn assert_s13_provider_attempts_recorded(
             attempt.delivery_class,
             ramflux_protocol::NotificationDeliveryClass::UserContentNotification
         );
-        assert!(!attempt.push_alias_hash.is_empty());
-        assert!(!attempt.collapse_key_hash.is_empty());
+        assert_ne!(attempt.push_alias_hash, "");
+        assert_ne!(attempt.collapse_key_hash, "");
         assert_eq!(attempt.error_class, None);
     }
     let attempts_json = serde_json::to_vec(&attempts)?;

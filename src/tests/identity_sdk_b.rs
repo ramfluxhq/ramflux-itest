@@ -96,5 +96,5 @@ fn new_device_history_backfill_relay_opaque() {
     let store = ramflux_sync::ObjectStore::new();
     let relay = store.relay_history_bundle(b"encrypted-history-bundle");
     assert!(!relay.plaintext_visible);
-    assert!(!relay.ciphertext_hash.is_empty());
+    assert_ne!(relay.ciphertext_hash, "");
 }

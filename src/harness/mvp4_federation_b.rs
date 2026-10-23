@@ -117,7 +117,7 @@ pub(crate) fn deliver_mvp4_new_device_backfill(
     let bundle_bytes = serde_json::to_vec(&bundle)?;
     let relay = ramflux_sync::ObjectStore::new().relay_history_bundle(&bundle_bytes);
     assert!(!relay.plaintext_visible);
-    assert!(!relay.ciphertext_hash.is_empty());
+    assert_ne!(relay.ciphertext_hash, "");
 
     let ciphertext = sender_session.encrypt(&bundle_bytes, b"alice_device|bob_device")?;
     let delivered = deliver_mvp1_dm(

@@ -666,7 +666,7 @@ pub(crate) async fn mvp_s3_decrypt_ack_and_assert_cursor(
     let after_ack_body = bob_bus
         .request(Some("bob_s3_account".to_owned()), "message", "message.receive", &receive)
         .await?;
-    assert!(mvp_s3_entries_from_body(&after_ack_body)?.is_empty());
+    assert_eq!(mvp_s3_entries_from_body(&after_ack_body)?.len(), 0);
     Ok(())
 }
 

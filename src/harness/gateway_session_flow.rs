@@ -222,7 +222,7 @@ pub(crate) async fn mvp_s1_assert_gateway_session_lifecycle(
         .await?;
     let established = mvp_s1_expect_session_established(&mut recv).await?;
     assert_eq!(established.accepted_cursor, None);
-    assert!(!established.resume_token.is_empty());
+    assert_ne!(established.resume_token, "");
 
     mvp_s1_assert_submit_ack_and_wake(&mut send, &mut recv, &open).await?;
     mvp_s1_submit_unacked_resume_candidate(&mut send, &mut recv, &open).await?;

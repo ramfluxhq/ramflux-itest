@@ -109,7 +109,7 @@ pub(crate) fn mvp9_expire_and_deliver_tombstone(
         .find(|message| message.message_id == "msg_mvp9_expiring")
         .ok_or_else(|| "bob expired message missing from projection".to_owned())?;
     assert!(bob_expired.deleted);
-    assert!(bob_expired.encrypted_body.is_empty());
+    assert_eq!(bob_expired.encrypted_body.len(), 0);
 
     let tombstone_plaintext = br#"{"type":"event_tombstone","conversation_id":"conv_mvp9_realnet","msg_event_id":"msg_mvp9_expiring","tombstone_id":"tombstone:conv_mvp9_realnet:msg_mvp9_expiring","scope":"conversation_members"}"#;
     let tombstone_ciphertext =
@@ -140,7 +140,7 @@ pub(crate) fn mvp9_expire_and_deliver_tombstone(
         .find(|message| message.message_id == "msg_mvp9_expiring")
         .ok_or_else(|| "alice expired message missing from projection".to_owned())?;
     assert!(alice_expired.deleted);
-    assert!(alice_expired.encrypted_body.is_empty());
+    assert_eq!(alice_expired.encrypted_body.len(), 0);
     assert_eq!(
         clients
             .alice_db
@@ -343,7 +343,7 @@ pub(crate) fn mvp9_assert_typing_ttl_and_volatility(
     assert_eq!(active.len(), 1);
     assert_eq!(active[0].actor_identity, "alice_realnet");
     assert_eq!(active[0].privacy_scope, "contacts");
-    assert!(clients.bob_db.active_typing("conv_mvp9_transient", 1_760_000_012).is_empty());
+    assert_eq!(clients.bob_db.active_typing("conv_mvp9_transient", 1_760_000_012).len(), 0);
 
     clients.bob_db.typing_started(
         "conv_mvp9_transient",
@@ -364,7 +364,7 @@ pub(crate) fn mvp9_assert_typing_ttl_and_volatility(
         decrypt_mvp9_dm(&delivered_stop, bob_session, b"alice_device|bob_device", stop_plaintext)?;
     assert_eq!(decrypted_stop, stop_plaintext);
     clients.bob_db.typing_stopped("conv_mvp9_transient", "alice_realnet");
-    assert!(clients.bob_db.active_typing("conv_mvp9_transient", 1_760_000_021).is_empty());
+    assert_eq!(clients.bob_db.active_typing("conv_mvp9_transient", 1_760_000_021).len(), 0);
 
     clients.bob_db.typing_started(
         "conv_mvp9_transient",
@@ -374,7 +374,7 @@ pub(crate) fn mvp9_assert_typing_ttl_and_volatility(
         "contacts",
     );
     let reopened_bob = reopen_mvp9_bob_db(clients)?;
-    assert!(reopened_bob.active_typing("conv_mvp9_transient", 1_760_000_031).is_empty());
+    assert_eq!(reopened_bob.active_typing("conv_mvp9_transient", 1_760_000_031).len(), 0);
     assert_mvp9_history_has_no_transient_events(&clients.bob_db)?;
     Ok(())
 }

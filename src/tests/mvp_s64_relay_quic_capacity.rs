@@ -4541,8 +4541,7 @@ fn s64_git_state() -> (String, bool) {
         .arg(&root)
         .args(["status", "--porcelain"])
         .output()
-        .ok()
-        .is_some_and(|output| !String::from_utf8_lossy(&output.stdout).trim().is_empty());
+        .is_ok_and(|output| !String::from_utf8_lossy(&output.stdout).trim().is_empty());
     (sha, dirty)
 }
 

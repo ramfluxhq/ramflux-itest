@@ -234,13 +234,13 @@ pub(crate) async fn mvp_s9_assert_group_receive_idempotent(
     assert_eq!(first, first_plaintext);
     let duplicate =
         bob.append_group_gateway_delivery("group_conv_s7", "group_msg_s9_first", &first_entry)?;
-    assert!(duplicate.is_empty());
+    assert_eq!(duplicate.len(), 0);
     let replay = bob.append_group_gateway_delivery(
         "group_conv_s7",
         "group_msg_s9_first_replay",
         &first_entry,
     )?;
-    assert!(replay.is_empty());
+    assert_eq!(replay.len(), 0);
     mvp_s9_assert_gateway_quic_active(&alice_engine, "alice after first group receive");
     mvp_s9_assert_gateway_quic_active(&bob_engine, "bob after first group receive");
 

@@ -177,7 +177,7 @@ async fn mvp_s38_assert_standing_auto_approval(
                 );
                 let invoked = mvp_s38_call_tool(&mut bus, "notes").await?;
                 assert_eq!(invoked["status"], "ok");
-                assert!(mvp_s38_pending_approvals(&mut bus).await?.is_empty());
+                assert_eq!(mvp_s38_pending_approvals(&mut bus).await?.len(), 0);
                 drop(bus);
                 Ok::<(), Box<dyn std::error::Error>>(())
             }

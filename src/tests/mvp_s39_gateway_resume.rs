@@ -134,7 +134,7 @@ async fn mvp_s39_assert_resume_rejoin(
         },
     )
     .await?;
-    assert!(mvp_s1_expect_resume_entries(&mut resumed.recv).await?.is_empty());
+    assert_eq!(mvp_s1_expect_resume_entries(&mut resumed.recv).await?.len(), 0);
     resumed.connection.close(0_u32.into(), b"s39-valid-resume-done");
 
     mvp_s39_assert_invalid_resume_tokens_are_rejected(gateway_quic_addr, ca_cert, &initial).await?;

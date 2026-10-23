@@ -666,7 +666,7 @@ pub(crate) async fn mvp_s6_assert_rf_mcp_commands(
     )
     .await?;
     let registry_hash = added["registry_hash"].as_str().ok_or("missing registry hash")?;
-    assert!(!registry_hash.is_empty());
+    assert_ne!(registry_hash, "");
 
     let first_call =
         mvp_s6_call_tool(&mut bus, "echo", serde_json::json!({"text": "hello mcp"})).await?;

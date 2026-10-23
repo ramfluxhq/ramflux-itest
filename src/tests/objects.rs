@@ -124,7 +124,7 @@ fn object_backup_manifest_excludes_short_term_transport_cache()
     )?;
     assert!(manifest.object_manifest_hashes.contains(&durable.manifest_hash));
     assert!(!manifest.object_manifest_hashes.contains(&transient.manifest_hash));
-    assert!(manifest.object_tombstone_heads.is_empty());
+    assert_eq!(manifest.object_tombstone_heads.len(), 0);
     Ok(())
 }
 

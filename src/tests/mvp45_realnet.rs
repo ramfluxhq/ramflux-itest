@@ -314,10 +314,7 @@ fn mvp5_realnet_load_gateway_router_concurrent_submit() -> Result<(), Box<dyn st
 
     let mut submitted = Vec::with_capacity(TOTAL_ENVELOPES);
     for message in receiver {
-        match message {
-            Ok(seq_and_id) => submitted.push(seq_and_id),
-            Err(error) => return Err(error.into()),
-        }
+        submitted.push(message?);
     }
     let elapsed = started.elapsed();
     assert_eq!(submitted.len(), TOTAL_ENVELOPES);
@@ -3574,6 +3571,6 @@ fn mvp4_realnet_partition_convergence_gossip() -> Result<(), Box<dyn std::error:
         bob_projection.auth_chain_event_ids,
         vec!["evt_remove_bob_from_right".to_owned(), "evt_remove_carol_from_left".to_owned()]
     );
-    assert!(!bob_projection.group_lineage_head.is_empty());
+    assert_ne!(bob_projection.group_lineage_head, "");
     Ok(())
 }

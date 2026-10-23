@@ -246,7 +246,7 @@ pub(super) async fn mvp7_assert_franking_report_pipeline(
     assert_eq!(evidence.node_id, "localhost");
     assert_eq!(evidence.envelope_id, "env_mvp7_franking_report");
     assert_eq!(evidence.plaintext_excerpt, "mvp7 explicitly selected reported excerpt");
-    assert!(!evidence.franking_tag.is_empty());
+    assert_ne!(evidence.franking_tag, "");
     assert!(evidence.franking_timestamp > 1_700_000_000_000);
 
     let verified = mvp7_post_abuse_report(gateway_url, "report_mvp7_franking_verified", &evidence)?;

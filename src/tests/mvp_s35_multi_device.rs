@@ -345,7 +345,7 @@ async fn mvp_s35_assert_second_device_deliver_frame_transport(
         },
     )
     .await?;
-    assert!(!bob_b.session.resume_token.is_empty());
+    assert_ne!(bob_b.session.resume_token, "");
     let previous_bob_b_cursor =
         bob_b.session.accepted_cursor.as_ref().map_or(0, |cursor| cursor.inbox_seq);
 

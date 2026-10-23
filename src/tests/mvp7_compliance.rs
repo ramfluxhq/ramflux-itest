@@ -122,7 +122,7 @@ fn mvp7_realnet_account_lifecycle_retention_gc() -> Result<(), Box<dyn std::erro
     mvp7_register_lifecycle_actor(gateway_url)?;
     let proof = mvp7_assert_lifecycle_delete_path(gateway_url)?;
     mvp7_assert_retention_gc(retention_url)?;
-    assert!(!proof.proof_hash.is_empty());
+    assert_ne!(proof.proof_hash, "");
     Ok(())
 }
 

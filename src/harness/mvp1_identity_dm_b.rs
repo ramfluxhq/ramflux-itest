@@ -127,9 +127,9 @@ pub(crate) fn mvp10_assert_own_devices_sync(
     assert_node_opaque_payload(&laptop_entry.envelope.encrypted_payload, plaintext);
 
     let after_cursor = mvp1_inbox(gateway_url, "alice_laptop_target_mvp10_own", inbox_seq, 10)?;
-    assert!(after_cursor.entries.is_empty());
+    assert_eq!(after_cursor.entries.len(), 0);
     let revoked_inbox = mvp1_inbox(gateway_url, "alice_revoked_target_mvp10_own", 0, 10)?;
-    assert!(revoked_inbox.entries.is_empty());
+    assert_eq!(revoked_inbox.entries.len(), 0);
 
     ramflux_storage::EventStore::append_event(
         &fixture.phone_db,
@@ -410,7 +410,7 @@ pub(crate) async fn mvp10_assert_quic_lan_object_sync(
     assert!(!contains_subslice(&resume_frame, &object_key_probe));
     let final_response = mvp10_quic_lan_sync_request(&client, resume_request).await?;
     assert!(final_response.complete);
-    assert!(final_response.missing.missing_indices.is_empty());
+    assert_eq!(final_response.missing.missing_indices.len(), 0);
     assert!(!final_response.node_visible_plaintext);
     assert!(!final_response.node_visible_object_key);
     assert_eq!(
