@@ -202,3 +202,6 @@ mod mvp_s74_event_stream;
 mod contact01_contact_resolution;
 #[path = "k2b_surface_round_trip.rs"]
 mod k2b_surface_round_trip;
+
+#[path = "k5a_agent_host.rs"]
+mod k5a_agent_host;
