@@ -86,10 +86,11 @@ async fn run(node: &S8RealnetNode) -> TestResult {
         b=client_directory_daemon_command(&binary,&bob,&root.join("bob"),&node.ca_cert,None).spawn()?;
         mvp_s4_wait_for_socket(&bob).await?;
         let mut receiver=ramflux_sdk::LocalBusClient::connect(&bob).await?;
-        // Hydration is asynchronous; wait for account.status, never for inbound receive RPCs.
+        // Hydration is asynchronous; wait for the restored account without unlocking it.
         let start=std::time::Instant::now();
         loop {
-            if call(&mut receiver,"bob","account.status",json!({})).await.is_ok() {break;}
+            let restored=call(&mut receiver,"bob","account.list",json!({})).await?;
+            if restored["accounts"].as_array().is_some_and(|accounts| accounts.iter().any(|id| id == "bob")) {break;}
             if start.elapsed()>Duration::from_secs(20) {return Err("account did not rehydrate".into());}
             tokio::time::sleep(Duration::from_millis(50)).await;
         }
