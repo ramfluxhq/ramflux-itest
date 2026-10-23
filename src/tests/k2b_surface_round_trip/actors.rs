@@ -185,3 +185,28 @@ pub(super) async fn group(
     }
     Err("agent group membership did not arrive".into())
 }
+
+pub(super) async fn reject_non_author_patch(
+    bus: &mut ramflux_sdk::LocalBusClient,
+    conversation: &str,
+    surface: &str,
+    hash: &str,
+) -> TestResult {
+    use ramflux_protocol::{A2uiConversationCommand, PatchSurfaceCommand, SurfacePatchOp};
+    let bytes = wire(
+        conversation,
+        3,
+        A2uiConversationCommand::PatchSurface(PatchSurfaceCommand {
+            surface_id: surface.into(),
+            base_surface_hash: hash.into(),
+            new_surface_hash: hash.into(),
+            ops: vec![SurfacePatchOp::SetFallbackText {
+                fallback_text: "unauthorized patch".into(),
+            }],
+        }),
+    )?;
+    let result=call(bus,"human","surface.send",json!({"conversation_id":conversation,"message_id":format!("{surface}-non-author"),"wire_base64":ramflux_protocol::encode_base64url(bytes)})).await?;
+    assert_eq!(result["accepted"], false);
+    assert_eq!(result["renderer_error"]["code"], "non_author_update");
+    Ok(())
+}
