@@ -74,7 +74,7 @@ async fn run(node: &S8RealnetNode) -> TestResult {
         let mut human=ramflux_sdk::LocalBusClient::connect(&a_socket).await?;
         assert_eq!(call(&mut human,"human","surface.get",json!({"surface_id":"surface-group"})).await?,before,"surface snapshot/history/finality must survive rfd restart");
         let messages=call(&mut human,"human","message.read",json!({"conversation_id":"group_thread_k2b"})).await?;
-        assert!(messages["messages"].as_array().ok_or("messages")?.iter().any(|row|row["content_type"]=="surface" && row["body_utf8"]=="Completed result"));
+        assert!(messages["messages"].as_array().ok_or("messages")?.iter().any(|row|row["content_type"]=="surface" && row["body_utf8"]=="Surface author=\"principal_k2b_agent\" fallback_text=\"Completed result\""));
         Ok::<(),Box<dyn std::error::Error>>(())
     }).await;
     let _ = a.start_kill();
