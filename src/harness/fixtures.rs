@@ -10,18 +10,41 @@ pub(crate) fn fixture_root() -> PathBuf {
 }
 
 #[cfg(test)]
+static TEMP_ROOT_COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+#[cfg(test)]
 pub(crate) fn temp_root(test_name: &str) -> Result<PathBuf, Box<dyn std::error::Error>> {
-    let elapsed = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)?;
-    let path = std::env::temp_dir().join(format!(
-        "ramflux-itest-{test_name}-{}-{}",
-        std::process::id(),
-        elapsed.as_nanos()
-    ));
-    if path.exists() {
-        fs::remove_dir_all(&path)?;
+    create_temp_root_in(&std::env::temp_dir(), test_name, std::process::id(), &TEMP_ROOT_COUNTER)
+}
+
+#[cfg(test)]
+fn temp_root_path(base: &Path, test_name: &str, pid: u32, counter: u64) -> PathBuf {
+    // 39 ASCII bytes at maximum PID/counter widths, independent of the test name's length.
+    let digest = blake3::hash(test_name.as_bytes()).to_hex();
+    base.join(format!("rfit-{}-{pid:08x}-{counter:016x}", &digest.as_str()[..8]))
+}
+
+#[cfg(test)]
+fn create_temp_root_in(
+    base: &Path,
+    test_name: &str,
+    pid: u32,
+    counter: &std::sync::atomic::AtomicU64,
+) -> Result<PathBuf, Box<dyn std::error::Error>> {
+    use std::sync::atomic::Ordering;
+
+    loop {
+        let sequence = counter
+            .try_update(Ordering::Relaxed, Ordering::Relaxed, |value| value.checked_add(1))
+            .map_err(|_| std::io::Error::other("itest temporary directory counter exhausted"))?;
+        let path = temp_root_path(base, test_name, pid, sequence);
+        match fs::create_dir(&path) {
+            Ok(()) => return Ok(path),
+            // A reused PID or stale file must not cause another fixture's data to be removed.
+            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {}
+            Err(error) => return Err(error.into()),
+        }
     }
-    fs::create_dir_all(&path)?;
-    Ok(path)
 }
 
 /// Root of the realnet-clone parent directory that holds the realnet checkouts.
@@ -448,4 +471,44 @@ pub(crate) fn sign_itest_notification_wake(
     wake.signed.signature =
         ramflux_crypto::sign_protocol_object_with_seed(wake, itest_node_service_signing_seed())?;
     Ok(())
+}
+
+#[cfg(test)]
+mod temp_root_tests {
+    use super::*;
+
+    #[test]
+    fn temp_root_socket_paths_fit_budget_with_maximum_identifiers() {
+        // 32 bytes, including the leading slash and a multibyte component.
+        let base = PathBuf::from(format!("/{}t", "é".repeat(15)));
+        assert_eq!(base.as_os_str().as_encoded_bytes().len(), 32);
+        let long_name = "mvp4_realnet_home_node_migration_backfill_".repeat(128);
+        let root = temp_root_path(&base, &long_name, u32::MAX, u64::MAX);
+        for suffix in ["alice_restore/rfd.sock", "alice/rfd-restore.sock"] {
+            let socket = root.join(suffix);
+            let length = socket.as_os_str().as_encoded_bytes().len();
+            assert_eq!(length, 95);
+            assert!(length < 100, "socket path exceeds fixture budget: {socket:?}");
+        }
+    }
+
+    #[test]
+    fn temp_root_stays_unique_and_preserves_existing_directories()
+    -> Result<(), Box<dyn std::error::Error>> {
+        let parent = temp_root("temp_root_uniqueness")?;
+        let counter = std::sync::atomic::AtomicU64::new(0);
+        let occupied = temp_root_path(&parent, "same fixture", 1, 0);
+        fs::create_dir(&occupied)?;
+        let marker = occupied.join("keep.txt");
+        fs::write(&marker, b"existing fixture data")?;
+        let first = create_temp_root_in(&parent, "same fixture", 1, &counter)?;
+        let second = create_temp_root_in(&parent, "same fixture", 1, &counter)?;
+        assert_ne!(first, occupied);
+        assert_ne!(first, second);
+        assert!(first.is_dir());
+        assert!(second.is_dir());
+        assert_eq!(fs::read(&marker)?, b"existing fixture data");
+        fs::remove_dir_all(parent)?;
+        Ok(())
+    }
 }
