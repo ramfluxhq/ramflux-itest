@@ -187,6 +187,7 @@ async fn fetch_failure_and_retry(
         false,
     )?;
     let replay = call(bob, "bob", "object.fetch", body).await;
+    let offline_read = call(bob, "bob", "object.get", json!({"object_id":OBJECT})).await;
     run_docker_compose_project_with_options(
         &node.guard.deploy_root,
         PROJECT,
@@ -195,6 +196,13 @@ async fn fetch_failure_and_retry(
         false,
     )?;
     assert_eq!(replay?, success, "successful receipt must replay with relay offline");
+    let offline_read = offline_read?;
+    assert_eq!(
+        ramflux_protocol::decode_base64url(
+            offline_read["plaintext_base64"].as_str().ok_or("missing offline bytes")?
+        )?,
+        b"k12 deferred bytes"
+    );
     for value in [failure, failed, success, listed] {
         for private in ["access_grant", "key_slot", "object_key", "content_key", "ciphertext"] {
             assert!(!value.to_string().contains(private), "fetch/directory leaked {private}");
