@@ -129,6 +129,7 @@ async fn mvp_s39_assert_device_aware_safety_number(
                         "device",
                         "device.activate",
                         &ramflux_sdk::LocalBusDeviceActivateRequest {
+                            node_id: None,
                             device_id: "alice_device_s39_b".to_owned(),
                             target_delivery_id: "target_s39_alice_b".to_owned(),
                             device_seed: [0x3b; 32],
@@ -225,6 +226,7 @@ async fn mvp_s39_create_account(
     spec: MvpS39AccountSpec<'_>,
 ) -> Result<String, Box<dyn std::error::Error>> {
     let request = ramflux_sdk::LocalBusAccountCreateRequest {
+        node_id: None,
         local_account_id: spec.local_account_id.to_owned(),
         principal_id: spec.principal_id.to_owned(),
         principal_commitment: String::new(),

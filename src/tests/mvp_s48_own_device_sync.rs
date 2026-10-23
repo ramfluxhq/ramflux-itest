@@ -294,6 +294,7 @@ async fn mvp_s48_create_account(
             "account",
             "account.create",
             &ramflux_sdk::LocalBusAccountCreateRequest {
+                node_id: None,
                 local_account_id: spec.local_account_id.to_owned(),
                 principal_id: spec.principal_id.to_owned(),
                 principal_commitment: String::new(),
@@ -529,6 +530,7 @@ async fn mvp_s48_backup_and_activate_restored_device(
                 "device",
                 "device.activate",
                 &ramflux_sdk::LocalBusDeviceActivateRequest {
+                    node_id: None,
                     device_id: "alice_device_s48_b".to_owned(),
                     target_delivery_id: "target_s48_alice_b".to_owned(),
                     device_seed: [0x4a; 32],

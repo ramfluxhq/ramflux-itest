@@ -128,6 +128,7 @@ async fn mvp_s35_assert_multi_device_activation(
                         "device",
                         "device.activate",
                         &ramflux_sdk::LocalBusDeviceActivateRequest {
+                            node_id: None,
                             device_id: "bob_device_s35_b".to_owned(),
                             target_delivery_id: "target_s35_bob_b".to_owned(),
                             device_seed: [0x37; 32],
@@ -611,6 +612,7 @@ async fn mvp_s35_create_account(
     spec: MvpS35AccountSpec<'_>,
 ) -> Result<String, Box<dyn std::error::Error>> {
     let request = ramflux_sdk::LocalBusAccountCreateRequest {
+        node_id: None,
         local_account_id: spec.local_account_id.to_owned(),
         principal_id: spec.principal_id.to_owned(),
         principal_commitment: String::new(),

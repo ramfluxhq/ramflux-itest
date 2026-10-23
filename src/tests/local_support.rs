@@ -457,6 +457,7 @@ async fn mvp7_create_bus_account(
             "account",
             "account.create",
             &ramflux_sdk::LocalBusAccountCreateRequest {
+                node_id: None,
                 local_account_id: local_account_id.to_owned(),
                 principal_id: principal_id.to_owned(),
                 principal_commitment: String::new(),

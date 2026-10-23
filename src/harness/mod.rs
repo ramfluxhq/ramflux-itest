@@ -113,3 +113,18 @@ pub(crate) use rf_cli::*;
 #[path = "transport_backends.rs"]
 pub(crate) mod transport_backends;
 pub(crate) use transport_backends::*;
+
+#[cfg(feature = "realnet")]
+mod production_trust;
+#[cfg(feature = "realnet")]
+pub(crate) use production_trust::*;
+
+#[cfg(feature = "realnet")]
+mod client_discovery_topology;
+#[cfg(feature = "realnet")]
+pub(crate) use client_discovery_topology::*;
+
+#[cfg(feature = "realnet")]
+mod client_record_origin;
+#[cfg(feature = "realnet")]
+pub(crate) use client_record_origin::*;

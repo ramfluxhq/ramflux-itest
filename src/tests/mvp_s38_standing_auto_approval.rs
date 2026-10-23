@@ -200,6 +200,7 @@ fn mvp_s38_account_request(
     ca_cert: &Path,
 ) -> ramflux_sdk::LocalBusAccountCreateRequest {
     ramflux_sdk::LocalBusAccountCreateRequest {
+        node_id: None,
         local_account_id: "alice_s38_account".to_owned(),
         principal_id: "principal_s38_alice".to_owned(),
         principal_commitment: String::new(),

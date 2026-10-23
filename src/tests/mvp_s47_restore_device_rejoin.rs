@@ -175,6 +175,7 @@ async fn mvp_s47_assert_restore_device_rejoin(
                         "device",
                         "device.activate",
                         &ramflux_sdk::LocalBusDeviceActivateRequest {
+                            node_id: None,
                             device_id: "alice_device_s47_b".to_owned(),
                             target_delivery_id: "target_s47_alice_b".to_owned(),
                             device_seed: [0x49; 32],
@@ -329,6 +330,7 @@ async fn mvp_s47_create_account(
     spec: MvpS47AccountSpec<'_>,
 ) -> Result<String, Box<dyn std::error::Error>> {
     let request = ramflux_sdk::LocalBusAccountCreateRequest {
+        node_id: None,
         local_account_id: spec.local_account_id.to_owned(),
         principal_id: spec.principal_id.to_owned(),
         principal_commitment: String::new(),

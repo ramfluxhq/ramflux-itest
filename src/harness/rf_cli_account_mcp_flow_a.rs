@@ -11,6 +11,7 @@ pub(crate) fn mvp_s3_account_create_request(
     spec: MvpS3AccountSpec,
 ) -> ramflux_sdk::LocalBusAccountCreateRequest {
     ramflux_sdk::LocalBusAccountCreateRequest {
+        node_id: None,
         local_account_id: spec.local_account_id.to_owned(),
         principal_id: spec.principal_id.to_owned(),
         principal_commitment: String::new(),

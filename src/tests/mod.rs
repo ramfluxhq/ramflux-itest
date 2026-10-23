@@ -183,6 +183,8 @@ mod mvp_s69_object_ipc_crash_resume;
 mod mvp_s70_t22_production_keyless_v3;
 #[path = "mvp_s71_t22_production_keyless_v3_positive.rs"]
 mod mvp_s71_t22_production_keyless_v3_positive;
+#[path = "mvp_s72_client_node_discovery.rs"]
+mod mvp_s72_client_node_discovery;
 #[path = "objects.rs"]
 mod objects;
 #[path = "transport_node_store.rs"]

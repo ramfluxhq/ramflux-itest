@@ -117,6 +117,7 @@ async fn mvp_s36_create_account(
     ca_cert: &Path,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let request = ramflux_sdk::LocalBusAccountCreateRequest {
+        node_id: None,
         local_account_id: "alice_s4_account".to_owned(),
         principal_id: "principal_s4_alice".to_owned(),
         principal_commitment: String::new(),
@@ -186,7 +187,7 @@ async fn mvp_s36_create_remote_app_approval(
 async fn mvp_s36_next_tui_event(
     bus: &mut ramflux_cli_pro::SdkLocalBus,
     label: &str,
-) -> Result<ramflux_sdk::LocalBusFrame, Box<dyn std::error::Error>> {
+) -> Result<ramflux_sdk_tui::LocalBusFrame, Box<dyn std::error::Error>> {
     Ok(tokio::time::timeout(Duration::from_secs(5), ramflux_cli_pro::TuiBus::next_event(bus))
         .await
         .map_err(|_elapsed| format!("timed out waiting for TUI event: {label}"))??)
