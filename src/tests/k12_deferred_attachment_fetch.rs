@@ -61,6 +61,7 @@ async fn run(node: &S8RealnetNode) -> TestResult {
         &node.ca_cert,
         Some("principal_k12_alice"),
     )
+    .env("RAMFLUX_SYNC_ATTACHMENT_PREFETCH", "0")
     .spawn()?;
     let mut bob_process = client_directory_daemon_command(
         &binary,
@@ -69,6 +70,7 @@ async fn run(node: &S8RealnetNode) -> TestResult {
         &node.ca_cert,
         None,
     )
+    .env("RAMFLUX_SYNC_ATTACHMENT_PREFETCH", "0")
     .spawn()?;
     let result = tokio::time::timeout(Duration::from_mins(5), async {
         mvp_s4_wait_for_socket(&alice_socket).await?;
@@ -109,6 +111,7 @@ async fn run(node: &S8RealnetNode) -> TestResult {
             &node.ca_cert,
             None,
         )
+        .env("RAMFLUX_SYNC_ATTACHMENT_PREFETCH", "0")
         .spawn()?;
         mvp_s4_wait_for_socket(&bob_socket).await?;
         let mut bob = ramflux_sdk::LocalBusClient::connect(&bob_socket).await?;
@@ -228,7 +231,7 @@ async fn call(
     method: &str,
     body: Value,
 ) -> TestResult<Value> {
-    Ok(bus.request(Some(account.to_owned()), "client", method, &body).await?)
+    Ok(bus.request(Some(account.to_owned()), "client", method, serde_json::to_value(body)?).await?)
 }
 
 async fn send(
@@ -278,7 +281,8 @@ async fn create(
     let mut request = serde_json::to_value(request)?;
     request["label"] = json!(format!("Profile {id}"));
     request["kind"] = json!("human");
-    let response = bus.request(None, "account", "account.create", &request).await?;
+    let response =
+        bus.request(None, "account", "account.create", serde_json::to_value(request)?).await?;
     assert_eq!(response["local_account_id"], id);
     Ok(response)
 }
