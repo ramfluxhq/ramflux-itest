@@ -112,12 +112,18 @@ async fn run(node: &S8RealnetNode) -> TestResult {
         .spawn()?;
         mvp_s4_wait_for_socket(&bob_socket).await?;
         let mut bob = ramflux_sdk::LocalBusClient::connect(&bob_socket).await?;
-        // rfd reopens persisted accounts on start; unlock only if this build left Bob locked.
-        let accounts = call(&mut bob, "bob", "account.list", json!({})).await?;
-        if !accounts["accounts"].as_array().is_some_and(|ids| ids.iter().any(|id| id == "bob")) {
-            call(&mut bob, "bob", "account.unlock", json!({"passphrase":"k12-test-secret"}))
-                .await?;
+        // rfd restores persisted accounts in the background after the socket is up; wait for it
+        // instead of racing it with an explicit unlock.
+        let mut reopened = false;
+        for _ in 0..100 {
+            let accounts = call(&mut bob, "bob", "account.list", json!({})).await?;
+            if accounts["accounts"].as_array().is_some_and(|ids| ids.iter().any(|id| id == "bob")) {
+                reopened = true;
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(200)).await;
         }
+        assert!(reopened, "rfd must reopen Bob's persisted account after restart");
         fetch_failure_and_retry(node, &mut bob).await?;
         let bytes = call(&mut bob, "bob", "object.get", json!({"object_id":OBJECT})).await?;
         assert_eq!(
