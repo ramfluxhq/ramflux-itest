@@ -46,6 +46,11 @@ pub(crate) use realnet_compose_stun::*;
 pub(crate) mod relay_quic_readiness;
 #[cfg(feature = "realnet")]
 pub(crate) use relay_quic_readiness::*;
+#[cfg(feature = "realnet")]
+#[path = "tui_object_v3.rs"]
+pub(crate) mod tui_object_v3;
+#[cfg(feature = "realnet")]
+pub(crate) use tui_object_v3::*;
 #[path = "gateway_session_flow.rs"]
 pub(crate) mod gateway_session_flow;
 pub(crate) use gateway_session_flow::*;
