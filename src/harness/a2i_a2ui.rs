@@ -112,7 +112,12 @@ pub(crate) async fn mvp_s17_assert_a2i_a2ui_control_surface(
                     .is_some_and(|snapshot| snapshot.contains("approval_card"))
             );
             let surface_hash = rendered["surface_hash"].as_str().ok_or("missing surface hash")?;
-            assert_eq!(surface_hash, ramflux_sync::a2ui_surface_hash(&surface)?);
+            // Legacy render profiles are a different object from conversation snapshots.
+            let expected = ramflux_crypto::blake3_256_base64url(
+                ramflux_protocol::domain::A2I_CONTROL,
+                &ramflux_protocol::canonical_json_bytes(&surface)?,
+            );
+            assert_eq!(surface_hash, expected);
 
             let action = ramflux_sync::A2uiAction {
                 surface_id: "surface_s17_approval".to_owned(),
