@@ -145,12 +145,13 @@ async fn round_trip(
     assert!(!event.body.to_string().contains("PRIVATE_FORM_VALUE"));
     let replay = call(human, "human", "surface.action", request).await?;
     assert_eq!(replay["replayed"], true);
-    let close_wire = wire(
+    reject_non_author_patch(
+        human,
         conversation,
-        3,
-        C::DeleteSurface(DeleteSurfaceCommand { surface_id: surface.into(), reason: None }),
-    )?;
-    assert_eq!(call(human,"human","surface.send",json!({"conversation_id":conversation,"message_id":format!("{surface}-non-author"),"wire_base64":ramflux_protocol::encode_base64url(close_wire)})).await?["accepted"],false);
+        surface,
+        current["surface_hash"].as_str().ok_or("hash")?,
+    )
+    .await?;
     let mut after: CreateSurfaceCommand = serde_json::from_value(current["snapshot"].clone())?;
     after.components[1]["text"] = json!("Complete");
     after.fallback_text = "Completed result".into();
