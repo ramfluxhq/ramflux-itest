@@ -12,6 +12,24 @@ fn mvp_s48_realnet_own_device_history_group_key_sync() -> Result<(), Box<dyn std
         return Ok(());
     }
 
+    // The in-process daemons need the same explicit owner lineage as spawned v3 fixtures.
+    // Re-exec before starting them rather than mutating process environment around async work.
+    if std::env::var("RAMFLUX_S48_OWNER_ENV_READY").as_deref() != Ok("1") {
+        let status = std::process::Command::new(std::env::current_exe()?)
+            .args([
+                "--exact",
+                "tests::mvp_s48_own_device_sync::mvp_s48_realnet_own_device_history_group_key_sync",
+                "--nocapture",
+            ])
+            .env("RAMFLUX_S48_OWNER_ENV_READY", "1")
+            .env("RAMFLUX_SDK_RELAY_OWNER_HOME_NODE_ID", "node_a.realnet")
+            .env("RAMFLUX_SDK_RELAY_OWNER_PRINCIPAL_ID", "principal_s48_alice")
+            .env("RAMFLUX_SDK_RELAY_AUDIENCE_NODE_ID", "node_a.realnet")
+            .status()?;
+        assert!(status.success(), "s48 owner-lineage child failed: {status}");
+        return Ok(());
+    }
+
     let ports = S8ComposePorts {
         gateway_http: 64_771,
         gateway_quic: 64_631,
@@ -209,7 +227,8 @@ async fn mvp_s48_assert_own_device_sync(
                 )
                 .await?;
             assert!(imported["imported_messages"].as_u64().unwrap_or(0) >= 2);
-            assert!(imported["imported_dm_sessions"].as_u64().unwrap_or(0) > 0);
+            // Historical plaintext is transferred, but live device-pair ratchets stay on their owning device.
+            assert_eq!(imported["imported_dm_sessions"], 0);
             assert!(imported["imported_groups"].as_u64().unwrap_or(0) > 0);
             assert!(imported["imported_sender_keys"].as_u64().unwrap_or(0) > 0);
 
