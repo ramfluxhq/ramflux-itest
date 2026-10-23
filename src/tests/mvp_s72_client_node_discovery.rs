@@ -173,6 +173,32 @@ async fn create_bound_account(
     Ok(result["principal_commitment"].as_str().ok_or("missing commitment")?.to_owned())
 }
 
+async fn accept_both_contacts(binary: &Path, alice: &str, bob: &str) -> TestResult {
+    for (socket, requester, target, link) in
+        [(alice, "alice", "bob", "s72-friend"), (bob, "bob", "alice", "s72-friend-bob-alice")]
+    {
+        let added = rf(
+            binary,
+            socket,
+            &[
+                "contact",
+                "add",
+                "--account",
+                requester,
+                "--link",
+                link,
+                "--requester",
+                requester,
+                "--target",
+                target,
+            ],
+        )
+        .await?;
+        assert_eq!(added["state"], "accepted", "contact {requester}->{target}: {added}");
+    }
+    Ok(())
+}
+
 async fn round_trip(
     binary: &Path,
     alice: &str,
@@ -180,23 +206,7 @@ async fn round_trip(
     alice_commitment: &str,
     bob_commitment: &str,
 ) -> TestResult {
-    rf(
-        binary,
-        alice,
-        &[
-            "contact",
-            "add",
-            "--account",
-            "alice",
-            "--link",
-            "s72-friend",
-            "--requester",
-            "alice",
-            "--target",
-            "bob",
-        ],
-    )
-    .await?;
+    accept_both_contacts(binary, alice, bob).await?;
     rf(
         binary,
         alice,
