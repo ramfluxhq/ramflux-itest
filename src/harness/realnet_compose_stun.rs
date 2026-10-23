@@ -4,6 +4,14 @@
 #![allow(unused_imports)]
 use crate::*;
 
+#[cfg(all(test, feature = "realnet"))]
+#[path = "compose_failure_diagnostics.rs"]
+mod failure_diagnostics;
+#[cfg(all(test, feature = "realnet"))]
+pub(crate) use failure_diagnostics::COMPOSE_FAILURE_LOG_SERVICES_ENV;
+#[cfg(all(test, feature = "realnet"))]
+use failure_diagnostics::dump_compose_failure_logs;
+
 /// `compose down` shutdown-grace timeout (seconds). Default "2" (fast teardown for normal tests).
 /// CTRL-089 DIAGNOSTIC: a heap-profiler relay build dumps its dhat json on SIGTERM, and symbolizing
 /// the (unstripped) binary's backtraces at drop can exceed 2s → SIGKILL truncates the dump. The
@@ -223,6 +231,23 @@ impl ComposeProjectDownGuard {
 impl Drop for ComposeProjectDownGuard {
     fn drop(&mut self) {
         let compose_env = compose_env_with_required_defaults(&self.env);
+        // An opted-in fixture disarms this hook only after all of its assertions succeed.
+        // Drop also runs on returned errors and unwinding, before compose removes containers.
+        dump_compose_failure_logs(
+            &self.deploy_root,
+            &self.project_name,
+            &compose_env,
+            ItestComposeOverrides {
+                federation_compio: self.federation_compio,
+                gateway_compio: self.gateway_compio,
+                notify_runtime: if self.notify_compio {
+                    NotifyRuntimeComposeOverride::Compio
+                } else {
+                    NotifyRuntimeComposeOverride::Current
+                },
+                ..ItestComposeOverrides::default()
+            },
+        );
         dump_compose_logs(
             &self.deploy_root,
             &self.project_name,
@@ -395,8 +420,11 @@ pub(crate) fn run_docker_compose_project_with_overrides(
         .args(args)
         .envs(compose_env.iter().map(|(key, value)| (key, value)))
         .current_dir(deploy_root);
-    let status = command.status()?;
+    let status = command.status().inspect_err(|_| {
+        dump_compose_failure_logs(deploy_root, project_name, &compose_env, overrides);
+    })?;
     if !status.success() {
+        dump_compose_failure_logs(deploy_root, project_name, &compose_env, overrides);
         return Err(
             format!("docker compose project {project_name} {args:?} failed with {status}").into()
         );
