@@ -12,14 +12,14 @@ loadgen = ["dep:http-body-util", "dep:hyper", "dep:hyper-util"]
 realnet = ["dep:ramflux-cli-pro", "ramflux-sdk/itest-fingerprint", "ramflux-sdk/itest-local-mint"]
 
 [dependencies]
-ramflux-core = { git = "https://github.com/ramfluxhq/ramflux.git", rev = "728786381dec53c5d7dd273fc6224d37699432c7", package = "ramflux-core" }
-ramflux-protocol = { git = "https://github.com/ramfluxhq/ramflux.git", rev = "728786381dec53c5d7dd273fc6224d37699432c7", package = "ramflux-protocol" }
-ramflux-crypto = { git = "https://github.com/ramfluxhq/ramflux.git", rev = "728786381dec53c5d7dd273fc6224d37699432c7", package = "ramflux-crypto" }
-ramflux-storage = { git = "https://github.com/ramfluxhq/ramflux.git", rev = "728786381dec53c5d7dd273fc6224d37699432c7", package = "ramflux-storage" }
-ramflux-sync = { git = "https://github.com/ramfluxhq/ramflux.git", rev = "728786381dec53c5d7dd273fc6224d37699432c7", package = "ramflux-sync" }
-ramflux-transport = { git = "https://github.com/ramfluxhq/ramflux.git", rev = "728786381dec53c5d7dd273fc6224d37699432c7", package = "ramflux-transport" }
-ramflux-sdk = { git = "https://github.com/ramfluxhq/ramflux.git", rev = "728786381dec53c5d7dd273fc6224d37699432c7", package = "ramflux-sdk" }
-ramflux-node-core = { git = "https://github.com/ramfluxhq/ramflux.git", rev = "728786381dec53c5d7dd273fc6224d37699432c7", package = "ramflux-node-core" }
+ramflux-core = { git = "https://github.com/ramfluxhq/ramflux.git", rev = "e51b51ca5c7c89e3b798f346a60aa55364a115da", package = "ramflux-core" }
+ramflux-protocol = { git = "https://github.com/ramfluxhq/ramflux.git", rev = "e51b51ca5c7c89e3b798f346a60aa55364a115da", package = "ramflux-protocol" }
+ramflux-crypto = { git = "https://github.com/ramfluxhq/ramflux.git", rev = "e51b51ca5c7c89e3b798f346a60aa55364a115da", package = "ramflux-crypto" }
+ramflux-storage = { git = "https://github.com/ramfluxhq/ramflux.git", rev = "e51b51ca5c7c89e3b798f346a60aa55364a115da", package = "ramflux-storage" }
+ramflux-sync = { git = "https://github.com/ramfluxhq/ramflux.git", rev = "e51b51ca5c7c89e3b798f346a60aa55364a115da", package = "ramflux-sync" }
+ramflux-transport = { git = "https://github.com/ramfluxhq/ramflux.git", rev = "e51b51ca5c7c89e3b798f346a60aa55364a115da", package = "ramflux-transport" }
+ramflux-sdk = { git = "https://github.com/ramfluxhq/ramflux.git", rev = "e51b51ca5c7c89e3b798f346a60aa55364a115da", package = "ramflux-sdk" }
+ramflux-node-core = { git = "https://github.com/ramfluxhq/ramflux.git", rev = "e51b51ca5c7c89e3b798f346a60aa55364a115da", package = "ramflux-node-core" }
 ramflux-cli-pro = { git = "https://github.com/ramfluxhq/ramflux-tui.git", rev = "aab4099de04aaa91ea8c7cbbb1512d3d86dc19e5", package = "ramflux-cli-pro", optional = true }
 anyhow = "1.0"
 aes-gcm = "0.10"
