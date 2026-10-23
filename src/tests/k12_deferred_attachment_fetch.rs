@@ -112,7 +112,12 @@ async fn run(node: &S8RealnetNode) -> TestResult {
         .spawn()?;
         mvp_s4_wait_for_socket(&bob_socket).await?;
         let mut bob = ramflux_sdk::LocalBusClient::connect(&bob_socket).await?;
-        call(&mut bob, "bob", "account.unlock", json!({"passphrase":"k12-test-secret"})).await?;
+        // rfd reopens persisted accounts on start; unlock only if this build left Bob locked.
+        let accounts = call(&mut bob, "bob", "account.list", json!({})).await?;
+        if !accounts["accounts"].as_array().is_some_and(|ids| ids.iter().any(|id| id == "bob")) {
+            call(&mut bob, "bob", "account.unlock", json!({"passphrase":"k12-test-secret"}))
+                .await?;
+        }
         fetch_failure_and_retry(node, &mut bob).await?;
         let bytes = call(&mut bob, "bob", "object.get", json!({"object_id":OBJECT})).await?;
         assert_eq!(
