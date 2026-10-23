@@ -32,7 +32,7 @@ fn mvp_s55_realnet_object_v3_public_sdk_owner_four_ops() -> Result<(), Box<dyn s
     let audience_node = "node_a.realnet";
     let owner_principal = "principal_s55_owner";
 
-    eprintln!("STEP: s55 prepare trust materials begin");
+    realnet_step("s55 prepare trust materials begin", "");
     let materials = temp_root("s55_object_v3_materials")?;
     let now = ramflux_node_core::now_unix_seconds();
     let root_seed = [0x44; 32];
@@ -40,15 +40,15 @@ fn mvp_s55_realnet_object_v3_public_sdk_owner_four_ops() -> Result<(), Box<dyn s
     let provider_seed = [0x66; 32];
     let offline_root_seed = [0x88; 32]; // T23-A2b2b: offline signing root for the provider keyring
     let gateway_id = "gw-b";
-    eprintln!("STEP: s55 sign gateway issuer certificate begin");
+    realnet_step("s55 sign gateway issuer certificate begin", "");
     let certificate =
         mvp_s55_certificate(now, issuer_node, gateway_id, root_seed, attestation_seed)?;
-    eprintln!("STEP: s55 sign gateway issuer certificate ok");
-    eprintln!("STEP: s55 sign provider trust snapshot begin");
+    realnet_step("s55 sign gateway issuer certificate ok", "");
+    realnet_step("s55 sign provider trust snapshot begin", "");
     let envelope =
         mvp_s55_trust_envelope(now, issuer_node, root_seed, provider_seed, &certificate)?;
-    eprintln!("STEP: s55 sign provider trust snapshot ok");
-    eprintln!("STEP: s55 write gateway issuer certificates begin");
+    realnet_step("s55 sign provider trust snapshot ok", "");
+    realnet_step("s55 write gateway issuer certificates begin", "");
     for directory in ["gateway-a", "gateway-b"] {
         std::fs::create_dir_all(materials.join(directory))?;
         std::fs::write(
@@ -56,17 +56,17 @@ fn mvp_s55_realnet_object_v3_public_sdk_owner_four_ops() -> Result<(), Box<dyn s
             serde_json::to_vec_pretty(&certificate)?,
         )?;
     }
-    eprintln!("STEP: s55 write gateway issuer certificates ok");
-    eprintln!("STEP: s55 write federation trust snapshot begin");
+    realnet_step("s55 write gateway issuer certificates ok", "");
+    realnet_step("s55 write federation trust snapshot begin", "");
     std::fs::create_dir_all(materials.join("federation"))?;
     std::fs::write(
         materials.join("federation/trust-snapshot.json"),
         serde_json::to_vec_pretty(&envelope)?,
     )?;
-    eprintln!("STEP: s55 write federation trust snapshot ok");
-    eprintln!("STEP: s55 write provider keyring begin");
+    realnet_step("s55 write federation trust snapshot ok", "");
+    realnet_step("s55 write provider keyring begin", "");
     mvp_s55_write_provider_keyring(&materials, now, issuer_node, offline_root_seed, provider_seed)?;
-    eprintln!("STEP: s55 prepare trust materials ok");
+    realnet_step("s55 prepare trust materials ok", "");
 
     let ports = S8ComposePorts {
         gateway_http: 64_181,
@@ -82,7 +82,7 @@ fn mvp_s55_realnet_object_v3_public_sdk_owner_four_ops() -> Result<(), Box<dyn s
         signaling_turn_tcp: 64_479,
         retention_http: 64_187,
     };
-    eprintln!("STEP: s55 start compose fixture begin");
+    realnet_step("s55 start compose fixture begin", "");
     let mut node = start_s8_realnet_compose_project_with_env(
         "ramflux-s55-object-v3-sdk",
         ports,
@@ -112,36 +112,42 @@ fn mvp_s55_realnet_object_v3_public_sdk_owner_four_ops() -> Result<(), Box<dyn s
         ],
     )?;
 
-    eprintln!("STEP: s55 start compose fixture ok");
+    realnet_step("s55 start compose fixture ok", "");
     let relay_ca = node.ca_cert.clone();
     let relay_quic_addr = "127.0.0.1:17447";
     let gateway_b_quic_addr = "127.0.0.1:18444";
     let relay_url = format!("http://127.0.0.1:{}", ports.relay_http);
 
-    eprintln!("STEP: s55 create Tokio runtime begin");
-    eprintln!(
-        "STEP: s55 endpoints relay_quic={relay_quic_addr} gateway_b_quic={gateway_b_quic_addr} relay_http={relay_url} ca={}",
-        relay_ca.display()
+    realnet_step("s55 create Tokio runtime begin", "");
+    realnet_step(
+        "s55 endpoints",
+        format!(
+            "relay_quic={relay_quic_addr} gateway_b_quic={gateway_b_quic_addr} relay_http={relay_url} ca={}",
+            relay_ca.display()
+        ),
     );
     let runtime = tokio::runtime::Builder::new_multi_thread().enable_all().build()?;
-    eprintln!("STEP: s55 create Tokio runtime ok");
-    eprintln!("STEP: s55 QUIC and public SDK flow begin");
+    realnet_step("s55 create Tokio runtime ok", "");
+    realnet_step("s55 QUIC and public SDK flow begin", "");
     runtime.block_on(async {
         // Confirm the relay client-facing QUIC listener is live before driving the SDK.
-        eprintln!("STEP: s55 configure relay QUIC health begin");
+        realnet_step("s55 configure relay QUIC health begin", "");
         let config = ramflux_transport::RelayClientQuicConfig::new(
             relay_quic_addr,
             "ramflux-relay",
             &relay_ca,
         )?;
-        eprintln!("STEP: s55 configure relay QUIC health ok");
-        eprintln!("STEP: s55 relay QUIC health request begin");
+        realnet_step("s55 configure relay QUIC health ok", "");
+        realnet_step("s55 wait for relay QUIC readiness begin", "");
+        wait_relay_quic_healthy(relay_quic_addr, "ramflux-relay", &relay_ca).await?;
+        realnet_step("s55 wait for relay QUIC readiness ok", "");
+        realnet_step("s55 relay QUIC health request begin", "");
         let health =
             ramflux_transport::relay_client_quic_health(&config, std::time::Duration::from_secs(5))
                 .await?;
-        eprintln!("STEP: s55 relay QUIC health request ok; assert healthy response begin");
+        realnet_step("s55 relay QUIC health request ok; assert healthy response begin", "");
         assert_eq!(health.status, 200, "relay client QUIC listener must be healthy: {health:?}");
-        eprintln!("STEP: s55 assert relay QUIC health ok");
+        realnet_step("s55 assert relay QUIC health ok", "");
 
         // The public SDK reads relay QUIC transport + owner lineage from its process environment.
         // Pass them to the rf daemon child process (rather than mutating this process' globals),
@@ -155,25 +161,25 @@ fn mvp_s55_realnet_object_v3_public_sdk_owner_four_ops() -> Result<(), Box<dyn s
             ("RAMFLUX_SDK_RELAY_AUDIENCE_NODE_ID".to_owned(), audience_node.to_owned()),
         ];
 
-        eprintln!("STEP: s55 public SDK owner flow begin");
+        realnet_step("s55 public SDK owner flow begin", "");
         mvp_s55_public_sdk_owner_flow(&node, gateway_b_quic_addr, &relay_url, &sdk_env).await
     })?;
 
-    eprintln!("STEP: s55 QUIC and public SDK flow ok");
-    eprintln!("STEP: s55 collect relay logs for HTTP exclusion assertion begin");
+    realnet_step("s55 QUIC and public SDK flow ok", "");
+    realnet_step("s55 collect relay logs for HTTP exclusion assertion begin", "");
     let relay_logs = mvp_s55_container_logs("ramflux-relay");
-    eprintln!("STEP: s55 collect relay logs end; assert no relay HTTP object requests begin");
+    realnet_step("s55 collect relay logs end; assert no relay HTTP object requests begin", "");
     assert!(
         !relay_logs.contains("POST /relay/v1/object/"),
         "relay must not receive any HTTP object request in the GatewayIssued QUIC path:\n{relay_logs}"
     );
 
-    eprintln!("STEP: s55 assert no relay HTTP object requests ok");
-    eprintln!("STEP: s55 trust material cleanup begin (best effort)");
+    realnet_step("s55 assert no relay HTTP object requests ok", "");
+    realnet_step("s55 trust material cleanup begin (best effort)", "");
     std::fs::remove_dir_all(&materials).ok();
-    eprintln!("STEP: s55 trust material cleanup end");
+    realnet_step("s55 trust material cleanup end", "");
     node.guard.env.retain(|(key, _)| key != COMPOSE_FAILURE_LOG_SERVICES_ENV);
-    eprintln!("STEP: s55 owner four operations complete");
+    realnet_step("s55 owner four operations complete", "");
     Ok(())
 }
 
@@ -185,7 +191,7 @@ async fn mvp_s55_public_sdk_owner_flow(
     relay_url: &str,
     sdk_env: &[(String, String)],
 ) -> Result<(), Box<dyn std::error::Error>> {
-    eprintln!("STEP: s55 prepare SDK input and data directories begin");
+    realnet_step("s55 prepare SDK input and data directories begin", "");
     let temp_root = temp_root("s55_object_v3_sdk")?;
     let data_root = temp_root.join("owner/data");
     std::fs::create_dir_all(&data_root)?;
@@ -196,10 +202,10 @@ async fn mvp_s55_public_sdk_owner_flow(
     let plaintext = b"mvp_s55_public_sdk_v3_owner_object_do_not_leak_plaintext".repeat(64);
     std::fs::write(&input_path, &plaintext)?;
 
-    eprintln!("STEP: s55 prepare SDK input and data directories ok");
-    eprintln!("STEP: s55 build rf binary begin");
+    realnet_step("s55 prepare SDK input and data directories ok", "");
+    realnet_step("s55 build rf binary begin", "");
     let rf_binary = mvp_s4_build_rf_binary().await?;
-    eprintln!("STEP: s55 build rf binary ok");
+    realnet_step("s55 build rf binary ok", "");
     let ca_cert_arg = mvp_s4_path_arg(&node.ca_cert);
     let socket_arg = mvp_s4_path_arg(&socket);
     let data_root_arg = mvp_s4_path_arg(&data_root);
@@ -208,17 +214,17 @@ async fn mvp_s55_public_sdk_owner_flow(
 
     // Run rfd as a separate process configured with the SDK relay QUIC + owner lineage env; the
     // object bus dispatch then executes inside that daemon exactly as it would in production.
-    eprintln!("STEP: s55 spawn rf daemon begin");
+    realnet_step("s55 spawn rf daemon begin", "");
     let mut daemon =
         mvp_s55_spawn_rf_daemon_with_env(&rf_binary, &socket_arg, &data_root_arg, sdk_env)?;
-    eprintln!("STEP: s55 spawn rf daemon ok");
+    realnet_step("s55 spawn rf daemon ok", "");
 
     let flow = async {
-        eprintln!("STEP: s55 wait for rf daemon socket begin");
+        realnet_step("s55 wait for rf daemon socket begin", "");
         mvp_s4_wait_for_socket(&socket).await?;
-        eprintln!("STEP: s55 wait for rf daemon socket ok");
+        realnet_step("s55 wait for rf daemon socket ok", "");
         // The owner account is created against gateway-b, which holds the v3 issuer material.
-        eprintln!("STEP: s55 create owner account through gateway-b begin");
+        realnet_step("s55 create owner account through gateway-b begin", "");
         mvp_s10_create_rf_account(
             &rf_binary,
             &socket_arg,
@@ -233,8 +239,8 @@ async fn mvp_s55_public_sdk_owner_flow(
         )
         .await?;
 
-        eprintln!("STEP: s55 create owner account through gateway-b ok");
-        eprintln!("STEP: s55 object PUT begin");
+        realnet_step("s55 create owner account through gateway-b ok", "");
+        realnet_step("s55 object PUT begin", "");
         // PUT: owner uploads via gateway-issued v3 token + relay QUIC.
         mvp_s4_rf_json(
             &rf_binary,
@@ -255,14 +261,14 @@ async fn mvp_s55_public_sdk_owner_flow(
             ],
         )
         .await?;
-        eprintln!("STEP: s55 object PUT ok");
-        eprintln!("STEP: s55 read upload status begin");
+        realnet_step("s55 object PUT ok", "");
+        realnet_step("s55 read upload status begin", "");
         let upload = mvp_s55_object_status(&rf_binary, &socket_arg, "upload").await?;
-        eprintln!("STEP: s55 read upload status ok; assert completed upload begin");
+        realnet_step("s55 read upload status ok; assert completed upload begin", "");
         assert_eq!(upload["transfer"]["state"], "complete", "put must complete over QUIC");
-        eprintln!("STEP: s55 assert completed upload ok");
+        realnet_step("s55 assert completed upload ok", "");
 
-        eprintln!("STEP: s55 object GET with ACK begin");
+        realnet_step("s55 object GET with ACK begin", "");
         // GET + ACK: owner downloads and acknowledges via the same v3 QUIC path.
         mvp_s4_rf_json(
             &rf_binary,
@@ -282,17 +288,17 @@ async fn mvp_s55_public_sdk_owner_flow(
             ],
         )
         .await?;
-        eprintln!("STEP: s55 object GET with ACK ok");
-        eprintln!("STEP: s55 read downloaded plaintext and assert match begin");
+        realnet_step("s55 object GET with ACK ok", "");
+        realnet_step("s55 read downloaded plaintext and assert match begin", "");
         assert_eq!(std::fs::read(&output_path)?, plaintext, "roundtrip plaintext must match");
-        eprintln!("STEP: s55 assert matching plaintext ok");
-        eprintln!("STEP: s55 read download status begin");
+        realnet_step("s55 assert matching plaintext ok", "");
+        realnet_step("s55 read download status begin", "");
         let download = mvp_s55_object_status(&rf_binary, &socket_arg, "download").await?;
-        eprintln!("STEP: s55 read download status ok; assert completed download begin");
+        realnet_step("s55 read download status ok; assert completed download begin", "");
         assert_eq!(download["transfer"]["state"], "complete", "get must complete over QUIC");
-        eprintln!("STEP: s55 assert completed download ok");
+        realnet_step("s55 assert completed download ok", "");
 
-        eprintln!("STEP: s55 object TOMBSTONE begin");
+        realnet_step("s55 object TOMBSTONE begin", "");
         // TOMBSTONE: owner-session tombstone via v3 QUIC (fail-closed, no HTTP fallback).
         mvp_s4_rf_json(
             &rf_binary,
@@ -311,9 +317,9 @@ async fn mvp_s55_public_sdk_owner_flow(
         )
         .await?;
 
-        eprintln!("STEP: s55 object TOMBSTONE ok");
+        realnet_step("s55 object TOMBSTONE ok", "");
         // After tombstone the local object is no longer visible; a re-download must fail.
-        eprintln!("STEP: s55 reject GET after tombstone begin");
+        realnet_step("s55 reject GET after tombstone begin", "");
         let redownload = mvp_s4_rf_failure(
             &rf_binary,
             &[
@@ -331,33 +337,33 @@ async fn mvp_s55_public_sdk_owner_flow(
             ],
         )
         .await?;
-        eprintln!("STEP: s55 post-tombstone GET rejected; assert failure output begin");
+        realnet_step("s55 post-tombstone GET rejected; assert failure output begin", "");
         assert!(
             !redownload.is_empty(),
             "post-tombstone get must fail rather than silently return stale plaintext"
         );
-        eprintln!("STEP: s55 assert post-tombstone rejection ok");
+        realnet_step("s55 assert post-tombstone rejection ok", "");
         Ok::<(), Box<dyn std::error::Error>>(())
     };
 
-    eprintln!("STEP: s55 wait for owner flow deadline begin");
+    realnet_step("s55 wait for owner flow deadline begin", "");
     let result = tokio::time::timeout(Duration::from_mins(5), flow)
         .await
         .map_err(|_elapsed| "s55 public SDK v3 flow timed out".to_owned());
     match &result {
-        Ok(Ok(())) => eprintln!("STEP: s55 owner flow deadline completed successfully"),
-        Ok(Err(error)) => eprintln!("STEP: s55 owner flow failed: {error}"),
-        Err(error) => eprintln!("STEP: s55 owner flow deadline failed: {error}"),
+        Ok(Ok(())) => realnet_step("s55 owner flow deadline completed successfully", ""),
+        Ok(Err(error)) => realnet_step(format!("s55 owner flow failed: {error}"), ""),
+        Err(error) => realnet_step(format!("s55 owner flow deadline failed: {error}"), ""),
     }
-    eprintln!("STEP: s55 stop rf daemon begin");
+    realnet_step("s55 stop rf daemon begin", "");
     mvp_s20_stop_rf_daemon(&mut daemon).await?;
-    eprintln!("STEP: s55 stop rf daemon ok");
-    eprintln!("STEP: s55 SDK temporary file cleanup begin (best effort)");
+    realnet_step("s55 stop rf daemon ok", "");
+    realnet_step("s55 SDK temporary file cleanup begin (best effort)", "");
     let _ = std::fs::remove_file(&socket);
     std::fs::remove_dir_all(&temp_root).ok();
-    eprintln!("STEP: s55 SDK temporary file cleanup end");
+    realnet_step("s55 SDK temporary file cleanup end", "");
     result??;
-    eprintln!("STEP: s55 public SDK owner flow ok");
+    realnet_step("s55 public SDK owner flow ok", "");
     Ok(())
 }
 

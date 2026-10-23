@@ -6,7 +6,10 @@ use crate::*;
 
 #[cfg(all(test, feature = "realnet"))]
 pub(crate) fn realnet_step(label: impl AsRef<str>, fields: impl AsRef<str>) {
-    eprintln!("STEP: {} {}", label.as_ref(), fields.as_ref());
+    let timestamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or_else(|_| "unavailable".to_owned(), |elapsed| elapsed.as_millis().to_string());
+    eprintln!("STEP: {} {} ts_unix_ms={timestamp}", label.as_ref(), fields.as_ref());
 }
 
 #[cfg(all(test, feature = "realnet"))]

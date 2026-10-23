@@ -41,6 +41,11 @@ pub(crate) use group_sender_keys_d::*;
 #[path = "realnet_compose_stun.rs"]
 pub(crate) mod realnet_compose_stun;
 pub(crate) use realnet_compose_stun::*;
+#[cfg(feature = "realnet")]
+#[path = "relay_quic_readiness.rs"]
+pub(crate) mod relay_quic_readiness;
+#[cfg(feature = "realnet")]
+pub(crate) use relay_quic_readiness::*;
 #[path = "gateway_session_flow.rs"]
 pub(crate) mod gateway_session_flow;
 pub(crate) use gateway_session_flow::*;

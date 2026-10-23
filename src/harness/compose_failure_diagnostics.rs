@@ -6,6 +6,7 @@ use super::{
     ItestComposeOverrides, add_compose_env_file_arg, add_itest_compose_files,
     compose_env_with_required_defaults, container_runtime,
 };
+use crate::realnet_step;
 use std::path::Path;
 
 pub(crate) const COMPOSE_FAILURE_LOG_SERVICES_ENV: &str = "RAMFLUX_ITEST_FAILURE_LOG_SERVICES";
@@ -22,20 +23,24 @@ pub(super) fn dump_compose_failure_logs(
     };
     let compose_env = compose_env_with_required_defaults(env);
     for service in services.split(',').filter(|service| !service.is_empty()) {
-        eprintln!("STEP: failure container logs begin project={project_name} service={service}");
+        realnet_step(
+            "failure container logs begin",
+            format!("project={project_name} service={service}"),
+        );
         let result =
             collect_service_logs(deploy_root, project_name, &compose_env, overrides, service);
         match result {
             Ok(output) => {
                 eprintln!("{}", String::from_utf8_lossy(&output.stdout));
                 eprintln!("{}", String::from_utf8_lossy(&output.stderr));
-                eprintln!(
-                    "STEP: failure container logs end project={project_name} service={service} exit={}",
-                    output.status
+                realnet_step(
+                    "failure container logs end",
+                    format!("project={project_name} service={service} exit={}", output.status),
                 );
             }
-            Err(error) => eprintln!(
-                "STEP: failure container logs unavailable project={project_name} service={service}: {error}"
+            Err(error) => realnet_step(
+                "failure container logs unavailable",
+                format!("project={project_name} service={service}: {error}"),
             ),
         }
     }
@@ -115,6 +120,11 @@ exit 0
             assert!(output.status.success(), "mode={mode}\n{stdout}\n{stderr}");
             // An exact filter matching no tests also exits zero; require the child actually ran.
             assert!(stdout.contains("1 passed"), "child did not exercise the guard: {stdout}");
+            for line in stderr.lines().filter(|line| line.starts_with("STEP:")) {
+                let (_, timestamp) =
+                    line.rsplit_once(" ts_unix_ms=").ok_or("STEP timestamp missing")?;
+                assert!(timestamp.parse::<u128>()? > 0, "invalid STEP timestamp: {line}");
+            }
             let commands = std::fs::read_to_string(journal)?;
             if mode == "success" {
                 assert_eq!(commands, "down\n");

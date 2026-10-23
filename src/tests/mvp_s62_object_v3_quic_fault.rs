@@ -142,6 +142,7 @@ fn mvp_s62_realnet_object_v3_quic_fault() -> Result<(), Box<dyn std::error::Erro
             "ramflux-relay",
             &relay_ca,
         )?;
+        wait_relay_quic_healthy(S62_RELAY_QUIC, "ramflux-relay", &relay_ca).await?;
         let health =
             ramflux_transport::relay_client_quic_health(&config, std::time::Duration::from_secs(5))
                 .await?;
@@ -254,7 +255,7 @@ async fn s62_flow(
         // Stale recovery: restart the relay (rfd stays up); the next PUT transparently reconnects on
         // a fresh connection (a fresh object id guarantees the request reaches the relay).
         s62_container_ctl("restart", "ramflux-relay")?;
-        s62_wait_relay_quic_healthy(relay_ca).await?;
+        wait_relay_quic_healthy(S62_RELAY_QUIC, "ramflux-relay", relay_ca).await?;
         s62_reset_capture()?;
         s62_put(&rf_binary, &socket_arg, relay_url, &input_arg, "object_s62_stale").await?;
         assert!(
@@ -408,7 +409,7 @@ async fn s62_flow(
         // held PUT's own first chunk lands on a fresh connection.
         s62_put(&rf_binary, &socket_arg, relay_url, &input_arg, "object_s62_d_warm").await?;
         s62_recreate_relay_env("RAMFLUX_RELAY_ITEST_DROP_AFTER_COMMIT", "put-restart-hold", node)?;
-        s62_wait_relay_quic_healthy(relay_ca).await?;
+        wait_relay_quic_healthy(S62_RELAY_QUIC, "ramflux-relay", relay_ca).await?;
         s62_get_no_ack(&rf_binary, &socket_arg, relay_url, &output_arg, "object_s62_d_warm")
             .await?;
         s62_reset_capture()?;
@@ -432,7 +433,7 @@ async fn s62_flow(
         // Fast restart before the client's retry: SIGKILL + start the same relay container.
         s62_kill_relay()?;
         s62_container_ctl("start", "ramflux-relay")?;
-        s62_wait_relay_quic_healthy(relay_ca).await?;
+        wait_relay_quic_healthy(S62_RELAY_QUIC, "ramflux-relay", relay_ca).await?;
         // The held PUT's same-frame retry must land on the restarted relay.
         match tokio::time::timeout(Duration::from_mins(2), held_put).await {
             Ok(join) => join.map_err(|error| error.to_string())??,
@@ -615,7 +616,7 @@ async fn s62_ambiguous_commit_mode(
     mode: &str,
 ) -> Result<(), Box<dyn std::error::Error>> {
     s62_recreate_relay_env("RAMFLUX_RELAY_ITEST_DROP_AFTER_COMMIT", mode, node)?;
-    s62_wait_relay_quic_healthy(relay_ca).await
+    wait_relay_quic_healthy(S62_RELAY_QUIC, "ramflux-relay", relay_ca).await
 }
 
 #[cfg(feature = "realnet")]
@@ -885,23 +886,6 @@ fn s62_container_logs(service: &str) -> String {
             )
         },
     )
-}
-
-#[cfg(feature = "realnet")]
-async fn s62_wait_relay_quic_healthy(ca_cert: &Path) -> Result<(), Box<dyn std::error::Error>> {
-    let config =
-        ramflux_transport::RelayClientQuicConfig::new(S62_RELAY_QUIC, "ramflux-relay", ca_cert)?;
-    for _ in 0..30 {
-        if let Ok(health) =
-            ramflux_transport::relay_client_quic_health(&config, std::time::Duration::from_secs(3))
-                .await
-            && health.status == 200
-        {
-            return Ok(());
-        }
-        tokio::time::sleep(std::time::Duration::from_secs(2)).await;
-    }
-    Err("relay client QUIC did not become healthy".into())
 }
 
 // ---- v3 trust material (object-v3 stack; same shape as s55) ----
