@@ -46,22 +46,26 @@ fn mvp_s48_realnet_own_device_history_group_key_sync() -> Result<(), Box<dyn std
     };
     let relay_capture = "/tmp/ramflux-relay-itest-capture-s48.jsonl";
     let gateway_capture = "/tmp/ramflux-gateway-itest-capture-s48.jsonl";
-    let node = start_s8_realnet_compose_project_with_env(
+    let mut stack = start_client_directory_stack_with_issuer(
         "ramflux-s48-own-device-sync",
         ports,
         &[
             ("RAMFLUX_RELAY_ITEST_CAPTURE_JSON".to_owned(), relay_capture.to_owned()),
             ("RAMFLUX_GATEWAY_ITEST_CAPTURE_JSON".to_owned(), gateway_capture.to_owned()),
         ],
+        "node_a.realnet",
+        "gw-a",
     )?;
+    let node = &stack.node;
+
     let relay_url = format!("http://127.0.0.1:{}", ports.relay_http);
     let runtime = tokio::runtime::Builder::new_current_thread().enable_all().build()?;
     runtime.block_on(async {
         wait_for_private_gateway_quic(node.gateway_quic_addr, &node.ca_cert).await?;
-        Box::pin(mvp_s48_assert_own_device_sync(&node, &relay_url)).await?;
+        Box::pin(mvp_s48_assert_own_device_sync(node, &relay_url)).await?;
         Ok::<(), Box<dyn std::error::Error>>(())
     })?;
-    drop(node);
+    stack.node.guard.mark_success();
     Ok(())
 }
 

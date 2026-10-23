@@ -54,12 +54,8 @@ fn mvp_s35_realnet_multi_device_activation_fanout() -> Result<(), Box<dyn std::e
             wait_relay_quic_healthy("127.0.0.1:63365", "ramflux-relay", &node.ca_cert).await?;
         }
         wait_for_private_gateway_quic(node.gateway_quic_addr, &node.ca_cert).await?;
-        Box::pin(mvp_s35_assert_multi_device_activation(
-            node.gateway_quic_addr,
-            &node.ca_cert,
-            &node.gateway_url,
-        ))
-        .await?;
+        Box::pin(mvp_s35_assert_multi_device_activation(node.gateway_quic_addr, &node.ca_cert))
+            .await?;
         Ok::<(), Box<dyn std::error::Error>>(())
     })?;
     stack.node.guard.mark_success();
@@ -71,8 +67,8 @@ fn mvp_s35_realnet_multi_device_activation_fanout() -> Result<(), Box<dyn std::e
 async fn mvp_s35_assert_multi_device_activation(
     gateway_quic_addr: std::net::SocketAddr,
     ca_cert: &Path,
-    gateway_url: &str,
 ) -> Result<(), Box<dyn std::error::Error>> {
+    let deadline = tokio::time::Instant::now() + Duration::from_mins(4);
     let temp_root = temp_root("s35_multi_device")?;
     let bob_primary_socket = temp_root.join("bob_a/rfd.sock");
     let bob_restored_socket = temp_root.join("bob_b/rfd.sock");
@@ -265,56 +261,12 @@ async fn mvp_s35_assert_multi_device_activation(
                 .await?;
             assert_s35_decrypted_body(&bob_primary_received, b"s35 hello both devices")?;
 
-            let mut sync_envelope = itest_envelope("env_s35_own_sync", "fanout-placeholder");
-            sync_envelope.source_principal_id = "principal_s35_bob".to_owned();
-            sync_envelope.source_device_id = "bob_device_s35_a".to_owned();
-            sync_envelope.delivery_class = ramflux_protocol::DeliveryClass::SelfDeviceControl;
-            sync_envelope.encrypted_payload =
-                ramflux_protocol::encode_base64url(b"s35 opaque own-device dm sync");
-            sync_envelope.payload_hash = ramflux_crypto::blake3_256_base64url(
-                "ramflux.test.s35.own_device_sync.v1",
-                sync_envelope.encrypted_payload.as_bytes(),
-            );
-            let fanout: ramflux_node_core::ItestMvp10OwnDeviceFanoutResponse =
-                ramflux_node_core::itest_http_post_json(
-                    &format!("{gateway_url}/mvp10/own-devices/fanout"),
-                    &ramflux_node_core::ItestMvp10OwnDeviceFanoutRequest {
-                        principal_id: "principal_s35_bob".to_owned(),
-                        source_device_id: "bob_device_s35_a".to_owned(),
-                        envelope: sync_envelope,
-                    },
-                )?;
-            assert_eq!(fanout.delivered.len(), 1);
-            assert_eq!(fanout.delivered[0].device_id, "bob_device_s35_b");
-            let bob_restored_received = bob_restored
-                .request(
-                    Some("bob_s35_account".to_owned()),
-                    "message",
-                    "message.receive",
-                    serde_json::to_value(ramflux_sdk::LocalBusMessageReceiveRequest {
-                        limit: 10,
-                        conversation_id: None,
-                        auto_fetch_attachments: false,
-                        relay_service_key_base64: None,
-                    })?,
-                )
-                .await?;
-            let entries = bob_restored_received["entries"]
-                .as_array()
-                .ok_or("missing bob B gateway entries")?;
-            assert!(
-                entries.iter().any(|entry| {
-                    entry["envelope"]["envelope_id"]
-                        == ramflux_node_core::mvp10_fanout_envelope_id(
-                            "env_s35_own_sync",
-                            "bob_device_s35_b",
-                        )
-                }),
-                "Bob B did not receive own-device fanout entry: {bob_restored_received}",
-            );
-
-            mvp_s35_assert_second_device_deliver_frame_transport(gateway_quic_addr, ca_cert)
-                .await?;
+            mvp_s35_assert_encrypted_own_device_sync(
+                &mut bob_primary,
+                &mut bob_restored,
+                &bob_commitment,
+            )
+            .await?;
 
             drop(bob_primary);
             drop(bob_restored);
@@ -328,7 +280,7 @@ async fn mvp_s35_assert_multi_device_activation(
         result
     };
     let (bob_primary_result, bob_restored_result, alice_result, flow_result) =
-        Box::pin(tokio::time::timeout(Duration::from_mins(4), async {
+        Box::pin(tokio::time::timeout_at(deadline, async {
             tokio::join!(bob_primary_server, bob_restored_server, alice_server, flow)
         }))
         .await
@@ -337,6 +289,13 @@ async fn mvp_s35_assert_multi_device_activation(
     bob_restored_result?;
     alice_result?;
     flow_result?;
+    // Stop the account drivers before their device sessions are reused by the raw frame checks.
+    tokio::time::timeout_at(
+        deadline,
+        mvp_s35_assert_second_device_deliver_frame_transport(gateway_quic_addr, ca_cert),
+    )
+    .await
+    .map_err(|_| "S35 frame transport phase timed out")??;
     std::fs::remove_dir_all(&temp_root)?;
     Ok(())
 }
@@ -716,4 +675,78 @@ fn assert_s35_decrypted_body(
             .is_some_and(|bytes| bytes == body)
     });
     if found { Ok(()) } else { Err(format!("S35 decrypted body not found: {received}").into()) }
+}
+
+#[cfg(all(test, feature = "realnet"))]
+async fn mvp_s35_assert_encrypted_own_device_sync(
+    primary: &mut ramflux_sdk::LocalBusClient,
+    restored: &mut ramflux_sdk::LocalBusClient,
+    commitment: &str,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let envelope_id =
+        format!("s35-own-{}", ramflux_protocol::encode_base64url(ramflux_crypto::random_32()?));
+    let text = b"s35 encrypted own-device sync";
+    let submitted = primary
+        .request(
+            Some("bob_s35_account".to_owned()),
+            "message",
+            "message.submit",
+            serde_json::to_value(ramflux_sdk::LocalBusMessageSubmitRequest {
+                conversation_id: "conv_s35_own_sync".to_owned(),
+                message_id: "msg_s35_own_sync".to_owned(),
+                envelope_id: envelope_id.clone(),
+                source_principal_id: "principal_s35_bob".to_owned(),
+                sender_id: "bob_device_s35_a".to_owned(),
+                recipient_device_id: Some("bob_device_s35_b".to_owned()),
+                recipient_principal_commitment: Some(commitment.to_owned()),
+                target_delivery_id: "target_s35_bob_b".to_owned(),
+                encrypted_body_base64: String::new(),
+                plaintext_body_base64: Some(ramflux_protocol::encode_base64url(text)),
+                created_at: itest_now_unix_seconds(),
+                ttl: 300,
+                attachments: Vec::new(),
+                federation: None,
+            })?,
+        )
+        .await?;
+    assert_eq!(submitted["envelope"]["envelope_id"], envelope_id);
+    assert!(!serde_json::to_string(&submitted["envelope"])?.contains("conv_s35_own_sync"));
+    let received = mvp_s35_wait_own_device_plaintext(restored, &envelope_id).await?;
+    assert_s35_decrypted_body(&received, text)?;
+    let message = received["decrypted_messages"]
+        .as_array()
+        .and_then(|messages| {
+            messages
+                .iter()
+                .find(|message| message["entry"]["envelope"]["envelope_id"] == envelope_id)
+        })
+        .ok_or("missing Bob B own-device decrypted message")?;
+    assert_eq!(message["sender_id"], "principal_s35_bob");
+    assert_eq!(message["entry"]["envelope"]["source_principal_id"], "principal_s35_bob");
+    assert_eq!(message["entry"]["envelope"]["source_device_id"], "bob_device_s35_a");
+    assert_eq!(message["entry"]["envelope"]["target_delivery_id"], "target_s35_bob_b");
+    assert_eq!(message["plaintext_body_base64"], ramflux_protocol::encode_base64url(text));
+    Ok(())
+}
+
+#[cfg(all(test, feature = "realnet"))]
+async fn mvp_s35_wait_own_device_plaintext(
+    restored: &mut ramflux_sdk::LocalBusClient,
+    envelope_id: &str,
+) -> Result<serde_json::Value, Box<dyn std::error::Error>> {
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(15);
+    loop {
+        let received=restored.request(Some("bob_s35_account".to_owned()),"message","message.receive",serde_json::json!({"conversation_id":null,"limit":10,"auto_fetch_attachments":false})).await?;
+        if received["decrypted_messages"].as_array().is_some_and(|messages| {
+            messages
+                .iter()
+                .any(|message| message["entry"]["envelope"]["envelope_id"] == envelope_id)
+        }) {
+            return Ok(received);
+        }
+        if tokio::time::Instant::now() >= deadline {
+            return Err(format!("Bob B did not decrypt its own-device delivery: {received}").into());
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
 }
