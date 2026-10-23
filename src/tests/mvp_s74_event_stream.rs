@@ -19,7 +19,7 @@ fn mvp_s74_realnet_autonomous_sync_replay_and_daemon_restart() -> TestResult {
     {
         return Err("s74 requires RAMFLUX_OBJECT_V3=1 RAMFLUX_CROSS_GATEWAY=1".into());
     }
-    let stack = start_client_directory_stack(S8ComposePorts {
+    let mut stack = start_client_directory_stack(S8ComposePorts {
         gateway_http: 64_301,
         gateway_quic: 64_571,
         router_http: 64_300,
@@ -33,7 +33,12 @@ fn mvp_s74_realnet_autonomous_sync_replay_and_daemon_restart() -> TestResult {
         signaling_turn_tcp: 64_579,
         retention_http: 64_307,
     })?;
-    tokio::runtime::Builder::new_current_thread().enable_all().build()?.block_on(run(&stack.node))
+    tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()?
+        .block_on(run(&stack.node))?;
+    stack.node.guard.mark_success();
+    Ok(())
 }
 
 async fn run(node: &S8RealnetNode) -> TestResult {
