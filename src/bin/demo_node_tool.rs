@@ -11,7 +11,7 @@ use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use ramflux_protocol::{WellKnownClientRecord, encode_base64url, verify_client_discovery_record};
-use ramflux_transport::{GatewayQuicRequest, QuicGatewayClient};
+use ramflux_transport::{RelayClientQuicConfig, relay_client_quic_health};
 use serde::{Deserialize, Serialize};
 
 type Result<T = ()> = std::result::Result<T, Box<dyn std::error::Error>>;
@@ -184,28 +184,38 @@ async fn verify(origin: &str, expected_key: &str) -> Result {
         return Err("discovery public key does not match operator pin".into());
     }
     println!("discovery signature, freshness and operator pin: healthy ({})", record.node_id);
+    println!(
+        "node key fingerprint: {}",
+        ramflux_protocol::hash_hex(
+            ramflux_protocol::CLIENT_DISCOVERY_DOMAIN,
+            record.node_public_key.as_bytes(),
+        )
+    );
     let ca = TemporaryCa::write(&record.node_ca_cert_pem)?;
-    for (service, addr, name) in [
-        ("gateway", &record.gateway_quic_addr, &record.gateway_server_name),
-        ("relay", &record.relay_quic_addr, &record.relay_server_name),
-    ] {
-        let peer = tokio::net::lookup_host(addr).await?.next().ok_or("endpoint has no address")?;
-        let bind = if peer.is_ipv4() { "0.0.0.0:0" } else { "[::]:0" };
-        let connection =
-            QuicGatewayClient::connect(bind.parse()?, peer, name, &ca.0, Duration::from_secs(10))
-                .await?;
-        let response = connection
-            .request(&GatewayQuicRequest {
-                method: "GET".to_owned(),
-                path: "/healthz".to_owned(),
-                body: serde_json::Value::Null,
-            })
-            .await?;
-        if response.status != 200 {
-            return Err(format!("{service} QUIC unhealthy: {response:?}").into());
-        }
-        println!("{service} QUIC TLS/application health: healthy ({addr})");
+    let gateway = ramflux_sdk::probe_gateway_pre_account(&record, &ca.0).await;
+    if gateway.app != "ok" {
+        return Err(format!(
+            "gateway pre-account probe failed: {}",
+            serde_json::to_string(&gateway)?
+        )
+        .into());
     }
+    println!(
+        "gateway pre-account health: healthy (quic={} tcp={} session={})",
+        gateway.transport["quic"].as_str().unwrap_or("not_available"),
+        gateway.transport["tcp"].as_str().unwrap_or("not_available"),
+        gateway.session,
+    );
+    let peer = tokio::net::lookup_host(&record.relay_quic_addr)
+        .await?
+        .next()
+        .ok_or("relay endpoint has no resolved addresses")?;
+    let config = RelayClientQuicConfig::new(&peer.to_string(), &record.relay_server_name, &ca.0)?;
+    let response = relay_client_quic_health(&config, Duration::from_secs(10)).await?;
+    if response.status != 200 {
+        return Err(format!("relay QUIC unhealthy: {response:?}").into());
+    }
+    println!("relay QUIC TLS/application health: healthy ({})", record.relay_quic_addr);
     Ok(())
 }
 
