@@ -40,7 +40,7 @@ fn mvp_s42_realnet_tui_object_attachment_panel() -> Result<(), Box<dyn std::erro
         signaling_turn_tcp: 64_499,
         retention_http: 64_207,
     };
-    let stack = start_tui_object_v3_stack(ports)?;
+    let mut stack = start_tui_object_v3_stack(ports)?;
     let node = &stack.node;
     let relay_url = format!("http://127.0.0.1:{}", ports.relay_http);
     let runtime = tokio::runtime::Builder::new_current_thread().enable_all().build()?;
@@ -51,6 +51,7 @@ fn mvp_s42_realnet_tui_object_attachment_panel() -> Result<(), Box<dyn std::erro
         Box::pin(mvp_s42_assert_tui_object_attachment(node, &relay_url)).await?;
         Ok::<(), Box<dyn std::error::Error>>(())
     })?;
+    stack.node.guard.mark_success();
     drop(stack);
     Ok(())
 }

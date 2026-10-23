@@ -178,7 +178,7 @@ fn mvp_s55_realnet_object_v3_public_sdk_owner_four_ops() -> Result<(), Box<dyn s
     realnet_step("s55 trust material cleanup begin (best effort)", "");
     std::fs::remove_dir_all(&materials).ok();
     realnet_step("s55 trust material cleanup end", "");
-    node.guard.env.retain(|(key, _)| key != COMPOSE_FAILURE_LOG_SERVICES_ENV);
+    node.guard.mark_success();
     realnet_step("s55 owner four operations complete", "");
     Ok(())
 }

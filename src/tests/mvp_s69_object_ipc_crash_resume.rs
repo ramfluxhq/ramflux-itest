@@ -87,7 +87,7 @@ fn mvp_s69_realnet_object_ipc_crash_resume() -> Result<(), Box<dyn std::error::E
         signaling_turn_tcp: 64_779,
         retention_http: 64_687,
     };
-    let stack = s69_start_stack(ports)?;
+    let mut stack = s69_start_stack(ports)?;
     let relay_url = format!("http://127.0.0.1:{}", ports.relay_http);
 
     let runtime = tokio::runtime::Builder::new_multi_thread().enable_all().build()?;
@@ -428,6 +428,7 @@ fn mvp_s69_realnet_object_ipc_crash_resume() -> Result<(), Box<dyn std::error::E
         "relay must receive zero HTTP object requests in the v3 QUIC path:\n{relay_logs}"
     );
     eprintln!("s69: relay HTTP object requests = 0");
+    stack.node.guard.mark_success();
     Ok(())
 }
 
@@ -455,7 +456,7 @@ struct S69Stack {
     materials: PathBuf,
     relay_ca: PathBuf,
     sdk_env: Vec<(String, String)>,
-    _node: S8RealnetNode,
+    node: S8RealnetNode,
 }
 
 #[cfg(feature = "realnet")]
@@ -512,7 +513,7 @@ fn s69_start_stack(ports: S8ComposePorts) -> Result<S69Stack, Box<dyn std::error
         ("RAMFLUX_SDK_RELAY_OWNER_PRINCIPAL_ID".to_owned(), "principal_s69_owner".to_owned()),
         ("RAMFLUX_SDK_RELAY_AUDIENCE_NODE_ID".to_owned(), S69_AUDIENCE_NODE.to_owned()),
     ];
-    Ok(S69Stack { materials, relay_ca, sdk_env, _node: node })
+    Ok(S69Stack { materials, relay_ca, sdk_env, node })
 }
 
 #[cfg(feature = "realnet")]

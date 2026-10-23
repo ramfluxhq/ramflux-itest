@@ -105,7 +105,7 @@ exit 0
             "harness::realnet_compose_stun::failure_diagnostics::tests::",
             "failure_logs_precede_teardown_for_errors_and_unwinding"
         );
-        for mode in ["error", "panic", "success", "logs-error"] {
+        for mode in ["error", "readiness-error", "panic", "success", "logs-error"] {
             let journal = root.join(format!("{mode}.journal"));
             let output = std::process::Command::new(std::env::current_exe()?)
                 .args(["--exact", test_name, "--nocapture", "--test-threads=1"])
@@ -150,17 +150,34 @@ exit 0
 
     fn exercise_guard(mode: &str) -> Result<(), Box<dyn std::error::Error>> {
         let root = std::env::var("RAMFLUX_ITEST_DIAGNOSTIC_DEPLOY_ROOT")?;
-        let env = vec![(
-            COMPOSE_FAILURE_LOG_SERVICES_ENV.to_owned(),
-            "ramflux-relay,ramflux-gateway,ramflux-gateway-b".to_owned(),
-        )];
+        // Readiness fails before the test body: only the common v3 fixture marker is present.
+        let env = if mode == "readiness-error" || mode == "success" {
+            vec![("RAMFLUX_V3_MATERIALS_DIR".to_owned(), root.clone())]
+        } else {
+            vec![(
+                COMPOSE_FAILURE_LOG_SERVICES_ENV.to_owned(),
+                "ramflux-relay,ramflux-gateway,ramflux-gateway-b".to_owned(),
+            )]
+        };
         let guard = ComposeProjectDownGuard::new(
             root.into(),
             "ramflux-log-order-fixture".to_owned(),
             env,
             false,
         );
-        if mode == "panic" {
+        if mode == "readiness-error" {
+            let outcome = {
+                let _guard = guard;
+                tokio::runtime::Builder::new_current_thread().enable_all().build()?.block_on(
+                    crate::wait_relay_quic_healthy(
+                        "invalid socket address",
+                        "ramflux-relay",
+                        Path::new("unused-ca.pem"),
+                    ),
+                )
+            };
+            assert!(outcome.is_err(), "readiness configuration must fail before the test body");
+        } else if mode == "panic" {
             let outcome = std::panic::catch_unwind(move || {
                 let _guard = guard;
                 assert!(std::hint::black_box(false), "injected assertion failure");
@@ -168,7 +185,7 @@ exit 0
             assert!(outcome.is_err());
         } else if mode == "success" {
             let mut guard = guard;
-            guard.env.retain(|(key, _)| key != COMPOSE_FAILURE_LOG_SERVICES_ENV);
+            guard.mark_success();
         } else {
             let outcome: Result<(), Box<dyn std::error::Error>> = {
                 let _guard = guard;

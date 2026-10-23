@@ -17,7 +17,8 @@ pub(crate) async fn wait_relay_quic_healthy(
     ca_cert: &Path,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let config = ramflux_transport::RelayClientQuicConfig::new(peer_addr, server_name, ca_cert)?;
-    let context = format!("addr={peer_addr} server_name={server_name}");
+    let context =
+        format!("addr={peer_addr} server_name={server_name} ca_cert={}", ca_cert.display());
     wait_with_probe(
         &context,
         |timeout| {

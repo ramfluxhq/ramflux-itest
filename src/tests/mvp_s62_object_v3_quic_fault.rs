@@ -102,7 +102,7 @@ fn mvp_s62_realnet_object_v3_quic_fault() -> Result<(), Box<dyn std::error::Erro
         signaling_turn_tcp: 64_679,
         retention_http: 64_387,
     };
-    let node = start_s8_realnet_compose_project_with_env(
+    let mut node = start_s8_realnet_compose_project_with_env(
         S62_PROJECT,
         ports,
         &[
@@ -169,6 +169,7 @@ fn mvp_s62_realnet_object_v3_quic_fault() -> Result<(), Box<dyn std::error::Erro
         !relay_logs.contains("POST /relay/v1/object/"),
         "relay must not receive any HTTP object request across the fault flow:\n{relay_logs}"
     );
+    node.guard.mark_success();
     Ok(())
 }
 

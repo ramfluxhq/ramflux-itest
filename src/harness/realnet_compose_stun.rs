@@ -223,7 +223,18 @@ impl ComposeProjectDownGuard {
         gateway_compio: bool,
         notify_compio: bool,
     ) -> Self {
+        let mut env = env;
+        if env.iter().any(|(key, _)| key == "RAMFLUX_V3_MATERIALS_DIR") {
+            ensure_compose_default_env(
+                &mut env,
+                COMPOSE_FAILURE_LOG_SERVICES_ENV,
+                "ramflux-relay,ramflux-gateway,ramflux-gateway-b",
+            );
+        }
         Self { deploy_root, project_name, env, federation_compio, gateway_compio, notify_compio }
+    }
+    pub(crate) fn mark_success(&mut self) {
+        self.env.retain(|(key, _)| key != COMPOSE_FAILURE_LOG_SERVICES_ENV);
     }
 }
 
@@ -470,6 +481,13 @@ fn compose_env_with_required_defaults(env: &[(String, String)]) -> Vec<(String, 
     let mut compose_env = env.to_vec();
     ensure_itest_node_service_signing_seed_env(&mut compose_env);
     ensure_compose_default_env(&mut compose_env, "RAMFLUX_VERSION", "dev");
+    // podman-compose 1.3.0 can preserve a self-referential service default literally.
+    // Supply a concrete outer value to both the env file and compose process instead.
+    ensure_compose_default_env(
+        &mut compose_env,
+        "RAMFLUX_RELAY_ITEST_CAPTURE_FILE",
+        "/var/lib/ramflux/relay/itest-object-v3-capture.jsonl",
+    );
     ensure_compose_default_env(
         &mut compose_env,
         "RAMFLUX_GATEWAY_V3_ISSUER_CERT_FILE",
@@ -1038,4 +1056,27 @@ pub(crate) fn federation_dns_alias(project_name: &str) -> String {
             .collect::<String>()
             .trim_matches('-')
     )
+}
+
+#[cfg(test)]
+mod compose_default_tests {
+    use super::*;
+
+    #[test]
+    fn capture_path_is_concrete_and_preserves_explicit_fixture_values() {
+        let key = "RAMFLUX_RELAY_ITEST_CAPTURE_FILE";
+        for configured in [None, Some("/var/lib/ramflux/relay/custom-capture.jsonl")] {
+            let env = configured
+                .map(|value| vec![(key.to_owned(), value.to_owned())])
+                .unwrap_or_default();
+            let env = compose_env_with_required_defaults(&env);
+            let values: Vec<_> = env.iter().filter(|(name, _)| name == key).collect();
+            assert_eq!(values.len(), 1);
+            assert_eq!(
+                values[0].1,
+                configured.unwrap_or("/var/lib/ramflux/relay/itest-object-v3-capture.jsonl")
+            );
+            assert!(!values[0].1.contains("${"));
+        }
+    }
 }
