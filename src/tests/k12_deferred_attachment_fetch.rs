@@ -20,7 +20,7 @@ fn k12_realnet_deferred_attachment_fetch() -> TestResult {
     {
         return Err("k12 requires RAMFLUX_OBJECT_V3=1 RAMFLUX_CROSS_GATEWAY=1".into());
     }
-    let stack = start_client_directory_stack_named(
+    let mut stack = start_client_directory_stack_named(
         PROJECT,
         S8ComposePorts {
             gateway_http: 64_501,
@@ -42,7 +42,9 @@ fn k12_realnet_deferred_attachment_fetch() -> TestResult {
         )],
     )?;
     let runtime = tokio::runtime::Builder::new_current_thread().enable_all().build()?;
-    runtime.block_on(run(&stack.node))
+    runtime.block_on(run(&stack.node))?;
+    stack.node.guard.mark_success();
+    Ok(())
 }
 
 async fn run(node: &S8RealnetNode) -> TestResult {
