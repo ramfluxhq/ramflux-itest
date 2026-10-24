@@ -144,6 +144,10 @@ pub(super) async fn send_event(
     let bytes = wire(conversation, version, command)?;
     let result=call(bus,"agent","surface.send",json!({"conversation_id":conversation,"message_id":format!("{surface}-{suffix}"),"wire_base64":ramflux_protocol::encode_base64url(bytes)})).await?;
     assert_eq!(result["accepted"], true, "surface event rejected: {result}");
+    assert_eq!(
+        result["delivery_state"], "submitted",
+        "surface must complete the normal text submission path: {result}"
+    );
     Ok(())
 }
 pub(super) fn action_wire(
