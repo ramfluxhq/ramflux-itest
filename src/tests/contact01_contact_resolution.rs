@@ -14,8 +14,9 @@ fn contact01_realnet_add_then_dm() -> TestResult {
         return Ok(());
     }
     let topology = start_client_discovery_topology_named("ramflux-contact01", 60600)?;
+    let mut diagnostics = ContactFailureLogs { topology: &topology, completed: false };
     let runtime = tokio::runtime::Builder::new_current_thread().enable_all().build()?;
-    runtime.block_on(async {
+    let result = runtime.block_on(async {
         wait_for_private_gateway_quic("127.0.0.1:60643".parse()?, &topology.ca).await?;
         let binary = mvp_s4_build_rf_binary().await?;
         let root = temp_root("contact01")?;
@@ -92,8 +93,23 @@ fn contact01_realnet_add_then_dm() -> TestResult {
         result?;
         std::fs::remove_dir_all(root)?;
         Ok::<(), Box<dyn std::error::Error>>(())
-    })
+    });
+    diagnostics.completed = result.is_ok();
+    result
 }
+
+struct ContactFailureLogs<'a> {
+    topology: &'a ClientDiscoveryTopology,
+    completed: bool,
+}
+impl Drop for ContactFailureLogs<'_> {
+    fn drop(&mut self) {
+        if !self.completed {
+            self.topology.dump_contact_failure_logs();
+        }
+    }
+}
+
 async fn rf(binary: &Path, socket: &Path, args: &[&str]) -> TestResult<Value> {
     let mut all = vec!["--socket", socket.to_str().ok_or("socket path")?];
     all.extend_from_slice(args);

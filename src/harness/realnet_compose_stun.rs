@@ -362,6 +362,18 @@ impl ProductionComposeDownGuard {
     ) -> Self {
         Self { deploy_root, project_name, env }
     }
+
+    pub(crate) fn dump_failure_logs(&self, services: &[&str]) {
+        let mut env = self.env.clone();
+        env.retain(|(key, _)| key != COMPOSE_FAILURE_LOG_SERVICES_ENV);
+        env.push((COMPOSE_FAILURE_LOG_SERVICES_ENV.into(), services.join(",")));
+        dump_compose_failure_logs(
+            &self.deploy_root,
+            &self.project_name,
+            &env,
+            ItestComposeOverrides::default(),
+        );
+    }
 }
 
 #[cfg(all(test, feature = "realnet"))]

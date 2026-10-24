@@ -11,6 +11,12 @@ pub(crate) struct ClientDiscoveryTopology {
     _materials: T22ProductionMaterials,
 }
 
+impl ClientDiscoveryTopology {
+    pub(crate) fn dump_contact_failure_logs(&self) {
+        self._compose.dump_failure_logs(&["ramflux-gateway", "ramflux-router"]);
+    }
+}
+
 pub(crate) fn start_client_discovery_topology()
 -> Result<ClientDiscoveryTopology, Box<dyn std::error::Error>> {
     start_client_discovery_topology_named("ramflux-s72-client-discovery", 58400)
