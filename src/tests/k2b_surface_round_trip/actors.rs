@@ -7,7 +7,7 @@ pub(super) async fn call(
     method: &str,
     body: Value,
 ) -> TestResult<Value> {
-    Ok(bus.request(Some(account.into()), "surface", method, &body).await?)
+    Ok(bus.request(Some(account.into()), "surface", method, body).await?)
 }
 pub(super) async fn create(
     bus: &mut ramflux_sdk::LocalBusClient,
@@ -56,7 +56,7 @@ pub(super) async fn create_terminal(
             prekey_http_url: None,
         },
     };
-    Ok(bus.request(None, "account", "account.create", &serde_json::to_value(request)?).await?)
+    Ok(bus.request(None, "account", "account.create", serde_json::to_value(request)?).await?)
 }
 pub(super) async fn contacts(
     human: &mut ramflux_sdk::LocalBusClient,

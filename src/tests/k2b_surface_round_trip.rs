@@ -270,6 +270,9 @@ async fn finish_surface(
     .await?;
     let closed = wait_surface(human, "human", surface, 4).await?;
     assert_eq!(closed["closed"], true);
+    let resync = call(agent,"agent","surface.resync",json!({"surface_ref":closed["surface_ref"],"message_id":format!("{surface}-explicit-resync")})).await?;
+    assert_eq!(resync["accepted"], true);
+    assert_eq!(resync["delivery_state"], "submitted");
     Ok(closed)
 }
 
