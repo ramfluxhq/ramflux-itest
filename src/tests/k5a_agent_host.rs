@@ -150,7 +150,7 @@ async fn call(
     method: &str,
     body: Value,
 ) -> TestResult<Value> {
-    Ok(bus.request(Some(account.into()), "client", method, &body).await?)
+    Ok(bus.request(Some(account.into()), "client", method, body).await?)
 }
 async fn create(
     bus: &mut ramflux_sdk::LocalBusClient,
@@ -165,6 +165,8 @@ async fn create(
     let target = format!("target_k5a_{id}");
     let request = ramflux_sdk::LocalBusAccountCreateRequest {
         node_id: None,
+        kind: None,
+        label: None,
         local_account_id: id.into(),
         principal_id: principal.clone(),
         principal_commitment: String::new(),
@@ -190,7 +192,7 @@ async fn create(
         },
     };
     let created =
-        bus.request(None, "account", "account.create", &serde_json::to_value(request)?).await?;
+        bus.request(None, "account", "account.create", serde_json::to_value(request)?).await?;
     if headless {
         assert_eq!(created["client_mode"], "headless_ai");
     }
@@ -220,7 +222,7 @@ async fn wait_replies(
             .as_array()
             .ok_or("missing messages")?
             .iter()
-            .filter(|m| m["sender_id"] == agent["device_id"])
+            .filter(|m| m["sender_id"] == agent["device_id"] && m["content_type"] != "surface")
             .collect::<Vec<_>>();
         if replies.len() > count {
             return Err("duplicate agent reply".into());

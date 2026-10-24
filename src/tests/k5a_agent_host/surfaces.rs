@@ -22,6 +22,9 @@ pub(super) async fn round_trip(
     call(bus,"alice","group.send",json!({"group_id":"group_k5a","conversation_id":"group_thread_k5a","message_id":"checklist_k5a2","sender_id":own["device_id"],"encrypted_body_base64":"","plaintext_body_base64":ramflux_protocol::encode_base64url(b"@agent checklist")})).await?;
     let current = wait(bus, None, false).await?;
     assert_eq!(current["snapshot"]["components"][0]["text"], REPLY);
+    assert_eq!(current["author_principal_id"], peer["principal_id"]);
+    assert_eq!(current["streams"]["reply"], "final");
+    assert_eq!(current["out_of_sync"], false);
     assert!(
         current["version"].as_u64().ok_or("version")? >= 4,
         "create, multiple chunks, fallback patch"
@@ -37,6 +40,8 @@ pub(super) async fn round_trip(
     assert_eq!(sent["accepted"], true);
     let completed = wait(bus, current["surface_id"].as_str(), true).await?;
     assert_eq!(completed["snapshot"]["fallbackText"], "You chose Thursday.");
+    assert_eq!(completed["streams"]["reply"], "final");
+    assert_eq!(completed["out_of_sync"], false);
     assert_eq!(completed["snapshot"]["allowedActions"], json!([]));
     let read =
         call(bus, "alice", "message.read", json!({"conversation_id":"group_thread_k5a"})).await?;
