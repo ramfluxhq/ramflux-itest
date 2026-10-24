@@ -119,13 +119,15 @@ async fn negotiate(
     call(agent,"agent","task.update",json!({"conversation_id":"dm_k3b","task_id":"task-k3b","version":4,"state":"needs_me","steps":[{"id":"step","title":"Run shell","state":"needs_me","needs_me":{"kind":"approval","grant_id":grant_id}}]})).await?;
     let current = wait_task(human2, "human2", "dm_k3b", 4).await?;
     assert_eq!(current["requester"], a["principal_id"]);
-    let resolve = json!({"conversation_id":"dm_k3b","task_id":"task-k3b","message_id":"resolve-k3b","base_revision":4,"step_id":"step","target":{"kind":"approval","grant_id":grant_id},"decision_id":approval["approval_id"],"decision":"resume"});
+    let mut resolve = json!({"conversation_id":"dm_k3b","task_id":"task-k3b","message_id":"resolve-k3b","base_revision":4,"step_id":"step","target":{"kind":"approval","grant_id":grant_id},"decision_id":approval["approval_id"],"decision":"resume"});
     let rejected = call(agent, "agent", "task.resolve", resolve.clone())
         .await
         .err()
         .ok_or("agent resolved its own intervention")?;
     assert!(rejected.to_string().contains("task human decision requires attended human account"));
-    grant_from_second_human_device(agent, &approval).await?;
+    let decision = grant_from_second_human_device(human2, agent, &grant_id).await?;
+    assert_eq!(decision["decision_id"], approval["approval_id"]);
+    resolve["decision_id"] = decision["approval_id"].clone();
     let resolving = call(human2, "human2", "task.resolve", resolve.clone()).await?;
     assert_eq!(
         resolving["pending"], true,
@@ -137,6 +139,13 @@ async fn negotiate(
     let mut replay = resolve;
     replay["message_id"] = json!("replay-k3b");
     assert!(call(human2, "human2", "task.resolve", replay).await.is_err());
+    let ran=call(agent,"agent","mcp.tool.started",json!({"server_id":"server-k3b","tool_name":"shell","arguments":{"cmd":"echo task"},"operation_origin":"ai_mcp"})).await?;
+    assert_eq!(ran["status"], "ok");
+    let reused=call(agent,"agent","mcp.tool.started",json!({"server_id":"server-k3b","tool_name":"shell","arguments":{"cmd":"echo task"},"operation_origin":"ai_mcp"})).await?;
+    assert_eq!(
+        reused["status"], "approval_required",
+        "tool grant remains single-use after task resolution"
+    );
     call(agent,"agent","task.update",json!({"conversation_id":"dm_k3b","task_id":"task-k3b","version":6,"state":"done","steps":[{"id":"step","title":"Run shell","state":"done"}]})).await?;
     assert_eq!(wait_task(human, "human", "dm_k3b", 6).await?["state"], "done");
     let messages =

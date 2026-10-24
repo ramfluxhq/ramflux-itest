@@ -93,40 +93,41 @@ pub(super) async fn approval(bus: &mut ramflux_sdk::LocalBusClient) -> TestResul
     Ok(result["approval"].clone())
 }
 pub(super) async fn grant_from_second_human_device(
-    bus: &mut ramflux_sdk::LocalBusClient,
-    approval: &Value,
-) -> TestResult {
-    // This is the existing App signer contract. The fixture owns the second device's key,
-    // signs the daemon's immutable approval body, then submits it to the target daemon.
-    let details = &approval["details"];
-    let approval_id = approval["approval_id"].as_str().ok_or("approval id")?;
-    let body = ramflux_sdk::LocalMcpGrantSigningBody {
-        approval_id: approval_id.into(),
-        grant_id: details["requested_grant_id"]
-            .as_str()
-            .map_or_else(|| format!("grant_{approval_id}"), str::to_owned),
-        server_id: approval["server_id"].as_str().ok_or("server")?.into(),
-        tool_name: approval["tool_name"].as_str().ok_or("tool")?.into(),
-        tool_scope: approval["tool_scope"].as_str().map(str::to_owned),
-        capability: serde_json::from_value(approval["capability"].clone())?,
-        registry_hash: details["registry_hash"].as_str().ok_or("registry")?.into(),
-        tool_manifest_set_hash: details["tool_manifest_set_hash"]
-            .as_str()
-            .ok_or("manifest")?
-            .into(),
-        full_delegation: false,
-        single_use: true,
-        arguments_hash: Some(details["arguments_hash"].as_str().ok_or("arguments")?.into()),
-        expires_at: approval["expires_at"].as_i64().ok_or("expiry")?,
-    };
-    let device = ramflux_crypto::create_device_branch(
-        "principal_k3b_human",
-        "device_k3b_human2",
-        1,
-        [43; 32],
-    );
-    let signature = ramflux_crypto::sign_with_device_branch(&device, &body)?;
-    let granted=call(bus,"agent","mcp.approval.granted",json!({"approval_id":approval_id,"signed_by_device_id":device.device_id,"signer_public_key":ramflux_protocol::encode_base64url(device.signing_key.verifying_key().to_bytes()),"signature":signature})).await?;
-    assert_eq!(granted["signing_body"], serde_json::to_value(body)?);
-    Ok(())
+    human2: &mut ramflux_sdk::LocalBusClient,
+    agent: &mut ramflux_sdk::LocalBusClient,
+    grant_id: &str,
+) -> TestResult<Value> {
+    let mut pending = None;
+    for _ in 0..300 {
+        let rows = call(human2, "human2", "grant.list", json!({})).await?;
+        pending = rows["approvals"]
+            .as_array()
+            .and_then(|a| a.iter().find(|v| v["grant_id"] == grant_id))
+            .cloned();
+        if pending.is_some() {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    let pending = pending.ok_or("remote approval did not reach requester device A2")?;
+    assert_eq!(pending["task_binding"]["task_id"], "task-k3b");
+    assert_eq!(pending["task_binding"]["step_id"], "step");
+    assert_eq!(pending["task_binding"]["opening_revision"], 4);
+    let decision =
+        call(human2, "human2", "grant.approve", json!({"approval_id":pending["approval_id"]}))
+            .await?;
+    assert_eq!(decision["status"], "approved");
+    for _ in 0..300 {
+        let rows = call(agent, "agent", "grant.list", json!({})).await?;
+        if let Some(grant) =
+            rows["grants"].as_array().and_then(|a| a.iter().find(|v| v["grant_id"] == grant_id))
+        {
+            assert_eq!(grant["signed_by_device_id"], "device_k3b_human2");
+            assert_eq!(grant["signing_body"]["single_use"], true);
+            assert_eq!(grant["signing_body"]["task_binding"], pending["task_binding"]);
+            return Ok(decision);
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    Err("requester signed decision did not return to the assignee daemon".into())
 }

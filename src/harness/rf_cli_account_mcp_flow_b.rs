@@ -1053,6 +1053,7 @@ pub(crate) fn mvp_s6_signed_approval_grant(
     let registry_hash = mvp_s6_registry_hash_from_approval(approval)?;
     let tool_manifest_set_hash = mvp_s6_tool_manifest_set_hash_from_approval(approval)?;
     let body = ramflux_sdk::LocalMcpGrantSigningBody {
+        task_binding: None,
         approval_id: approval_id.to_owned(),
         grant_id,
         server_id: approval["server_id"].as_str().unwrap_or("wildcard").to_owned(),
