@@ -6,6 +6,8 @@
 use super::*;
 use serde_json::{Value, json};
 use std::os::unix::fs::{MetadataExt, PermissionsExt};
+#[path = "k5a_agent_host/build.rs"]
+mod build;
 #[path = "k5a_agent_host/diagnostics.rs"]
 mod diagnostics;
 #[path = "k5a_agent_host/surfaces.rs"]
@@ -62,17 +64,14 @@ async fn run(node: &S8RealnetNode, surface_case: bool) -> TestResult {
     std::fs::set_permissions(&root, std::fs::Permissions::from_mode(0o700))?;
     let a_socket = PathBuf::from(format!("/tmp/rf-k5a-a-{}.sock", std::process::id()));
     let b_socket = PathBuf::from(format!("/tmp/rf-k5a-b-{}.sock", std::process::id()));
-    let rf = mvp_s4_build_rf_binary().await?;
-    let manifest = code_root().join("ramflux/Cargo.toml");
-    let status = tokio::process::Command::new("cargo")
-        .args(["build", "--bin", "ramflux-agent-host", "--manifest-path"])
-        .arg(manifest)
-        .status()
-        .await?;
-    if !status.success() {
-        return Err("agent host build failed".into());
-    }
-    let binary = code_root().join("ramflux/target/debug/ramflux-agent-host");
+    let rf = build::binary(
+        "rf",
+        &code_root().join("ramflux/apps/rf/Cargo.toml"),
+        Some("itest-local-mint"),
+    )
+    .await?;
+    let binary =
+        build::binary("ramflux-agent-host", &code_root().join("ramflux/Cargo.toml"), None).await?;
     let mut a =
         client_directory_daemon_command(&rf, &a_socket, &root.join("alice"), &node.ca_cert, None)
             .spawn()?;
