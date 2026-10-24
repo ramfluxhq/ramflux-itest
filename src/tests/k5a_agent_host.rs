@@ -6,9 +6,18 @@
 use super::*;
 use serde_json::{Value, json};
 use std::os::unix::fs::{MetadataExt, PermissionsExt};
+#[path = "k5a_agent_host/surfaces.rs"]
+mod surfaces;
 type TestResult<T = ()> = Result<T, Box<dyn std::error::Error>>;
 #[test]
 fn k5a_realnet_agent_replies_in_dm_and_group() -> TestResult {
+    scenario(false)
+}
+#[test]
+fn k5a2_realnet_agent_surface() -> TestResult {
+    scenario(true)
+}
+fn scenario(surface_case: bool) -> TestResult {
     if std::env::var("RAMFLUX_ITEST_REALNET").as_deref() != Ok("1") {
         eprintln!("skipping k5a: set RAMFLUX_ITEST_REALNET=1 on the QA container host");
         return Ok(());
@@ -18,32 +27,33 @@ fn k5a_realnet_agent_replies_in_dm_and_group() -> TestResult {
     {
         return Err("k5a requires RAMFLUX_OBJECT_V3=1 RAMFLUX_CROSS_GATEWAY=1".into());
     }
+    let base = if surface_case { 64500 } else { 64600 };
     let mut stack = start_client_directory_stack_named(
-        "ramflux-k5a-agent-host",
+        if surface_case { "ramflux-k5a2-agent-surfaces" } else { "ramflux-k5a-agent-host" },
         S8ComposePorts {
-            gateway_http: 64601,
-            gateway_quic: 64671,
-            router_http: 64600,
-            router_mesh: 64672,
-            notify_http: 64603,
-            federation_http: 64602,
-            federation_mesh: 64673,
-            relay_http: 64604,
-            relay_media_udp: 64640,
-            signaling_turn_udp: 64678,
-            signaling_turn_tcp: 64679,
-            retention_http: 64607,
+            gateway_http: base + 1,
+            gateway_quic: base + 71,
+            router_http: base,
+            router_mesh: base + 72,
+            notify_http: base + 3,
+            federation_http: base + 2,
+            federation_mesh: base + 73,
+            relay_http: base + 4,
+            relay_media_udp: base + 40,
+            signaling_turn_udp: base + 78,
+            signaling_turn_tcp: base + 79,
+            retention_http: base + 7,
         },
         &[],
     )?;
     tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()?
-        .block_on(run(&stack.node))?;
+        .block_on(run(&stack.node, surface_case))?;
     stack.node.guard.mark_success();
     Ok(())
 }
-async fn run(node: &S8RealnetNode) -> TestResult {
+async fn run(node: &S8RealnetNode, surface_case: bool) -> TestResult {
     wait_relay_quic_healthy(S73_RELAY_QUIC, "ramflux-relay", &node.ca_cert).await?;
     wait_for_private_gateway_quic(S73_GATEWAY_B_QUIC.parse()?, &node.ca_cert).await?;
     let root = temp_root("k5a")?;
@@ -77,13 +87,14 @@ async fn run(node: &S8RealnetNode) -> TestResult {
             let contact=call(bus,id,"contact.add",json!({"link_id":format!("friend_k5a_{id}"),"requester_id":from["principal_commitment"],"target_id":to["principal_commitment"]})).await?;assert_eq!(contact["state"],"accepted");
         }
         let config=root.join("host.json");let state=root.join("cursor.json");
-        std::fs::write(&config,serde_json::to_vec(&json!({"socket":b_socket,"state_file":state,"account_id":"agent","per_conversation_interval_ms":100,"rules":[{"pattern":"@agent ping","reply":"pong"},{"pattern":"@agent summarize","reply":"Summary\n- deterministic\n- complete"}]}))?)?;
+        std::fs::write(&config,serde_json::to_vec(&json!({"socket":b_socket,"state_file":state,"account_id":"agent","per_conversation_interval_ms":100,"rules":[{"pattern":"@agent ping","reply":"pong"},{"pattern":"@agent summarize","reply":"Summary\n- deterministic\n- complete"},{"pattern":"@agent checklist","reply":surfaces::REPLY,"surface":{"chunk_bytes":256,"choices":[{"id":"thu","label":"Thursday"},{"id":"mon","label":"Monday"}],"close_on_action":true}}]}))?)?;
         let mut host=spawn_host(&binary,&config)?;wait_checkpoint(&state,None).await?;
         send_dm(&mut alice,&own,&peer,"ping_dm").await?;
         wait_replies(&mut alice,"dm_k5a",1,&peer).await?;
         create_group(&mut alice,&mut agent,&own,&peer).await?;
         call(&mut alice,"alice","group.send",json!({"group_id":"group_k5a","conversation_id":"group_thread_k5a","message_id":"ping_group","sender_id":own["device_id"],"encrypted_body_base64":"","plaintext_body_base64":ramflux_protocol::encode_base64url(b"@agent ping")})).await?;
         wait_replies(&mut alice,"group_thread_k5a",1,&peer).await?;
+        let surface = if surface_case { Some(surfaces::round_trip(&mut alice,&own,&peer).await?) } else {None};
         let before=wait_checkpoint(&state,None).await?;
         host.start_kill()?;host.wait().await?;
         let previous_inode=std::fs::metadata(&state)?.ino();
@@ -91,6 +102,7 @@ async fn run(node: &S8RealnetNode) -> TestResult {
         let after=wait_checkpoint(&state,Some(previous_inode)).await?;assert!(after>=before,"cursor must survive process restart");
         tokio::time::sleep(Duration::from_secs(2)).await;
         wait_replies(&mut alice,"dm_k5a",1,&peer).await?;wait_replies(&mut alice,"group_thread_k5a",1,&peer).await?;
+        if let Some(before)=surface {surfaces::after_restart(&mut alice,&before).await?;}
         send_dm(&mut alice,&own,&peer,"ping_dm_after_restart").await?;
         wait_replies(&mut alice,"dm_k5a",2,&peer).await?;
         host.start_kill()?;host.wait().await?;
