@@ -47,11 +47,11 @@ fn contact01_realnet_add_then_dm() -> TestResult {
                     &["contact", "add", "--account", "alice", "--principal", "bob"],
                 )
                 .await?;
-                assert_contact(&added, "bob")?;
+                assert_contact(&added, "bob", "lookup")?;
                 let accepted =
                     call(&mut bob, "bob", "contact.accept", json!({"principal_id":"alice"}))
                         .await?;
-                assert_contact(&accepted, "alice")?;
+                assert_contact(&accepted, "alice", "lookup")?;
                 exchange(&mut alice, &mut bob, "alice", "bob", "principal").await?;
                 // A second fresh pair proves card resolution without identity state from principal lookup.
                 create(&binary, &a, "carol", "c1", "c2").await?;
@@ -71,10 +71,10 @@ fn contact01_realnet_add_then_dm() -> TestResult {
                     ],
                 )
                 .await?;
-                assert_contact(&added, "dave")?;
+                assert_contact(&added, "dave", "card")?;
                 let accepted =
                     call(&mut bob, "dave", "contact.accept", json!({"card":carol["link"]})).await?;
-                assert_contact(&accepted, "carol")?;
+                assert_contact(&accepted, "carol", "card")?;
                 exchange(&mut alice, &mut bob, "carol", "dave", "card").await?;
                 Ok::<(), Box<dyn std::error::Error>>(())
             }
@@ -134,11 +134,12 @@ async fn create(binary: &Path, socket: &Path, id: &str, root: &str, device: &str
     assert_eq!(created["local_account_id"], id);
     Ok(())
 }
-fn assert_contact(response: &Value, principal: &str) -> TestResult {
+fn assert_contact(response: &Value, principal: &str, source: &str) -> TestResult {
     let contact = &response["contact"];
     assert_eq!(contact["principal_id"], principal);
     assert_eq!(contact["reachable"], true);
     assert_eq!(contact["verified"], false);
+    assert_eq!(contact["root_source"], source);
     assert_ne!(contact["root_commitment"].as_str().ok_or("root commitment missing")?, "");
     Ok(())
 }
