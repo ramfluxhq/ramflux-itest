@@ -493,6 +493,7 @@ pub(crate) fn mvp_s1_identity_register_request(
         ramflux_protocol::encode_base64url(root.signing_key.verifying_key().to_bytes());
     let root_public_key_bytes = ramflux_protocol::decode_base64url(&root_public_key)?;
     Ok(ramflux_node_core::IdentityRegisterRequest {
+        device_set: None,
         principal_commitment: ramflux_crypto::blake3_256_base64url(
             "ramflux.identity.root_public_key.commitment.v1",
             &root_public_key_bytes,

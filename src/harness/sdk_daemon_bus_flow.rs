@@ -175,6 +175,7 @@ pub(crate) async fn mvp_s2_assert_sdk_session_dm_resume_with_transport(
     let dm_ciphertext = alice_dm.encrypt(plaintext, b"mvp_s2_sdk_ad")?;
     let encrypted_body = serde_json::to_vec(&dm_ciphertext)?;
     let message = ramflux_sdk::GatewayDirectMessage {
+        recipient_principal_commitment: None,
         conversation_id: "conv_s2_sdk".to_owned(),
         message_id: "msg_s2_sdk_1".to_owned(),
         envelope_id: "env_s2_sdk_dm_1".to_owned(),
@@ -208,7 +209,12 @@ pub(crate) async fn mvp_s2_assert_sdk_session_dm_resume_with_transport(
     bob.send_direct_message("conv_s2_sdk", "msg_s2_sdk_1", "alice_s2", &decrypted)?;
 
     let ack_cursor = bob
-        .ack_gateway_delivery(&mut bob_engine, "env_s2_sdk_dm_1", "bob_device_s2", 1_760_000_101)
+        .ack_gateway_delivery(
+            &mut bob_engine,
+            "env_s2_sdk_dm_1",
+            &bob.owned_device_identity()?,
+            1_760_000_101,
+        )
         .await?;
     assert_eq!(ack_cursor.inbox_seq, 1);
     assert!(ack_cursor.acked_envelope_ids.contains(&"env_s2_sdk_dm_1".to_owned()));

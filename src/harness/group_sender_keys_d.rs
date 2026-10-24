@@ -444,7 +444,7 @@ pub(crate) async fn mvp_s7_send_sender_key_distribution(
         .ack_gateway_delivery(
             recipient_engine,
             envelope_id,
-            recipient_spec.device_id,
+            &recipient.owned_device_identity()?,
             1_760_000_701,
         )
         .await?;
@@ -480,7 +480,7 @@ pub(crate) async fn mvp_s7_deliver_group_message(
         .ack_gateway_delivery(
             recipient_engine,
             envelope_id,
-            recipient_spec.device_id,
+            &recipient.owned_device_identity()?,
             1_760_000_702,
         )
         .await?;
@@ -523,7 +523,12 @@ pub(crate) async fn mvp_s7_deliver_removed_member_message_and_assert_old_epoch_k
         forbidden_plaintext,
     )?;
     removed
-        .ack_gateway_delivery(removed_engine, envelope_id, removed_spec.device_id, 1_760_000_703)
+        .ack_gateway_delivery(
+            removed_engine,
+            envelope_id,
+            &removed.owned_device_identity()?,
+            1_760_000_703,
+        )
         .await?;
     Ok(())
 }
@@ -650,6 +655,7 @@ pub(crate) fn mvp_s7_gateway_message(
     encrypted_body: Vec<u8>,
 ) -> ramflux_sdk::GatewayDirectMessage {
     ramflux_sdk::GatewayDirectMessage {
+        recipient_principal_commitment: None,
         conversation_id: conversation_id.to_owned(),
         message_id: message_id.to_owned(),
         envelope_id: envelope_id.to_owned(),

@@ -30,25 +30,33 @@ fn group_governance_roles_member_limit_and_remove() -> Result<(), Box<dyn std::e
     db.create_group("group_1", "alice")?;
     db.add_group_member("group_1", "bob", "admin")?;
     db.add_group_member("group_1", "carol", "member")?;
+    for name in ["alice", "bob", "carol"] {
+        bind_fixture_member(&db, "group_1", name)?;
+    }
     assert!(matches!(
-        db.remove_group_member("group_1", "bob", "alice"),
+        db.remove_group_member("group_1", &fixture_device("bob")?, &fixture_device("alice")?),
         Err(ramflux_storage::StorageError::GroupPermissionDenied)
     ));
     assert!(matches!(
-        db.remove_group_member("group_1", "carol", "bob"),
+        db.remove_group_member("group_1", &fixture_device("carol")?, &fixture_device("bob")?),
         Err(ramflux_storage::StorageError::GroupPermissionDenied)
     ));
     assert!(matches!(
-        db.ensure_group_member_can_send("group_1", "carol", true),
+        db.ensure_group_member_can_send("group_1", &fixture_device("carol")?, true),
         Err(ramflux_storage::StorageError::GroupPermissionDenied)
     ));
-    db.ensure_group_member_can_send("group_1", "bob", true)?;
+    db.ensure_group_member_can_send("group_1", &fixture_device("bob")?, true)?;
     assert!(matches!(
-        db.ensure_group_member_can_mute("group_1", "carol", "bob"),
+        db.ensure_group_member_can_mute(
+            "group_1",
+            &fixture_device("carol")?,
+            &fixture_device("bob")?
+        ),
         Err(ramflux_storage::StorageError::GroupPermissionDenied)
     ));
-    db.ensure_group_member_can_mute("group_1", "alice", "bob")?;
-    let group = db.remove_group_member("group_1", "bob", "carol")?;
+    db.ensure_group_member_can_mute("group_1", &fixture_device("alice")?, &fixture_device("bob")?)?;
+    let group =
+        db.remove_group_member("group_1", &fixture_device("bob")?, &fixture_device("carol")?)?;
     assert!(!group.members.contains("carol"));
     assert_eq!(group.roles.get("bob").map(String::as_str), Some("admin"));
 
@@ -76,76 +84,51 @@ fn group_role_change_permission_matrix_protects_owner_and_admin()
     db.add_group_member("group_1", "dave", "member")?;
     db.add_group_member("group_1", "bot", "bot")?;
 
+    for name in ["alice", "bob", "carol", "dave", "bot"] {
+        bind_fixture_member(&db, "group_1", name)?;
+    }
     assert!(matches!(
-        db.apply_group_role_change(&mvp_group_role_change(
-            "evt_admin_owner",
-            "bob",
-            "alice",
-            5,
-            6,
-            "member",
-        )),
+        db.apply_group_role_change(
+            &mvp_group_role_change("evt_admin_owner", "bob", "alice", 5, 6, "member",),
+            &fixture_device("bob")?
+        ),
         Err(ramflux_storage::StorageError::GroupPermissionDenied)
     ));
     assert!(matches!(
-        db.apply_group_role_change(&mvp_group_role_change(
-            "evt_admin_admin",
-            "bob",
-            "carol",
-            5,
-            6,
-            "member",
-        )),
+        db.apply_group_role_change(
+            &mvp_group_role_change("evt_admin_admin", "bob", "carol", 5, 6, "member",),
+            &fixture_device("bob")?
+        ),
         Err(ramflux_storage::StorageError::GroupPermissionDenied)
     ));
     assert!(matches!(
-        db.apply_group_role_change(&mvp_group_role_change(
-            "evt_self_promote",
-            "dave",
-            "dave",
-            5,
-            6,
-            "admin",
-        )),
+        db.apply_group_role_change(
+            &mvp_group_role_change("evt_self_promote", "dave", "dave", 5, 6, "admin",),
+            &fixture_device("dave")?
+        ),
         Err(ramflux_storage::StorageError::GroupPermissionDenied)
     ));
 
-    let group = db.apply_group_role_change(&mvp_group_role_change(
-        "evt_owner_demote_admin",
-        "alice",
-        "bob",
-        5,
-        6,
-        "member",
-    ))?;
+    let group = db.apply_group_role_change(
+        &mvp_group_role_change("evt_owner_demote_admin", "alice", "bob", 5, 6, "member"),
+        &fixture_device("alice")?,
+    )?;
     assert_eq!(group.roles.get("bob").map(String::as_str), Some("member"));
-    let group = db.apply_group_role_change(&mvp_group_role_change(
-        "evt_owner_promote_member",
-        "alice",
-        "dave",
-        6,
-        7,
-        "admin",
-    ))?;
+    let group = db.apply_group_role_change(
+        &mvp_group_role_change("evt_owner_promote_member", "alice", "dave", 6, 7, "admin"),
+        &fixture_device("alice")?,
+    )?;
     assert_eq!(group.roles.get("dave").map(String::as_str), Some("admin"));
-    let group = db.apply_group_role_change(&mvp_group_role_change(
-        "evt_admin_changes_bot",
-        "dave",
-        "bot",
-        7,
-        8,
-        "member",
-    ))?;
+    let group = db.apply_group_role_change(
+        &mvp_group_role_change("evt_admin_changes_bot", "dave", "bot", 7, 8, "member"),
+        &fixture_device("dave")?,
+    )?;
     assert_eq!(group.roles.get("bot").map(String::as_str), Some("member"));
     assert!(matches!(
-        db.apply_group_role_change(&mvp_group_role_change(
-            "evt_replay",
-            "dave",
-            "bot",
-            7,
-            8,
-            "bot"
-        )),
+        db.apply_group_role_change(
+            &mvp_group_role_change("evt_replay", "dave", "bot", 7, 8, "bot"),
+            &fixture_device("dave")?
+        ),
         Err(ramflux_storage::StorageError::GroupControlEpochMismatch { .. })
     ));
     Ok(())
@@ -193,69 +176,83 @@ fn group_partition_healing_converges() {
 #[test]
 fn group_key_epoch_removed_member_no_new_message_decrypt() -> Result<(), Box<dyn std::error::Error>>
 {
-    let mut epoch =
-        ramflux_storage::GroupKeyEpochState::new("group_1", ["alice".to_owned(), "bob".to_owned()]);
-    epoch.distribute_sender_key("alice");
-    epoch.remove_member("bob");
-    epoch.distribute_sender_key("alice");
-    let ciphertext = epoch.encrypt_epoch_message_for("alice", b"new epoch")?;
-    assert!(epoch.decrypt_epoch_message_for("bob", &ciphertext).is_err());
+    let mut epoch = ramflux_storage::GroupKeyEpochState::new(
+        "group_1",
+        [fixture_device("alice")?, fixture_device("bob")?],
+    );
+    epoch.distribute_sender_key(&fixture_device("alice")?);
+    epoch.remove_member(&fixture_device("bob")?);
+    epoch.distribute_sender_key(&fixture_device("alice")?);
+    let ciphertext = epoch.encrypt_epoch_message_for(&fixture_device("alice")?, b"new epoch")?;
+    assert!(epoch.decrypt_epoch_message_for(&fixture_device("bob")?, &ciphertext).is_err());
     Ok(())
 }
 
 #[test]
-fn group_key_epoch_removed_member_no_new_object_decrypt() {
-    let mut epoch =
-        ramflux_storage::GroupKeyEpochState::new("group_1", ["alice".to_owned(), "bob".to_owned()]);
-    epoch.remove_member("bob");
+fn group_key_epoch_removed_member_no_new_object_decrypt() -> Result<(), Box<dyn std::error::Error>>
+{
+    let mut epoch = ramflux_storage::GroupKeyEpochState::new(
+        "group_1",
+        [fixture_device("alice")?, fixture_device("bob")?],
+    );
+    epoch.remove_member(&fixture_device("bob")?);
     epoch.wrap_object_for_current_members("object_new");
-    assert!(!epoch.can_read_object("bob", "object_new"));
-    assert!(epoch.can_read_object("alice", "object_new"));
+    assert!(!epoch.can_read_object(&fixture_device("bob")?, "object_new"));
+    assert!(epoch.can_read_object(&fixture_device("alice")?, "object_new"));
+    Ok(())
 }
 
 #[test]
-fn group_key_epoch_new_member_no_history_no_old_sender_key() {
-    let mut epoch = ramflux_storage::GroupKeyEpochState::new("group_1", ["alice".to_owned()]);
+fn group_key_epoch_new_member_no_history_no_old_sender_key()
+-> Result<(), Box<dyn std::error::Error>> {
+    let mut epoch = ramflux_storage::GroupKeyEpochState::new("group_1", [fixture_device("alice")?]);
     epoch.wrap_object_for_current_members("object_old");
-    epoch.add_member_no_history("bob");
-    assert!(!epoch.can_read_object("bob", "object_old"));
+    epoch.add_member_no_history(&fixture_device("bob")?);
+    assert!(!epoch.can_read_object(&fixture_device("bob")?, "object_old"));
+    Ok(())
 }
 
 #[test]
-fn group_key_epoch_sender_cannot_send_before_distribution() {
-    let mut epoch = ramflux_storage::GroupKeyEpochState::new("group_1", ["alice".to_owned()]);
-    assert!(epoch.encrypt_epoch_message_for("alice", b"blocked").is_err());
-    epoch.distribute_sender_key("alice");
-    assert!(epoch.encrypt_epoch_message_for("alice", b"allowed").is_ok());
+fn group_key_epoch_sender_cannot_send_before_distribution() -> Result<(), Box<dyn std::error::Error>>
+{
+    let mut epoch = ramflux_storage::GroupKeyEpochState::new("group_1", [fixture_device("alice")?]);
+    assert!(epoch.encrypt_epoch_message_for(&fixture_device("alice")?, b"blocked").is_err());
+    epoch.distribute_sender_key(&fixture_device("alice")?);
+    assert!(epoch.encrypt_epoch_message_for(&fixture_device("alice")?, b"allowed").is_ok());
+    Ok(())
 }
 
 #[test]
 fn group_key_epoch_offline_member_receives_queued_sender_key()
 -> Result<(), Box<dyn std::error::Error>> {
-    let mut epoch = ramflux_storage::GroupKeyEpochState::new("group_1", ["alice".to_owned()]);
-    epoch.queue_sender_key_for_offline_member("alice");
-    assert!(epoch.assert_can_send("alice").is_err());
-    epoch.reconnect_member("alice");
-    epoch.assert_can_send("alice")?;
+    let mut epoch = ramflux_storage::GroupKeyEpochState::new("group_1", [fixture_device("alice")?]);
+    epoch.queue_sender_key_for_offline_member(&fixture_device("alice")?);
+    assert!(epoch.assert_can_send(&fixture_device("alice")?).is_err());
+    epoch.reconnect_member(&fixture_device("alice")?);
+    epoch.assert_can_send(&fixture_device("alice")?)?;
     Ok(())
 }
 
 #[test]
-fn group_key_epoch_conflict_pending_defers_commitment_reject() {
-    let mut epoch = ramflux_storage::GroupKeyEpochState::new("group_1", ["alice".to_owned()]);
+fn group_key_epoch_conflict_pending_defers_commitment_reject()
+-> Result<(), Box<dyn std::error::Error>> {
+    let mut epoch = ramflux_storage::GroupKeyEpochState::new("group_1", [fixture_device("alice")?]);
     epoch.conflict_pending = true;
     assert!(epoch.membership_commitment_reject_deferred());
+    Ok(())
 }
 
 #[test]
-fn group_key_epoch_admin_shared_history_rewraps_selected_objects_only() {
-    let mut epoch = ramflux_storage::GroupKeyEpochState::new("group_1", ["alice".to_owned()]);
+fn group_key_epoch_admin_shared_history_rewraps_selected_objects_only()
+-> Result<(), Box<dyn std::error::Error>> {
+    let mut epoch = ramflux_storage::GroupKeyEpochState::new("group_1", [fixture_device("alice")?]);
     epoch.wrap_object_for_current_members("object_a");
     epoch.wrap_object_for_current_members("object_b");
-    epoch.add_member_no_history("bob");
-    epoch.admin_shared_history_rewrap("bob", &["object_a".to_owned()]);
-    assert!(epoch.can_read_object("bob", "object_a"));
-    assert!(!epoch.can_read_object("bob", "object_b"));
+    epoch.add_member_no_history(&fixture_device("bob")?);
+    epoch.admin_shared_history_rewrap(&fixture_device("bob")?, &["object_a".to_owned()]);
+    assert!(epoch.can_read_object(&fixture_device("bob")?, "object_a"));
+    assert!(!epoch.can_read_object(&fixture_device("bob")?, "object_b"));
+    Ok(())
 }
 
 #[test]
@@ -282,10 +279,12 @@ fn bot_group_join_blocks_on_offline_member_consent() {
 
 #[test]
 fn bot_joined_receives_group_sender_key() -> Result<(), Box<dyn std::error::Error>> {
-    let mut epoch =
-        ramflux_storage::GroupKeyEpochState::new("group_1", ["alice".to_owned(), "bot".to_owned()]);
-    epoch.distribute_sender_key("bot");
-    epoch.assert_can_send("bot")?;
+    let mut epoch = ramflux_storage::GroupKeyEpochState::new(
+        "group_1",
+        [fixture_device("alice")?, fixture_device("bot")?],
+    );
+    epoch.distribute_sender_key(&fixture_device("bot")?);
+    epoch.assert_can_send(&fixture_device("bot")?)?;
     Ok(())
 }
 

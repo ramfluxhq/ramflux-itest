@@ -140,6 +140,7 @@ fn s51_identity_material(now: i64) -> Result<S51IdentityMaterial, Box<dyn std::e
     let root_public_key_bytes = ramflux_protocol::decode_base64url(&root_public_key)?;
     let target_delivery_id = "target_s51_migration".to_owned();
     let register = ramflux_node_core::IdentityRegisterRequest {
+        device_set: None,
         principal_commitment: ramflux_crypto::blake3_256_base64url(
             "ramflux.identity.root_public_key.commitment.v1",
             &root_public_key_bytes,

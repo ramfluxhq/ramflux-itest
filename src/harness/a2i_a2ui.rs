@@ -215,6 +215,8 @@ pub(crate) fn mvp_s17_assert_encrypted_self_device_control(
             session_label: "s17-realnet-a2i-control",
         })?;
     let event = ramflux_sync::A2iControlEvent {
+        source_principal_id: Some(fixture.app_register.proof.principal_id.clone()),
+        source_principal_commitment: Some(fixture.app_register.principal_commitment.clone()),
         event_id: "a2i_evt_s17_encrypted".to_owned(),
         event_type: "mcp.user_message".to_owned(),
         source_device_id: "alice_app_device_mvp3_realnet".to_owned(),
@@ -330,6 +332,8 @@ pub(crate) fn mvp_s18_assert_encrypted_self_device_control_ad_binding(
             session_label: "s18-realnet-a2i-control",
         })?;
     let event = ramflux_sync::A2iControlEvent {
+        source_principal_id: Some(fixture.app_register.proof.principal_id.clone()),
+        source_principal_commitment: Some(fixture.app_register.principal_commitment.clone()),
         event_id: "a2i_evt_s18_encrypted".to_owned(),
         event_type: "mcp.user_message".to_owned(),
         source_device_id: "alice_app_device_mvp3_realnet".to_owned(),

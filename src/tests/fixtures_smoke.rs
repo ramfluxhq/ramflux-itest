@@ -128,6 +128,18 @@ fn e2e_scenario_smoke() -> Result<(), Box<dyn std::error::Error>> {
     let mut client = ramflux_sdk::RamfluxClient::new();
     client.create_identity_root("alice", [0x91; 32]);
     client.create_device_branch("alice", "alice_device", 1, [0x92; 32]);
+
+    client.open_account_index(&root)?;
+    client.create_account("alice_local", "alice_commitment")?;
+    client.set_active_account("alice_local")?;
+    client.unlock_account("alice_local", b"alice-secret")?;
+    client.initialize_and_publish_prekey_bundle(
+        "alice",
+        "alice_device",
+        "fixture-target",
+        [0x92; 32],
+        None,
+    )?;
     let proof = client.authorize_current_device(
         "ramflux-node",
         vec!["device.delivery.bind".to_owned()],
@@ -136,15 +148,11 @@ fn e2e_scenario_smoke() -> Result<(), Box<dyn std::error::Error>> {
     )?;
     assert_eq!(proof.device_id, "alice_device");
 
-    client.open_account_index(&root)?;
-    client.create_account("alice_local", "alice_commitment")?;
-    client.set_active_account("alice_local")?;
-    client.unlock_account("alice_local", b"alice-secret")?;
     client.append_event("evt_identity", "identity.created", b"identity")?;
     client.establish_friend_link("friend_link_1", "alice", "bob")?;
     client.send_direct_message("conv_1", "msg_1", "alice", b"opaque message")?;
-    client.mark_read("conv_1", "bob", "msg_1")?;
-    let projection = client.conversation_projection("conv_1", "bob")?;
+    client.mark_read("conv_1", &fixture_device("bob")?, "msg_1")?;
+    let projection = client.conversation_projection("conv_1", &fixture_device("bob")?)?;
     assert_eq!(projection.message_count, 1);
 
     let object = client.put_encrypted_object("object_e2e", b"file bytes")?;
@@ -183,7 +191,10 @@ fn e2e_scenario_smoke() -> Result<(), Box<dyn std::error::Error>> {
     router
         .upsert_session(itest_session("target_e2e", ramflux_node_core::SessionLifecycle::Live))?;
     assert!(matches!(
-        router.submit_envelope(itest_envelope("env_e2e", "target_e2e")),
+        router.submit_envelope(
+            &fixture_device("alice_device")?,
+            itest_envelope("env_e2e", "target_e2e")
+        ),
         ramflux_node_core::RouterSubmitOutcome::Online(_)
     ));
     Ok(())

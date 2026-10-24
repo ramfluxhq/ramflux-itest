@@ -268,14 +268,14 @@ pub(crate) async fn mvp_s9_assert_group_receive_idempotent(
     bob.ack_gateway_delivery(
         &mut bob_engine,
         "env_s9_group_first",
-        MVP_S7_BOB.device_id,
+        &bob.owned_device_identity()?,
         1_760_000_801,
     )
     .await?;
     bob.ack_gateway_delivery(
         &mut bob_engine,
         "env_s9_group_second",
-        MVP_S7_BOB.device_id,
+        &bob.owned_device_identity()?,
         1_760_000_802,
     )
     .await?;

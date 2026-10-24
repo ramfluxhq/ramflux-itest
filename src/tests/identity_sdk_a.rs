@@ -253,7 +253,8 @@ fn identity_deleted_blocks_new_delivery() -> Result<(), Box<dyn std::error::Erro
             )
             .is_err()
     );
-    let projection = client.conversation_projection("conversation_deleted", "principal_deleted")?;
+    let projection = client
+        .conversation_projection("conversation_deleted", &fixture_device("principal_deleted")?)?;
     assert_eq!(projection.message_count, 1);
     Ok(())
 }
@@ -264,6 +265,19 @@ fn sdk_facade_account_message_projection() -> Result<(), Box<dyn std::error::Err
     let mut client = ramflux_sdk::RamfluxClient::new();
     client.create_identity_root("principal_sdk", [0x81; 32]);
     client.create_device_branch("principal_sdk", "device_sdk", 1, [0x82; 32]);
+
+    client.open_account_index(&root)?;
+    client.create_account("acct_sdk", "principal_commitment_sdk")?;
+    client.set_active_account("acct_sdk")?;
+    assert_eq!(client.active_account()?, Some("acct_sdk".to_owned()));
+    client.unlock_account("acct_sdk", b"sdk-secret")?;
+    client.initialize_and_publish_prekey_bundle(
+        "principal_sdk",
+        "device_sdk",
+        "fixture-target",
+        [0x82; 32],
+        None,
+    )?;
     let proof = client.authorize_current_device(
         "ramflux-node",
         vec!["device.delivery.bind".to_owned()],
@@ -272,11 +286,6 @@ fn sdk_facade_account_message_projection() -> Result<(), Box<dyn std::error::Err
     )?;
     assert_eq!(proof.device_id, "device_sdk");
 
-    client.open_account_index(&root)?;
-    client.create_account("acct_sdk", "principal_commitment_sdk")?;
-    client.set_active_account("acct_sdk")?;
-    assert_eq!(client.active_account()?, Some("acct_sdk".to_owned()));
-    client.unlock_account("acct_sdk", b"sdk-secret")?;
     client.append_event("evt_sdk", "message.created", b"opaque")?;
     assert_eq!(client.event_body("evt_sdk")?, Some(b"opaque".to_vec()));
     client.set_projection_checkpoint("conversation", "evt_sdk")?;
@@ -284,8 +293,8 @@ fn sdk_facade_account_message_projection() -> Result<(), Box<dyn std::error::Err
 
     client.establish_friend_link("link_sdk", "alice", "bob")?;
     client.send_direct_message("conversation_sdk", "message_sdk", "alice", b"ciphertext")?;
-    client.mark_read("conversation_sdk", "bob", "message_sdk")?;
-    let projection = client.conversation_projection("conversation_sdk", "bob")?;
+    client.mark_read("conversation_sdk", &fixture_device("bob")?, "message_sdk")?;
+    let projection = client.conversation_projection("conversation_sdk", &fixture_device("bob")?)?;
     assert_eq!(projection.message_count, 1);
     assert_eq!(projection.read_through_message_id, Some("message_sdk".to_owned()));
     Ok(())

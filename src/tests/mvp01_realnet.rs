@@ -250,7 +250,12 @@ fn mvp1_realnet_local_db_persist() -> Result<(), Box<dyn std::error::Error>> {
         "msg_mvp1_db_2",
         &second_decrypted,
     )?;
-    assert_eq!(reopened_bob.conversation_projection("conv_mvp1_realnet", "bob")?.message_count, 2);
+    assert_eq!(
+        reopened_bob
+            .conversation_projection("conv_mvp1_realnet", Some(&fixture_device("bob")?))?
+            .message_count,
+        2
+    );
     assert_eq!(reopened_bob.event_body("evt_alice_identity")?, None);
     let second_session = restored_bob_session.clone();
     drop(reopened_bob);

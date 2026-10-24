@@ -71,8 +71,8 @@ fn mvp2_realnet_group_sender_keys_fanout_bot_consent() -> Result<(), Box<dyn std
     let bob_bundle = fetched.bundle.ok_or("missing bob prekey bundle")?;
     let (mut alice_session, mut bob_session) = establish_mvp1_dm_sessions(&fixture, &bob_bundle)?;
     let mut group_epoch =
-        ramflux_storage::GroupKeyEpochState::new("group_mvp2_realnet", ["alice".to_owned()]);
-    group_epoch.add_member_no_history("bob");
+        ramflux_storage::GroupKeyEpochState::new("group_mvp2_realnet", [fixture_device("alice")?]);
+    group_epoch.add_member_no_history(&fixture_device("bob")?);
 
     join_mvp2_bot_after_member_consents(&clients.bob_db, &mut group_epoch)?;
     deliver_mvp2_group_sender_key_distribution(

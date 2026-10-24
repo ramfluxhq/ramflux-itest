@@ -21,8 +21,12 @@ fn mvp_s2_realnet_sdk_session_dm_resume_cursor() -> Result<(), Box<dyn std::erro
 
     let runtime = tokio::runtime::Builder::new_current_thread().enable_all().build()?;
     runtime.block_on(async {
-        mvp_s2_assert_sdk_session_dm_resume(&realnet.gateway_url, gateway_quic_addr, &ca_cert)
-            .await?;
+        Box::pin(mvp_s2_assert_sdk_session_dm_resume(
+            &realnet.gateway_url,
+            gateway_quic_addr,
+            &ca_cert,
+        ))
+        .await?;
         Ok::<(), Box<dyn std::error::Error>>(())
     })?;
     drop(realnet);
@@ -46,11 +50,11 @@ fn mvp_s2_realnet_sdk_session_dm_resume_cursor_tcp_tls() -> Result<(), Box<dyn s
 
     let runtime = tokio::runtime::Builder::new_current_thread().enable_all().build()?;
     runtime.block_on(async {
-        mvp_s2_assert_sdk_session_dm_resume_tcp_tls(
+        Box::pin(mvp_s2_assert_sdk_session_dm_resume_tcp_tls(
             &realnet.gateway_url,
             gateway_tcp_addr,
             &ca_cert,
-        )
+        ))
         .await?;
         Ok::<(), Box<dyn std::error::Error>>(())
     })?;
@@ -76,11 +80,11 @@ fn mvp_s2_realnet_sdk_session_dm_resume_cursor_auto_prefers_quic()
 
     let runtime = tokio::runtime::Builder::new_current_thread().enable_all().build()?;
     runtime.block_on(async {
-        mvp_s2_assert_sdk_session_dm_resume_auto_prefers_quic(
+        Box::pin(mvp_s2_assert_sdk_session_dm_resume_auto_prefers_quic(
             &realnet.gateway_url,
             gateway_quic_addr,
             &ca_cert,
-        )
+        ))
         .await?;
         Ok::<(), Box<dyn std::error::Error>>(())
     })?;
@@ -109,11 +113,11 @@ fn mvp_s2_realnet_sdk_session_auto_quic_survives_frame_delay()
 
     let runtime = tokio::runtime::Builder::new_current_thread().enable_all().build()?;
     runtime.block_on(async {
-        mvp_s2_assert_sdk_session_dm_resume_auto_quic_survives_frame_delay(
+        Box::pin(mvp_s2_assert_sdk_session_dm_resume_auto_quic_survives_frame_delay(
             &realnet.gateway_url,
             gateway_quic_addr,
             &ca_cert,
-        )
+        ))
         .await?;
         Ok::<(), Box<dyn std::error::Error>>(())
     })?;
@@ -143,12 +147,12 @@ fn mvp_s2_realnet_sdk_session_dm_resume_cursor_udp_unreachable_falls_back_tcp_tl
 
     let runtime = tokio::runtime::Builder::new_current_thread().enable_all().build()?;
     runtime.block_on(async {
-        mvp_s2_assert_sdk_session_dm_resume_auto_falls_back_tcp_tls(
+        Box::pin(mvp_s2_assert_sdk_session_dm_resume_auto_falls_back_tcp_tls(
             &realnet.gateway_url,
             blocked_quic_addr,
             gateway_tcp_addr,
             &ca_cert,
-        )
+        ))
         .await?;
         Ok::<(), Box<dyn std::error::Error>>(())
     })?;
@@ -178,8 +182,12 @@ fn mvp_s2_realnet_compio_gateway_quic_session_online_push() -> Result<(), Box<dy
 
     let runtime = tokio::runtime::Builder::new_current_thread().enable_all().build()?;
     runtime.block_on(async {
-        mvp_s2_assert_sdk_session_dm_resume(&realnet.gateway_url, gateway_quic_addr, &ca_cert)
-            .await?;
+        Box::pin(mvp_s2_assert_sdk_session_dm_resume(
+            &realnet.gateway_url,
+            gateway_quic_addr,
+            &ca_cert,
+        ))
+        .await?;
         Ok::<(), Box<dyn std::error::Error>>(())
     })?;
     drop(realnet);

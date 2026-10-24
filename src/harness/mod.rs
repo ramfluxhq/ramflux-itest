@@ -2,6 +2,8 @@
 // Copyright (c) 2026 Span Brain
 
 #![allow(unused_imports)]
+mod device_identity_fixture;
+pub(crate) use device_identity_fixture::{bind_fixture_member, fixture_device};
 #[path = "a2i_a2ui.rs"]
 pub(crate) mod a2i_a2ui;
 pub(crate) use a2i_a2ui::*;

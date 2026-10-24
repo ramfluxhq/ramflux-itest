@@ -122,8 +122,14 @@ pub(crate) fn deliver_mvp2_friend_messages(
         assert_eq!(decrypted, *plaintext);
         bob_db.send_direct_message("conv_mvp2_friend_realnet", &message_id, "alice", &decrypted)?;
     }
-    bob_db.mark_delivered("conv_mvp2_friend_realnet", "bob", "msg_mvp2_003", 1_760_000_030, 300)?;
-    bob_db.mark_read("conv_mvp2_friend_realnet", "bob", "msg_mvp2_003")?;
+    bob_db.mark_delivered(
+        "conv_mvp2_friend_realnet",
+        &fixture_device("bob")?,
+        "msg_mvp2_003",
+        1_760_000_030,
+        300,
+    )?;
+    bob_db.mark_read("conv_mvp2_friend_realnet", &fixture_device("bob")?, "msg_mvp2_003")?;
     Ok(())
 }
 
@@ -139,7 +145,8 @@ pub(crate) fn assert_mvp2_bob_conversation_projection(
         assert_eq!(message.sender_id, "alice");
         assert_eq!(message.encrypted_body, plaintexts[index]);
     }
-    let projection = bob_db.conversation_projection("conv_mvp2_friend_realnet", "bob")?;
+    let projection = bob_db
+        .conversation_projection("conv_mvp2_friend_realnet", Some(&fixture_device("bob")?))?;
     assert_eq!(projection.message_count, u64::try_from(plaintexts.len())?);
     assert_eq!(projection.last_message_id.as_deref(), Some("msg_mvp2_003"));
     assert_eq!(projection.delivered_through_message_id.as_deref(), Some("msg_mvp2_003"));
@@ -184,10 +191,10 @@ pub(crate) fn join_mvp2_bot_after_member_consents(
     let group = bob_db.add_group_member("group_mvp2_realnet", "bot", "bot")?;
     assert_eq!(group.group_epoch, 3);
     assert!(group.members.contains("bot"));
-    group_epoch.add_member_no_history("bot");
+    group_epoch.add_member_no_history(&fixture_device("bot")?);
     assert_eq!(group_epoch.group_epoch, 3);
     assert_eq!(group_epoch.group_key_epoch, 3);
-    assert!(group_epoch.assert_can_send("alice").is_err());
+    assert!(group_epoch.assert_can_send(&fixture_device("alice")?).is_err());
     Ok(())
 }
 
@@ -217,8 +224,8 @@ pub(crate) fn deliver_mvp2_group_sender_key_distribution(
         serde_json::from_str(&delivered.envelope.encrypted_payload)?;
     let decrypted = bob_session.decrypt(&delivered_ciphertext, b"alice_device|bob_device")?;
     assert_eq!(decrypted, plaintext.as_bytes());
-    group_epoch.distribute_sender_key("alice");
-    group_epoch.assert_can_send("alice")?;
+    group_epoch.distribute_sender_key(&fixture_device("alice")?);
+    group_epoch.assert_can_send(&fixture_device("alice")?)?;
     Ok(())
 }
 
@@ -235,7 +242,8 @@ pub(crate) fn deliver_mvp2_group_message_fanout(
         bot_target_delivery_id,
         plaintext,
     } = context;
-    let group_ciphertext = group_epoch.encrypt_epoch_message_for("alice", plaintext)?;
+    let group_ciphertext =
+        group_epoch.encrypt_epoch_message_for(&fixture_device("alice")?, plaintext)?;
     let recipient_payload =
         alice_recipient_session.encrypt(&group_ciphertext, b"alice_device|bob_device")?;
     let recipient_delivery = deliver_mvp1_dm(
@@ -250,8 +258,8 @@ pub(crate) fn deliver_mvp2_group_message_fanout(
     let recipient_group_ciphertext =
         recipient_session.decrypt(&recipient_dm, b"alice_device|bob_device")?;
     assert_eq!(recipient_group_ciphertext, group_ciphertext);
-    let recipient_plaintext =
-        group_epoch.decrypt_epoch_message_for("bob", &recipient_group_ciphertext)?;
+    let recipient_plaintext = group_epoch
+        .decrypt_epoch_message_for(&fixture_device("bob")?, &recipient_group_ciphertext)?;
     assert_eq!(recipient_plaintext, b"alicemvp2 group sender keys fanout");
 
     let (mut initiator_to_bot, mut bot_receiver) =
@@ -268,7 +276,8 @@ pub(crate) fn deliver_mvp2_group_message_fanout(
         serde_json::from_str(&bot_delivery.envelope.encrypted_payload)?;
     let bot_group_ciphertext = bot_receiver.decrypt(&bot_dm, b"alice_device|bot_device")?;
     assert_eq!(bot_group_ciphertext, group_ciphertext);
-    let bot_plaintext = group_epoch.decrypt_epoch_message_for("bot", &bot_group_ciphertext)?;
+    let bot_plaintext =
+        group_epoch.decrypt_epoch_message_for(&fixture_device("bot")?, &bot_group_ciphertext)?;
     assert_eq!(bot_plaintext, b"alicemvp2 group sender keys fanout");
     Ok(())
 }
@@ -339,7 +348,8 @@ pub(crate) fn assert_mvp2_group_projection(
         "alice",
         group_plaintext,
     )?;
-    let projection = bob_db.conversation_projection("group_conv_mvp2_realnet", "bob")?;
+    let projection =
+        bob_db.conversation_projection("group_conv_mvp2_realnet", Some(&fixture_device("bob")?))?;
     assert_eq!(projection.message_count, 1);
     assert_eq!(projection.last_message_id.as_deref(), Some("msg_mvp2_group_001"));
     let group = bob_db.group_state("group_mvp2_realnet")?;

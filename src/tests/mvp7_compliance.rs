@@ -77,18 +77,43 @@ fn local_mvp7_actor_registration(
         1,
         ramflux_crypto::FIXTURE_SIGNING_KEY_BYTES,
     );
-    let proof = ramflux_crypto::authorize_device_branch(
+    let agreement = ramflux_crypto::X25519KeyPair::from_seed([0x61; 32]);
+    let proof = ramflux_crypto::authorize_device_branch_v2(
         &root,
         &device,
-        ramflux_node_core::IDENTITY_BIND_AUDIENCE,
-        vec![ramflux_node_core::IDENTITY_BIND_CAPABILITY.to_owned()],
-        1_760_000_000 + nonce,
-        1_760_003_600 + nonce,
+        ramflux_crypto::BranchAuthorization {
+            audience: ramflux_node_core::IDENTITY_BIND_AUDIENCE,
+            capability_scope: vec![ramflux_node_core::IDENTITY_BIND_CAPABILITY.into()],
+            issued_at: 1_760_000_000 + nonce,
+            expires_at: 1_760_003_600 + nonce,
+            principal_kind: ramflux_protocol::PrincipalKind::Human,
+            agreement_identity_public_key: agreement.public,
+        },
+    )?;
+    let keys = ramflux_crypto::device_key_commitments(
+        &ramflux_protocol::encode_base64url(device.signing_key.verifying_key().to_bytes()),
+        &ramflux_protocol::encode_base64url(agreement.public),
+    )?;
+    let device_set = ramflux_crypto::sign_device_set(
+        &root,
+        ramflux_crypto::DeviceSetSigningInput {
+            principal_kind: ramflux_protocol::PrincipalKind::Human,
+            device_set_epoch: 1,
+            devices: vec![ramflux_protocol::SignedDeviceSetEntry {
+                device_id: actor_device_id.into(),
+                device_epoch: 1,
+                signing_key_commitment: keys.0,
+                agreement_key_commitment: keys.1,
+                status: ramflux_protocol::DeviceSetStatus::Active,
+                revoked_at: None,
+            }],
+        },
     )?;
     let root_public_key =
         ramflux_protocol::encode_base64url(root.signing_key.verifying_key().to_bytes());
     let root_public_key_bytes = ramflux_protocol::decode_base64url(&root_public_key)?;
     Ok(ramflux_node_core::IdentityRegisterRequest {
+        device_set: Some(device_set),
         principal_commitment: ramflux_crypto::blake3_256_base64url(
             "ramflux.identity.root_public_key.commitment.v1",
             &root_public_key_bytes,

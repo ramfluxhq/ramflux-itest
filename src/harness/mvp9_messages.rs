@@ -272,14 +272,16 @@ pub(crate) fn mvp9_assert_delivered_receipt_ttl(
     assert_eq!(decrypted_receipt, receipt_plaintext);
     let receipt = clients.alice_db.mark_delivered(
         "conv_mvp9_transient",
-        "bob_device_realnet",
+        &fixture_device("bob_device_realnet")?,
         "msg_mvp9_delivered",
         1_760_000_000,
         2,
     )?;
     assert_eq!(receipt.ttl_seconds, 2);
-    let delivered_projection =
-        clients.alice_db.conversation_projection("conv_mvp9_transient", "bob_device_realnet")?;
+    let delivered_projection = clients.alice_db.conversation_projection(
+        "conv_mvp9_transient",
+        Some(&fixture_device("bob_device_realnet")?),
+    )?;
     assert_eq!(
         delivered_projection.delivered_through_message_id.as_deref(),
         Some("msg_mvp9_delivered")
@@ -289,11 +291,13 @@ pub(crate) fn mvp9_assert_delivered_receipt_ttl(
 
     clients.alice_db.mark_read(
         "conv_mvp9_transient",
-        "bob_device_realnet",
+        &fixture_device("bob_device_realnet")?,
         "msg_mvp9_delivered",
     )?;
-    let read_projection =
-        clients.alice_db.conversation_projection("conv_mvp9_transient", "bob_device_realnet")?;
+    let read_projection = clients.alice_db.conversation_projection(
+        "conv_mvp9_transient",
+        Some(&fixture_device("bob_device_realnet")?),
+    )?;
     assert_eq!(read_projection.read_through_message_id.as_deref(), Some("msg_mvp9_delivered"));
     assert_eq!(read_projection.delivered_through_message_id.as_deref(), Some("msg_mvp9_delivered"));
     assert!(!read_projection.is_unread);
@@ -301,10 +305,15 @@ pub(crate) fn mvp9_assert_delivered_receipt_ttl(
 
     assert_eq!(clients.alice_db.expire_delivery_receipts(1_760_000_002)?, 1);
     assert!(
-        clients.alice_db.delivery_receipt("conv_mvp9_transient", "bob_device_realnet")?.is_none()
+        clients
+            .alice_db
+            .delivery_receipt("conv_mvp9_transient", &fixture_device("bob_device_realnet")?)?
+            .is_none()
     );
-    let expired_projection =
-        clients.alice_db.conversation_projection("conv_mvp9_transient", "bob_device_realnet")?;
+    let expired_projection = clients.alice_db.conversation_projection(
+        "conv_mvp9_transient",
+        Some(&fixture_device("bob_device_realnet")?),
+    )?;
     assert_eq!(expired_projection.delivered_through_message_id, None);
     assert_eq!(expired_projection.read_through_message_id.as_deref(), Some("msg_mvp9_delivered"));
     Ok(())

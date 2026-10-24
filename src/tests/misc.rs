@@ -22,23 +22,26 @@ fn device_revocation_replay_guard() -> Result<(), Box<dyn std::error::Error>> {
         1_760_003_600,
     )?;
 
+    let identity = ramflux_crypto::RootQualifiedDeviceRef::for_owned_device(&root, &device)?;
     let mut replay_guard = ramflux_crypto::DeviceRevocationReplayGuard::new();
-    replay_guard.accept_branch_proof(
-        &root.signing_key.verifying_key(),
-        &proof,
-        "ramflux-node",
-        "device.delivery.bind",
-        1_760_000_001,
-    )?;
+    replay_guard.accept_branch_proof(ramflux_crypto::BranchProofAdmission {
+        source: &identity,
+        root_public_key: &root.signing_key.verifying_key(),
+        proof: &proof,
+        audience: "ramflux-node",
+        required_capability: "device.delivery.bind",
+        now: 1_760_000_001,
+    })?;
     assert!(
         replay_guard
-            .accept_branch_proof(
-                &root.signing_key.verifying_key(),
-                &proof,
-                "ramflux-node",
-                "device.delivery.bind",
-                1_760_000_001,
-            )
+            .accept_branch_proof(ramflux_crypto::BranchProofAdmission {
+                source: &identity,
+                root_public_key: &root.signing_key.verifying_key(),
+                proof: &proof,
+                audience: "ramflux-node",
+                required_capability: "device.delivery.bind",
+                now: 1_760_000_001
+            })
             .is_err()
     );
 
@@ -51,16 +54,18 @@ fn device_revocation_replay_guard() -> Result<(), Box<dyn std::error::Error>> {
         1_760_000_010,
         1_760_003_610,
     )?;
-    replay_guard.revoke_device("device_b");
+    let second_identity = ramflux_crypto::RootQualifiedDeviceRef::for_owned_device(&root, &second)?;
+    replay_guard.revoke_device(&second_identity);
     assert!(
         replay_guard
-            .accept_branch_proof(
-                &root.signing_key.verifying_key(),
-                &second_proof,
-                "ramflux-node",
-                "device.delivery.bind",
-                1_760_000_011,
-            )
+            .accept_branch_proof(ramflux_crypto::BranchProofAdmission {
+                source: &second_identity,
+                root_public_key: &root.signing_key.verifying_key(),
+                proof: &second_proof,
+                audience: "ramflux-node",
+                required_capability: "device.delivery.bind",
+                now: 1_760_000_011
+            })
             .is_err()
     );
     Ok(())
@@ -169,7 +174,7 @@ fn disappearing_message_expiry_tombstone_projection() -> Result<(), Box<dyn std:
     assert_eq!(tombstones[0].message_id, "msg_expiring");
     assert_eq!(tombstones[0].delete_scope, "own_devices");
 
-    let projection = db.conversation_projection("conv_1", "alice")?;
+    let projection = db.conversation_projection("conv_1", Some(&fixture_device("alice")?))?;
     assert_eq!(projection.message_count, 1);
     assert_eq!(projection.last_message_id, Some("msg_live".to_owned()));
     let messages = db.direct_messages("conv_1")?;

@@ -143,9 +143,11 @@ fn federation_true_key_pin_and_forward_reaches_peer_inbox() -> Result<(), Box<dy
     target_state.ensure_federated_envelope_allowed(&forward, "node_a.example", 1_760_000_020)?;
 
     let target_router = ramflux_node_core::RouterCore::new();
-    let submitted = target_router.submit_envelope(forward.envelope.clone());
+    let submitted =
+        target_router.submit_envelope(&fixture_device("alice_device")?, forward.envelope.clone());
     assert!(matches!(submitted, ramflux_node_core::RouterSubmitOutcome::OfflineQueued(_)));
-    let replay = target_router.submit_envelope(forward.envelope.clone());
+    let replay =
+        target_router.submit_envelope(&fixture_device("alice_device")?, forward.envelope.clone());
     assert!(matches!(replay, ramflux_node_core::RouterSubmitOutcome::RejectedSecurity { .. }));
     let pulled = target_router.resume("target_node_b", 0, 10);
     assert_eq!(pulled.len(), 1);

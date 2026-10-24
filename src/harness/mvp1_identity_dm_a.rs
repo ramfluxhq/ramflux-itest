@@ -45,6 +45,7 @@ pub(crate) fn mvp1_register_request(
     )?;
     let root_public_key_bytes = ramflux_protocol::decode_base64url(&root_public_key)?;
     Ok(ramflux_node_core::IdentityRegisterRequest {
+        device_set: None,
         principal_commitment: ramflux_crypto::blake3_256_base64url(
             "ramflux.identity.root_public_key.commitment.v1",
             &root_public_key_bytes,
@@ -167,6 +168,7 @@ pub(crate) fn mvp1_named_register_request(
         ramflux_protocol::encode_base64url(root.signing_key.verifying_key().to_bytes());
     let root_public_key_bytes = ramflux_protocol::decode_base64url(&root_public_key)?;
     Ok(ramflux_node_core::IdentityRegisterRequest {
+        device_set: None,
         principal_commitment: ramflux_crypto::blake3_256_base64url(
             "ramflux.identity.root_public_key.commitment.v1",
             &root_public_key_bytes,
@@ -369,29 +371,55 @@ pub(crate) fn mvp10_assert_group_roles_and_member_removed(
     for db in [&clients.alice_db, &clients.bob_db] {
         db.add_group_member("group_mvp10_realnet", "bob", "admin")?;
         db.add_group_member("group_mvp10_realnet", "carol", "member")?;
+        for name in ["alice", "bob", "carol"] {
+            bind_fixture_member(db, "group_mvp10_realnet", name)?;
+        }
         assert!(matches!(
-            db.remove_group_member("group_mvp10_realnet", "bob", "alice"),
+            db.remove_group_member(
+                "group_mvp10_realnet",
+                &fixture_device("bob")?,
+                &fixture_device("alice")?
+            ),
             Err(ramflux_storage::StorageError::GroupPermissionDenied)
         ));
         assert!(matches!(
-            db.remove_group_member("group_mvp10_realnet", "carol", "bob"),
+            db.remove_group_member(
+                "group_mvp10_realnet",
+                &fixture_device("carol")?,
+                &fixture_device("bob")?
+            ),
             Err(ramflux_storage::StorageError::GroupPermissionDenied)
         ));
         assert!(matches!(
-            db.ensure_group_member_can_send("group_mvp10_realnet", "carol", true),
+            db.ensure_group_member_can_send("group_mvp10_realnet", &fixture_device("carol")?, true),
             Err(ramflux_storage::StorageError::GroupPermissionDenied)
         ));
-        db.ensure_group_member_can_send("group_mvp10_realnet", "bob", true)?;
+        db.ensure_group_member_can_send("group_mvp10_realnet", &fixture_device("bob")?, true)?;
         assert!(matches!(
-            db.ensure_group_member_can_mute("group_mvp10_realnet", "carol", "bob"),
+            db.ensure_group_member_can_mute(
+                "group_mvp10_realnet",
+                &fixture_device("carol")?,
+                &fixture_device("bob")?
+            ),
             Err(ramflux_storage::StorageError::GroupPermissionDenied)
         ));
-        db.ensure_group_member_can_mute("group_mvp10_realnet", "alice", "bob")?;
+        db.ensure_group_member_can_mute(
+            "group_mvp10_realnet",
+            &fixture_device("alice")?,
+            &fixture_device("bob")?,
+        )?;
     }
 
-    let alice_group =
-        clients.alice_db.remove_group_member("group_mvp10_realnet", "alice", "carol")?;
-    let bob_group = clients.bob_db.remove_group_member("group_mvp10_realnet", "alice", "carol")?;
+    let alice_group = clients.alice_db.remove_group_member(
+        "group_mvp10_realnet",
+        &fixture_device("alice")?,
+        &fixture_device("carol")?,
+    )?;
+    let bob_group = clients.bob_db.remove_group_member(
+        "group_mvp10_realnet",
+        &fixture_device("alice")?,
+        &fixture_device("carol")?,
+    )?;
     assert!(!alice_group.members.contains("carol"));
     assert!(!bob_group.members.contains("carol"));
     assert_eq!(alice_group.members, bob_group.members);
@@ -429,7 +457,11 @@ pub(crate) fn mvp10_assert_group_delete_tombstone_realnet(
     bob_session: &mut ramflux_crypto::DmSession,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let group_plaintext = br#"{"type":"message.created","group_id":"group_mvp10_realnet","conversation_id":"group_conv_mvp10_realnet","msg_event_id":"msg_mvp10_group_001","body":"mvp10 group governance secret"}"#;
-    clients.alice_db.ensure_group_member_can_send("group_mvp10_realnet", "alice", true)?;
+    clients.alice_db.ensure_group_member_can_send(
+        "group_mvp10_realnet",
+        &fixture_device("alice")?,
+        true,
+    )?;
     let group_ciphertext = alice_session.encrypt(group_plaintext, b"alice_device|bob_device")?;
     let delivered_group = deliver_mvp9_dm(
         gateway_url,

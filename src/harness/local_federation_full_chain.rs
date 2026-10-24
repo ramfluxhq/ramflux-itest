@@ -801,7 +801,10 @@ fn dispatch_local_gateway_quic_request(
         }
         ("GET", path) if path.starts_with("/mvp1/prekey/") => {
             let device_id = path.trim_start_matches("/mvp1/prekey/");
-            serde_json::to_value(state.router.mvp1_prekey(device_id)).ok()
+            match state.router.mvp1_prekey_checked(device_id) {
+                Ok(response) => serde_json::to_value(response).ok(),
+                Err(error) => return quic_error_response(400, &error.to_string()),
+            }
         }
         ("GET", path) if path.starts_with("/mvp1/device-manifest/") => {
             let commitment = path.trim_start_matches("/mvp1/device-manifest/");
@@ -856,7 +859,7 @@ fn handle_local_prekey_request(
         return Ok(());
     }
     let device_id = request.path.trim_start_matches("/mvp1/prekey/");
-    let response = state.router.mvp1_prekey(device_id);
+    let response = state.router.mvp1_prekey_checked(device_id)?;
     ramflux_node_core::write_itest_json_response(stream, "200 OK", &response)?;
     Ok(())
 }

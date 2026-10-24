@@ -302,7 +302,8 @@ pub(crate) fn assert_reopened_bob_local_state(
     let restored_messages = db.direct_messages("conv_mvp1_realnet")?;
     assert_eq!(restored_messages.len(), 1);
     assert_eq!(restored_messages[0].encrypted_body, first_plaintext);
-    let projection = db.conversation_projection("conv_mvp1_realnet", "bob")?;
+    let projection =
+        db.conversation_projection("conv_mvp1_realnet", Some(&fixture_device("bob")?))?;
     assert_eq!(projection.message_count, 1);
     assert_eq!(projection.last_message_id.as_deref(), Some("msg_mvp1_db_1"));
     Ok(())
@@ -531,6 +532,7 @@ pub(crate) async fn assert_dm_double_ratchet_realnet_gateway_quic(
     let alice_first = alice_dm.encrypt(alice_first_plaintext, b"s11-realnet-ad")?;
     let alice_first_body = serde_json::to_vec(&alice_first)?;
     let alice_first_message = ramflux_sdk::GatewayDirectMessage {
+        recipient_principal_commitment: None,
         conversation_id: "conv_s11_realnet".to_owned(),
         message_id: "msg_s11_alice_first".to_owned(),
         envelope_id: "env_s11_alice_first".to_owned(),
@@ -562,6 +564,7 @@ pub(crate) async fn assert_dm_double_ratchet_realnet_gateway_quic(
     assert!(bob_reply.ratchet_public_key.is_some());
     let bob_reply_body = serde_json::to_vec(&bob_reply)?;
     let bob_reply_message = ramflux_sdk::GatewayDirectMessage {
+        recipient_principal_commitment: None,
         conversation_id: "conv_s11_realnet".to_owned(),
         message_id: "msg_s11_bob_reply".to_owned(),
         envelope_id: "env_s11_bob_reply".to_owned(),

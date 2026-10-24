@@ -74,7 +74,10 @@ fn router_core_online_offline_resume_flow() -> Result<(), Box<dyn std::error::Er
         ramflux_node_core::SessionLifecycle::Live,
     ))?;
 
-    let online = router.submit_envelope(itest_envelope("env_online_itest", "target_online"));
+    let online = router.submit_envelope(
+        &fixture_device("alice_device")?,
+        itest_envelope("env_online_itest", "target_online"),
+    );
     assert!(matches!(online, ramflux_node_core::RouterSubmitOutcome::Online(_)));
     if let ramflux_node_core::RouterSubmitOutcome::Online(delivery) = online {
         assert_eq!(delivery.gateway_id, "gateway_itest");
@@ -82,7 +85,10 @@ fn router_core_online_offline_resume_flow() -> Result<(), Box<dyn std::error::Er
         assert_eq!(delivery.envelope.envelope_id, "env_online_itest");
     }
 
-    let offline = router.submit_envelope(itest_envelope("env_offline_itest", "target_offline"));
+    let offline = router.submit_envelope(
+        &fixture_device("alice_device")?,
+        itest_envelope("env_offline_itest", "target_offline"),
+    );
     assert!(matches!(offline, ramflux_node_core::RouterSubmitOutcome::OfflineQueued(_)));
     if let ramflux_node_core::RouterSubmitOutcome::OfflineQueued(queued) = offline {
         assert_eq!(queued.entry.inbox_seq, 1);
@@ -110,8 +116,14 @@ fn router_redb_store_restart_recovers_offline_state() -> Result<(), Box<dyn std:
         "target_online",
         ramflux_node_core::SessionLifecycle::Live,
     ))?;
-    router.submit_envelope(itest_envelope("env_persisted_offline", "target_offline"));
-    router.submit_envelope(itest_envelope("env_persisted_ack", "target_ack"));
+    router.submit_envelope(
+        &fixture_device("alice_device")?,
+        itest_envelope("env_persisted_offline", "target_offline"),
+    );
+    router.submit_envelope(
+        &fixture_device("alice_device")?,
+        itest_envelope("env_persisted_ack", "target_ack"),
+    );
     router.apply_ack(&itest_ack("env_persisted_ack"))?;
     store.save_router(&router)?;
     drop(store);
@@ -120,7 +132,10 @@ fn router_redb_store_restart_recovers_offline_state() -> Result<(), Box<dyn std:
     let restored =
         reopened.load_router()?.ok_or_else(|| "missing persisted router snapshot".to_owned())?;
     assert!(matches!(
-        restored.submit_envelope(itest_envelope("env_after_restart", "target_online")),
+        restored.submit_envelope(
+            &fixture_device("alice_device")?,
+            itest_envelope("env_after_restart", "target_online")
+        ),
         ramflux_node_core::RouterSubmitOutcome::Online(_)
     ));
     assert_eq!(restored.resume("target_offline", 0, 10).len(), 1);
