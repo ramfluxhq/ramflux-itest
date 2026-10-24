@@ -139,7 +139,7 @@ fn assert_contact(response: &Value, principal: &str) -> TestResult {
     assert_eq!(contact["principal_id"], principal);
     assert_eq!(contact["reachable"], true);
     assert_eq!(contact["verified"], false);
-    assert!(!contact["root_commitment"].as_str().ok_or("root commitment missing")?.is_empty());
+    assert_ne!(contact["root_commitment"].as_str().ok_or("root commitment missing")?, "");
     Ok(())
 }
 async fn call(
