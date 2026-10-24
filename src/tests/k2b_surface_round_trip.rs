@@ -85,13 +85,13 @@ async fn run(node: &S8RealnetNode) -> TestResult {
         mvp_s4_wait_for_socket(&human_sibling_socket).await?;mvp_s4_wait_for_socket(&agent_sibling_socket).await?;
         let mut human2=ramflux_sdk::LocalBusClient::connect(&human_sibling_socket).await?;
         let mut agent2=ramflux_sdk::LocalBusClient::connect(&agent_sibling_socket).await?;
-        create_terminal(&mut human2,node,"human2","human",(41,43),false).await?;
+        let own2=create_terminal(&mut human2,node,"human2","human",(41,43),false).await?;
         create_terminal(&mut agent2,node,"agent2","agent",(45,47),true).await?;
         contacts(&mut human,&mut agent,&own,&peer).await?;
         call(&mut human,"human","message.submit",json!({"conversation_id":"dm_k2b","message_id":"seed","envelope_id":"seed_k2b","source_principal_id":own["principal_id"],"sender_id":own["device_id"],"recipient_device_id":peer["device_id"],"recipient_principal_commitment":peer["principal_commitment"],"target_delivery_id":peer["target_delivery_id"],"encrypted_body_base64":"","plaintext_body_base64":ramflux_protocol::encode_base64url(b"surface conversation"),"created_at":realnet_now_i64(),"ttl":300})).await?;
         wait_conversation(&mut agent,"agent","dm_k2b").await?;
         round_trip(&mut human,&mut agent,(&mut human2,&mut agent2),&b_socket,"dm_k2b","surface-dm").await?;
-        group(&mut human,&mut agent,&own,&peer).await?;
+        group(&mut human,&mut agent,&mut human2,&own,&peer,&own2).await?;
         round_trip(&mut human,&mut agent,(&mut human2,&mut agent2),&b_socket,"group_thread_k2b","surface-group").await?;
         let before=call(&mut human,"human","surface.get",json!({"surface_id":"surface-group"})).await?;
         drop(human);a.start_kill()?;a.wait().await?;let _=std::fs::remove_file(&a_socket);

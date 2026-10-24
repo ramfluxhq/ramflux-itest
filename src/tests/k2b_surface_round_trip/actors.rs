@@ -99,16 +99,18 @@ pub(super) async fn wait_surface(
     id: &str,
     version: u64,
 ) -> TestResult<Value> {
+    let mut observed = Value::Null;
     for _ in 0..100 {
         call(bus, account, "message.receive", json!({"limit":32,"auto_fetch_attachments":false}))
             .await?;
         let view = call(bus, account, "surface.get", json!({"surface_id":id})).await?;
+        observed = json!({"version":view["version"],"out_of_sync":view["out_of_sync"],"renderer_error_code":view["renderer_error"]["code"]});
         if view["version"] == version {
             return Ok(view);
         }
         tokio::time::sleep(Duration::from_millis(100)).await;
     }
-    Err("surface version did not arrive".into())
+    Err(format!("surface version did not arrive: account={account} surface_id={id} expected_version={version} observed={observed}").into())
 }
 pub(super) async fn wait_action(
     bus: &mut ramflux_sdk::LocalBusClient,
@@ -166,41 +168,65 @@ pub(super) fn action_wire(
 pub(super) async fn group(
     human: &mut ramflux_sdk::LocalBusClient,
     agent: &mut ramflux_sdk::LocalBusClient,
+    human2: &mut ramflux_sdk::LocalBusClient,
     own: &Value,
     peer: &Value,
+    own2: &Value,
 ) -> TestResult {
     let a = call(human, "human", "identity.directory", json!({"limit":100})).await?;
     let b = call(agent, "agent", "identity.directory", json!({"limit":100})).await?;
-    let creator = a["identities"]
+    let c = call(human2, "human2", "identity.directory", json!({"limit":100})).await?;
+    let creator = device(&a, own)?;
+    call(human,"human","group.create",json!({"group_id":"group_k2b","conversation_id":"group_thread_k2b","creator_id":own["device_id"],"creator_signing_public_key":creator["signing_public_key"],"creator_target_delivery_id":own["target_delivery_id"]})).await?;
+    // Normal group text delivery addresses member devices. A peer sibling must join explicitly;
+    // sharing its identity root alone cannot grant group membership or a delivery route.
+    for (account, directory) in [(peer, &b), (own2, &c)] {
+        let member = device(directory, account)?;
+        call(human,"human","group.member.add",json!({"group_id":"group_k2b","member_id":account["device_id"],"role":"member","member_signing_public_key":member["signing_public_key"],"member_principal_commitment":account["principal_commitment"],"target_delivery_id":account["target_delivery_id"]})).await?;
+    }
+    for (bus, id) in [(agent, "agent"), (human2, "human2")] {
+        wait_roster(bus, id, &[&own["device_id"], &peer["device_id"], &own2["device_id"]]).await?;
+    }
+    call(human,"human","group.send",json!({"group_id":"group_k2b","conversation_id":"group_thread_k2b","message_id":"group-k2b-seed","sender_id":own["device_id"],"encrypted_body_base64":"","plaintext_body_base64":ramflux_protocol::encode_base64url(b"group surface conversation")})).await?;
+    Ok(())
+}
+fn device<'a>(directory: &'a Value, account: &Value) -> TestResult<&'a Value> {
+    directory["identities"]
         .as_array()
         .ok_or("identities")?
         .iter()
-        .find(|v| v["principal_id"] == own["principal_id"])
-        .ok_or("creator")?;
-    let member = b["identities"]
-        .as_array()
-        .ok_or("identities")?
-        .iter()
-        .find(|v| v["principal_id"] == peer["principal_id"])
-        .ok_or("member")?;
-    call(human,"human","group.create",json!({"group_id":"group_k2b","conversation_id":"group_thread_k2b","creator_id":own["device_id"],"creator_signing_public_key":creator["devices"][0]["signing_public_key"],"creator_target_delivery_id":own["target_delivery_id"]})).await?;
-    call(human,"human","group.member.add",json!({"group_id":"group_k2b","member_id":peer["device_id"],"role":"member","member_signing_public_key":member["devices"][0]["signing_public_key"],"member_principal_commitment":peer["principal_commitment"],"target_delivery_id":peer["target_delivery_id"]})).await?;
-    // Membership control must be delivered before the participant authors into this group.
+        .find(|identity| identity["principal_id"] == account["principal_id"])
+        .and_then(|identity| identity["devices"].as_array())
+        .and_then(|devices| {
+            devices.iter().find(|device| device["device_id"] == account["device_id"])
+        })
+        .ok_or_else(|| "local device is absent from identity directory".into())
+}
+async fn wait_roster(
+    bus: &mut ramflux_sdk::LocalBusClient,
+    account: &str,
+    members: &[&Value],
+) -> TestResult {
     for _ in 0..100 {
-        call(agent, "agent", "message.receive", json!({"limit":32,"auto_fetch_attachments":false}))
+        call(bus, account, "message.receive", json!({"limit":32,"auto_fetch_attachments":false}))
             .await?;
-        let groups = call(agent, "agent", "group.list", json!({"limit":100})).await?;
+        let groups = call(bus, account, "group.list", json!({"limit":100})).await?;
         if groups["groups"]
             .as_array()
             .is_some_and(|groups| groups.iter().any(|g| g["group_id"] == "group_k2b"))
         {
-            // Seed the group conversation link through a normal human message.
-            call(human,"human","group.send",json!({"group_id":"group_k2b","conversation_id":"group_thread_k2b","message_id":"group-k2b-seed","sender_id":own["device_id"],"encrypted_body_base64":"","plaintext_body_base64":ramflux_protocol::encode_base64url(b"group surface conversation")})).await?;
-            return wait_conversation(agent, "agent", "group_thread_k2b").await;
+            let state =
+                call(bus, account, "group.members", json!({"group_id":"group_k2b"})).await?;
+            if state["members"]
+                .as_array()
+                .is_some_and(|actual| members.iter().all(|expected| actual.contains(expected)))
+            {
+                return Ok(());
+            }
         }
         tokio::time::sleep(Duration::from_millis(100)).await;
     }
-    Err("agent group membership did not arrive".into())
+    Err(format!("group member roster did not arrive: account={account}").into())
 }
 
 pub(super) async fn reject_non_author_patch(
