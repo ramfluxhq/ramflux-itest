@@ -7,13 +7,13 @@ use crate::*;
 pub(crate) struct ClientDiscoveryTopology {
     pub(crate) origin: String,
     pub(crate) ca: PathBuf,
-    _compose: ProductionComposeDownGuard,
+    compose: ProductionComposeDownGuard,
     _materials: T22ProductionMaterials,
 }
 
 impl ClientDiscoveryTopology {
     pub(crate) fn dump_contact_failure_logs(&self) {
-        self._compose.dump_failure_logs(&["ramflux-gateway", "ramflux-router"]);
+        self.compose.dump_failure_logs(&["ramflux-gateway", "ramflux-router"]);
     }
 }
 
@@ -101,7 +101,7 @@ pub(crate) fn start_client_discovery_topology_named(
     Ok(ClientDiscoveryTopology {
         origin,
         ca: deploy.join("certs/ca.pem"),
-        _compose: guard,
+        compose: guard,
         _materials: materials,
     })
 }
