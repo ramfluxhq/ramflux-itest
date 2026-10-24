@@ -445,16 +445,40 @@ fn mvp_s47_assert_unauthorized_device_register_rejected(
         [0x78; 32],
     );
     let now = itest_now_unix_seconds();
-    let proof = ramflux_crypto::authorize_device_branch(
+    let agreement = ramflux_crypto::X25519KeyPair::from_seed([0x79; 32]);
+    let proof = ramflux_crypto::authorize_device_branch_v2(
         &wrong_root,
         &wrong_branch,
-        "ramflux-node",
-        vec!["device.delivery.bind".to_owned()],
-        now,
-        now.saturating_add(3_600),
+        ramflux_crypto::BranchAuthorization {
+            audience: "ramflux-node",
+            capability_scope: vec!["device.delivery.bind".into()],
+            issued_at: now,
+            expires_at: now + 3600,
+            principal_kind: ramflux_protocol::PrincipalKind::Human,
+            agreement_identity_public_key: agreement.public,
+        },
+    )?;
+    let keys = ramflux_crypto::device_key_commitments(
+        &ramflux_protocol::encode_base64url(wrong_branch.signing_key.verifying_key().to_bytes()),
+        &ramflux_protocol::encode_base64url(agreement.public),
+    )?;
+    let device_set = ramflux_crypto::sign_device_set(
+        &wrong_root,
+        ramflux_crypto::DeviceSetSigningInput {
+            principal_kind: ramflux_protocol::PrincipalKind::Human,
+            device_set_epoch: 1,
+            devices: vec![ramflux_protocol::SignedDeviceSetEntry {
+                device_id: wrong_branch.device_id.clone(),
+                device_epoch: wrong_branch.device_epoch,
+                signing_key_commitment: keys.0,
+                agreement_key_commitment: keys.1,
+                status: ramflux_protocol::DeviceSetStatus::Active,
+                revoked_at: None,
+            }],
+        },
     )?;
     let request = ramflux_node_core::IdentityRegisterRequest {
-        device_set: None,
+        device_set: Some(device_set),
         root_public_key: ramflux_protocol::encode_base64url(
             wrong_root.signing_key.verifying_key().to_bytes(),
         ),
@@ -471,19 +495,14 @@ fn mvp_s47_assert_unauthorized_device_register_rejected(
         registration_pow: None,
         source_ip_hash: Some("s47-unauthorized-source".to_owned()),
     };
-    let error = match ramflux_node_core::itest_http_post_json::<_, serde_json::Value>(
+    let response: serde_json::Value = ramflux_node_core::itest_http_post_json(
         &format!("{}/mvp1/identity/register", node.gateway_url),
         &request,
-    ) {
-        Ok(value) => {
-            return Err(format!("unauthorized device registration succeeded: {value}").into());
-        }
-        Err(error) => error.to_string(),
-    };
-    assert!(
-        error.contains("principal commitment root mismatch")
-            || error.contains("already bound to different root"),
-        "unexpected unauthorized registration error: {error}",
+    )?;
+    let failure: ramflux_protocol::IdentityRegistrationFailure = serde_json::from_value(response)?;
+    assert_eq!(
+        failure.error.reason_code,
+        ramflux_protocol::IdentityDirectoryReason::InvalidRegistration
     );
     mvp_s47_assert_manifest_devices(
         &node.gateway_url,

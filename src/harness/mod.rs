@@ -3,6 +3,7 @@
 
 #![allow(unused_imports)]
 mod device_identity_fixture;
+mod node_prebuild;
 pub(crate) use device_identity_fixture::{bind_fixture_member, fixture_device};
 #[path = "a2i_a2ui.rs"]
 pub(crate) mod a2i_a2ui;

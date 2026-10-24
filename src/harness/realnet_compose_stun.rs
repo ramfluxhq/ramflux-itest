@@ -959,6 +959,9 @@ pub(crate) fn start_s8_realnet_compose_project_with_env_and_federation_compio(
     federation_compio: bool,
 ) -> Result<S8RealnetNode, Box<dyn std::error::Error>> {
     let code_root = code_root();
+    // Ignored itest-bin artifacts survive branch switches; compose --build only copies them.
+    // Build the selected checkout before the first node, independently of runner prebuild flags.
+    super::node_prebuild::ensure_node_prebuild(&code_root, federation_compio)?;
     let deploy_root = code_root.join("ramflux/deploy");
     let node_id = if project_name.contains("node-b") { "node_b.realnet" } else { "node_a.realnet" }
         .to_owned();
