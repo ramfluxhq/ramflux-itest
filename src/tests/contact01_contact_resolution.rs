@@ -113,7 +113,13 @@ impl Drop for ContactFailureLogs<'_> {
 async fn rf(binary: &Path, socket: &Path, args: &[&str]) -> TestResult<Value> {
     let mut all = vec!["--socket", socket.to_str().ok_or("socket path")?];
     all.extend_from_slice(args);
-    mvp_s10_rf_json(binary, &all, "contact01").await
+    eprintln!("STEP: contact01 rf begin args={args:?}");
+    let result = mvp_s10_rf_json(binary, &all, "contact01").await;
+    match &result {
+        Ok(value) => eprintln!("STEP: contact01 rf ok args={args:?} response={value}"),
+        Err(error) => eprintln!("STEP: contact01 rf failed args={args:?} error={error}"),
+    }
+    result
 }
 async fn configure(binary: &Path, socket: &Path, origin: &str) -> TestResult {
     rf(binary, socket, &["node", "add", origin]).await?;
@@ -165,7 +171,17 @@ async fn call(
     method: &str,
     body: Value,
 ) -> TestResult<Value> {
-    Ok(bus.request(Some(id.into()), "contact01", method, body).await?)
+    eprintln!("STEP: contact01 call begin account={id} method={method} body={body}");
+    match bus.request(Some(id.into()), "contact01", method, body).await {
+        Ok(value) => {
+            eprintln!("STEP: contact01 call ok account={id} method={method} response={value}");
+            Ok(value)
+        }
+        Err(error) => {
+            eprintln!("STEP: contact01 call failed account={id} method={method} error={error}");
+            Err(error.into())
+        }
+    }
 }
 async fn identity(
     bus: &mut ramflux_sdk::LocalBusClient,
