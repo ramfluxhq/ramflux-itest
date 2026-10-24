@@ -222,8 +222,31 @@ pub(super) async fn reject_non_author_patch(
             }],
         }),
     )?;
-    let result=call(bus,"human","surface.send",json!({"conversation_id":conversation,"message_id":format!("{surface}-non-author"),"wire_base64":ramflux_protocol::encode_base64url(bytes)})).await?;
-    assert_eq!(result["accepted"], false);
-    assert_eq!(result["renderer_error"]["code"], "non_author_update");
+    let error=call(bus,"human","surface.send",json!({"conversation_id":conversation,"message_id":format!("{surface}-non-author"),"wire_base64":ramflux_protocol::encode_base64url(bytes)})).await.err().ok_or("non-author update was accepted")?;
+    assert!(error.to_string().contains("not_author"), "unexpected local refusal: {error}");
     Ok(())
+}
+
+pub(super) fn non_author_patch_wire(
+    conversation: &str,
+    surface: &str,
+    current: &Value,
+) -> TestResult<Vec<u8>> {
+    let mut snapshot: ramflux_protocol::CreateSurfaceCommand =
+        serde_json::from_value(current["snapshot"].clone())?;
+    snapshot.fallback_text = "forged status".into();
+    wire(
+        conversation,
+        3,
+        ramflux_protocol::A2uiConversationCommand::PatchSurface(
+            ramflux_protocol::PatchSurfaceCommand {
+                surface_id: surface.into(),
+                base_surface_hash: current["surface_hash"].as_str().ok_or("hash")?.into(),
+                new_surface_hash: ramflux_protocol::surface_snapshot_hash(&snapshot)?,
+                ops: vec![ramflux_protocol::SurfacePatchOp::SetFallbackText {
+                    fallback_text: snapshot.fallback_text,
+                }],
+            },
+        ),
+    )
 }

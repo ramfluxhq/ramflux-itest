@@ -168,16 +168,7 @@ async fn round_trip(
     assert_eq!(call(human,"human","surface.action",json!({"conversation_id":conversation,"message_id":format!("{surface}-stale"),"wire_base64":ramflux_protocol::encode_base64url(&stale)})).await?["accepted"],false);
     raw_probe::reject_at_author(human, agent, b_socket, conversation, (surface, "action"), &stale)
         .await?;
-    let unauthorized = wire(
-        conversation,
-        3,
-        C::PatchSurface(PatchSurfaceCommand {
-            surface_id: surface.into(),
-            base_surface_hash: current["surface_hash"].as_str().ok_or("hash")?.into(),
-            new_surface_hash: current["surface_hash"].as_str().ok_or("hash")?.into(),
-            ops: vec![SurfacePatchOp::SetFallbackText { fallback_text: "forged status".into() }],
-        }),
-    )?;
+    let unauthorized = non_author_patch_wire(conversation, surface, &current)?;
     raw_probe::reject_at_author(
         human,
         agent,
