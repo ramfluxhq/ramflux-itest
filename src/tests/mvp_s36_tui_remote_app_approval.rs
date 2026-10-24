@@ -120,6 +120,8 @@ async fn mvp_s36_create_account(
     ca_cert: &Path,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let request = ramflux_sdk::LocalBusAccountCreateRequest {
+        label: None,
+        kind: None,
         node_id: None,
         local_account_id: "alice_s4_account".to_owned(),
         principal_id: "principal_s4_alice".to_owned(),

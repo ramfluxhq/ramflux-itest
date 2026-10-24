@@ -19,7 +19,7 @@ fn mvp_s73_realnet_client_read_model_actionable_ids() -> TestResult {
     {
         return Err("s73 requires RAMFLUX_OBJECT_V3=1 RAMFLUX_CROSS_GATEWAY=1".into());
     }
-    let stack = start_client_directory_stack(S8ComposePorts {
+    let mut stack = start_client_directory_stack(S8ComposePorts {
         gateway_http: 64_301,
         gateway_quic: 64_571,
         router_http: 64_300,
@@ -34,7 +34,9 @@ fn mvp_s73_realnet_client_read_model_actionable_ids() -> TestResult {
         retention_http: 64_307,
     })?;
     let runtime = tokio::runtime::Builder::new_current_thread().enable_all().build()?;
-    runtime.block_on(run(&stack.node))
+    runtime.block_on(run(&stack.node))?;
+    stack.node.guard.mark_success();
+    Ok(())
 }
 
 async fn run(node: &S8RealnetNode) -> TestResult {
@@ -98,6 +100,8 @@ pub(super) async fn create(
     let device = format!("{id}_s73_device");
     let target = format!("target_s73_{id}");
     let request = ramflux_sdk::LocalBusAccountCreateRequest {
+        label: None,
+        kind: None,
         node_id: None,
         local_account_id: id.to_owned(),
         principal_id: format!("principal_s73_{id}"),

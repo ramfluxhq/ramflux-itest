@@ -257,6 +257,8 @@ async fn create(
     let device = format!("{id}_k12_device");
     let target = format!("target_k12_{id}");
     let request = ramflux_sdk::LocalBusAccountCreateRequest {
+        label: None,
+        kind: None,
         node_id: None,
         local_account_id: id.to_owned(),
         principal_id: format!("principal_k12_{id}"),
