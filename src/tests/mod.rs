@@ -198,3 +198,5 @@ mod k12_deferred_attachment_fetch;
 
 #[path = "k2b_surface_round_trip.rs"]
 mod k2b_surface_round_trip;
+#[path = "k5a_agent_host.rs"]
+mod k5a_agent_host;
