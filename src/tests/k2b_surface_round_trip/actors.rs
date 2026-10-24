@@ -31,6 +31,8 @@ pub(super) async fn create_terminal(
     let device = format!("device_k2b_{id}");
     let target = format!("target_k2b_{id}");
     let request = ramflux_sdk::LocalBusAccountCreateRequest {
+        kind: None,
+        label: None,
         node_id: None,
         local_account_id: id.into(),
         principal_id: principal.clone(),
