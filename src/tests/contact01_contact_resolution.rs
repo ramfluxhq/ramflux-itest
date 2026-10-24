@@ -174,7 +174,9 @@ async fn call(
     eprintln!("STEP: contact01 call begin account={id} method={method} body={body}");
     match bus.request(Some(id.into()), "contact01", method, body).await {
         Ok(value) => {
-            eprintln!("STEP: contact01 call ok account={id} method={method} response={value}");
+            let response = value.to_string();
+            let shown = response.get(..response.floor_char_boundary(1024)).unwrap_or_default();
+            eprintln!("STEP: contact01 call ok account={id} method={method} response={shown}");
             Ok(value)
         }
         Err(error) => {
@@ -245,9 +247,13 @@ async fn send(
         .as_array()
         .and_then(|devices| devices.first())
         .ok_or("resolved contact has no device")?;
-    let sent=call(bus,own,"message.submit",json!({"conversation_id":conversation,"message_id":text,"envelope_id":format!("contact01-{text}"),"source_principal_id":status["principal_id"],"sender_id":status["device_id"],"recipient_device_id":device["device_id"],"recipient_principal_commitment":peer["contact_identity_commitment"],"target_delivery_id":device["target_delivery_id"],"encrypted_body_base64":"","plaintext_body_base64":ramflux_protocol::encode_base64url(text.as_bytes()),"created_at":realnet_now_i64(),"ttl":3600})).await?;
+    let sent=call(bus,own,"message.submit",json!({"conversation_id":conversation,"message_id":message_id(text),"envelope_id":message_id(text),"source_principal_id":status["principal_id"],"sender_id":status["device_id"],"recipient_device_id":device["device_id"],"recipient_principal_commitment":peer["contact_identity_commitment"],"target_delivery_id":device["target_delivery_id"],"encrypted_body_base64":"","plaintext_body_base64":ramflux_protocol::encode_base64url(text.as_bytes()),"created_at":realnet_now_i64(),"ttl":3600})).await?;
     assert!(!sent.is_null());
     Ok(())
+}
+/// Received DMs are identified by the AAD-bound envelope id, so submit both ids equal.
+fn message_id(text: &str) -> String {
+    format!("contact01-{text}")
 }
 async fn read(
     bus: &mut ramflux_sdk::LocalBusClient,
@@ -261,7 +267,7 @@ async fn read(
             call(bus, id, "message.read", json!({"conversation_id":conversation})).await?;
         if let Some(message) = response["messages"]
             .as_array()
-            .and_then(|messages| messages.iter().find(|m| m["message_id"] == text))
+            .and_then(|messages| messages.iter().find(|m| m["message_id"] == message_id(text)))
         {
             assert_eq!(message["body_utf8"], text);
             assert_eq!(message["sender_id"], sender);
