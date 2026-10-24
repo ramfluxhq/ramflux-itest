@@ -16,7 +16,18 @@ pub(super) async fn create(
     seed: u8,
     headless: bool,
 ) -> TestResult<Value> {
-    let principal = format!("principal_k2b_{id}");
+    create_terminal(bus, node, id, id, (seed, seed + 1), headless).await
+}
+pub(super) async fn create_terminal(
+    bus: &mut ramflux_sdk::LocalBusClient,
+    node: &S8RealnetNode,
+    id: &str,
+    owner: &str,
+    seeds: (u8, u8),
+    headless: bool,
+) -> TestResult<Value> {
+    let (root_seed, device_seed) = seeds;
+    let principal = format!("principal_k2b_{owner}");
     let device = format!("device_k2b_{id}");
     let target = format!("target_k2b_{id}");
     let request = ramflux_sdk::LocalBusAccountCreateRequest {
@@ -27,8 +38,8 @@ pub(super) async fn create(
         device_id: device.clone(),
         target_delivery_id: target.clone(),
         account_secret: "k2b-fixture-secret".into(),
-        root_seed: [seed; 32],
-        device_seed: [seed + 1; 32],
+        root_seed: [root_seed; 32],
+        device_seed: [device_seed; 32],
         client_mode: if headless {
             ramflux_sdk::LocalBusClientMode::HeadlessAi
         } else {
