@@ -7,7 +7,10 @@ pub(super) async fn call(
     method: &str,
     body: Value,
 ) -> TestResult<Value> {
-    Ok(bus.request(Some(account.into()), "surface", method, body).await?)
+    let conversation = body["conversation_id"].as_str().unwrap_or("-").to_owned();
+    bus.request(Some(account.into()), "surface", method, body).await.map_err(|error| {
+        format!("account={account} method={method} conversation={conversation}: {error}").into()
+    })
 }
 pub(super) async fn create(
     bus: &mut ramflux_sdk::LocalBusClient,
@@ -145,6 +148,7 @@ pub(super) async fn send_event(
     version: u64,
     command: ramflux_protocol::A2uiConversationCommand,
 ) -> TestResult {
+    step(&format!("surface_{suffix}_v{version}"), conversation);
     let bytes = wire(conversation, version, command)?;
     let result=call(bus,"agent","surface.send",json!({"conversation_id":conversation,"message_id":format!("{surface}-{suffix}"),"wire_base64":ramflux_protocol::encode_base64url(bytes)})).await?;
     assert_eq!(result["accepted"], true, "surface event rejected: {result}");
@@ -165,18 +169,26 @@ pub(super) fn action_wire(
         &json!({"schema":"ramflux.a2ui.action.v2","conversationId":conversation,"surfaceId":surface,"version":version,"surfaceHash":hash,"actionId":"approve","values":values,"argsHash":ramflux_protocol::surface_args_hash(&values)?}),
     )?)
 }
+pub(super) fn step(phase: &str, conversation: &str) {
+    eprintln!(
+        "STEP: k2b timestamp={} phase={phase} conversation={conversation}",
+        realnet_now_i64()
+    );
+}
 pub(super) async fn group(
     human: &mut ramflux_sdk::LocalBusClient,
     agent: &mut ramflux_sdk::LocalBusClient,
     own: &Value,
     peer: &Value,
 ) -> TestResult {
+    step("group_create", "group_thread_k2b");
     let a = call(human, "human", "identity.directory", json!({"limit":100})).await?;
     let b = call(agent, "agent", "identity.directory", json!({"limit":100})).await?;
     let creator = device(&a, own)?;
     call(human,"human","group.create",json!({"group_id":"group_k2b","conversation_id":"group_thread_k2b","creator_id":own["device_id"],"creator_signing_public_key":creator["signing_public_key"],"creator_target_delivery_id":own["target_delivery_id"]})).await?;
     let member = device(&b, peer)?;
     call(human,"human","group.member.add",json!({"group_id":"group_k2b","member_id":peer["device_id"],"role":"member","member_signing_public_key":member["signing_public_key"],"member_principal_commitment":peer["principal_commitment"],"target_delivery_id":peer["target_delivery_id"]})).await?;
+    step("group_roster_wait", "group_thread_k2b");
     wait_roster(agent, "agent", &[&own["device_id"], &peer["device_id"]]).await?;
     // GRP-SYNC-01 covers full roster propagation and sibling membership. No sibling joins here.
     for (bus, id) in [(&mut *human, "human"), (&mut *agent, "agent")] {
@@ -192,8 +204,12 @@ pub(super) async fn group(
             "GRP-SYNC-01 scope boundary requires both primary devices to be verified members"
         );
     }
+    step("group_seed", "group_thread_k2b");
     call(human,"human","group.send",json!({"group_id":"group_k2b","conversation_id":"group_thread_k2b","message_id":"group-k2b-seed","sender_id":own["device_id"],"encrypted_body_base64":"","plaintext_body_base64":ramflux_protocol::encode_base64url(b"group surface conversation")})).await?;
-    Ok(())
+    // Membership controls establish the roster, not a text conversation on the recipient.
+    // Await the seed's normal receive path before the agent authors a surface in that thread.
+    step("group_seed_receive_wait", "group_thread_k2b");
+    wait_conversation(agent, "agent", "group_thread_k2b").await
 }
 fn device<'a>(directory: &'a Value, account: &Value) -> TestResult<&'a Value> {
     directory["identities"]

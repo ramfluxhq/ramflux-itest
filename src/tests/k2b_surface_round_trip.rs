@@ -48,6 +48,7 @@ fn k2b_realnet_surface_round_trip() -> TestResult {
     Ok(())
 }
 async fn run(node: &S8RealnetNode) -> TestResult {
+    step("transport_readiness", "-");
     wait_relay_quic_healthy(S73_RELAY_QUIC, "ramflux-relay", &node.ca_cert).await?;
     wait_for_private_gateway_quic(S73_GATEWAY_B_QUIC.parse()?, &node.ca_cert).await?;
     let root = temp_root("k2b")?;
@@ -87,14 +88,20 @@ async fn run(node: &S8RealnetNode) -> TestResult {
         let mut agent2=ramflux_sdk::LocalBusClient::connect(&agent_sibling_socket).await?;
         create_terminal(&mut human2,node,"human2","human",(41,43),false).await?;
         create_terminal(&mut agent2,node,"agent2","agent",(45,47),true).await?;
+        step("contacts", "dm_k2b");
         contacts(&mut human,&mut agent,&own,&peer).await?;
+        step("dm_seed", "dm_k2b");
         call(&mut human,"human","message.submit",json!({"conversation_id":"dm_k2b","message_id":"seed","envelope_id":"seed_k2b","source_principal_id":own["principal_id"],"sender_id":own["device_id"],"recipient_device_id":peer["device_id"],"recipient_principal_commitment":peer["principal_commitment"],"target_delivery_id":peer["target_delivery_id"],"encrypted_body_base64":"","plaintext_body_base64":ramflux_protocol::encode_base64url(b"surface conversation"),"created_at":realnet_now_i64(),"ttl":300})).await?;
+        step("dm_seed_receive_wait", "dm_k2b");
         wait_conversation(&mut agent,"agent","dm_k2b").await?;
+        step("dm_round_trip", "dm_k2b");
         round_trip(&mut human,&mut agent,Some((&mut human2,&mut agent2)),&b_socket,"dm_k2b","surface-dm").await?;
         // GRP-SYNC-01 owns multi-device group roster propagation. This group case checks the
         // two verifiably joined primary devices; the DM above retains both sibling checks.
         group(&mut human,&mut agent,&own,&peer).await?;
+        step("group_round_trip", "group_thread_k2b");
         round_trip(&mut human,&mut agent,None,&b_socket,"group_thread_k2b","surface-group").await?;
+        step("group_restart", "group_thread_k2b");
         let before=call(&mut human,"human","surface.get",json!({"surface_id":"surface-group"})).await?;
         drop(human);a.start_kill()?;a.wait().await?;let _=std::fs::remove_file(&a_socket);
         a=client_directory_daemon_command(&rf,&a_socket,&root.join("human"),&node.ca_cert,None).spawn()?;mvp_s4_wait_for_socket(&a_socket).await?;
@@ -166,6 +173,7 @@ async fn round_trip(
             assert_eq!(other["surface_hash"], current["surface_hash"]);
         }
     }
+    step("stale_action_and_foreign_patch", conversation);
     let stale =
         action_wire(conversation, surface, 1, first["surface_hash"].as_str().ok_or("hash")?)?;
     assert_eq!(call(human,"human","surface.action",json!({"conversation_id":conversation,"message_id":format!("{surface}-stale"),"wire_base64":ramflux_protocol::encode_base64url(&stale)})).await?["accepted"],false);
@@ -181,6 +189,7 @@ async fn round_trip(
         &unauthorized,
     )
     .await?;
+    step("action_and_metadata_event", conversation);
     let mut watcher = ramflux_sdk::LocalBusClient::connect(b_socket).await?;
     call(&mut watcher, "agent", "bus.subscribe", json!({"topics":["surface.changed"]})).await?;
     let action =
@@ -205,6 +214,7 @@ async fn round_trip(
     )
     .await?;
     if let Some((_, agent2)) = &mut siblings {
+        step("own_device_decision_copy", conversation);
         check_replica(agent, agent2, surface, &accepted).await?;
     }
     let closed = finish_surface(human, agent, conversation, surface, &current).await?;
