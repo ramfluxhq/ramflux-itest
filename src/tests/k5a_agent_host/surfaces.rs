@@ -42,7 +42,10 @@ pub(super) async fn round_trip(
     assert_eq!(completed["snapshot"]["fallbackText"], "You chose Thursday.");
     assert_eq!(completed["streams"]["reply"], "final");
     assert_eq!(completed["out_of_sync"], false);
-    assert_eq!(completed["snapshot"]["allowedActions"], json!([]));
+    let snapshot: ramflux_protocol::CreateSurfaceCommand =
+        serde_json::from_value(completed["snapshot"].clone())?;
+    assert_eq!(snapshot.allowed_actions, [] as [Value; 0]);
+    assert_eq!(ramflux_protocol::surface_snapshot_hash(&snapshot)?, completed["surface_hash"]);
     let read =
         call(bus, "alice", "message.read", json!({"conversation_id":"group_thread_k5a"})).await?;
     let author = peer["principal_id"].as_str().ok_or("principal")?;
@@ -91,5 +94,33 @@ pub(super) async fn after_restart(
 ) -> TestResult {
     let after = wait(bus, before["surface_id"].as_str(), true).await?;
     assert_eq!(&after, before, "host restart must not change the surface or repeat the choice");
+    Ok(())
+}
+
+#[test]
+fn canonical_snapshot_empty_actions_are_omitted_and_decode_without_changing_the_hash() -> TestResult
+{
+    let snapshot = ramflux_protocol::CreateSurfaceCommand {
+        surface_id: "canonical-empty-actions".into(),
+        surface_type: ramflux_protocol::SurfaceType::StatusPanel,
+        catalog: "basic".into(),
+        catalog_version: "1".into(),
+        fallback_text: "Done".into(),
+        fallback_markdown: None,
+        components: vec![],
+        data_model: serde_json::Map::new(),
+        allowed_actions: vec![],
+    };
+    let wire = serde_json::to_value(&snapshot)?;
+    assert!(wire.get("allowedActions").is_none());
+    let decoded: ramflux_protocol::CreateSurfaceCommand = serde_json::from_value(wire.clone())?;
+    assert_eq!(decoded.allowed_actions, [] as [Value; 0]);
+    assert_eq!(
+        ramflux_protocol::surface_snapshot_hash(&decoded)?,
+        ramflux_protocol::surface_snapshot_hash(&snapshot)?
+    );
+    let mut invalid = wire;
+    invalid["allowedActions"] = Value::Null;
+    assert!(serde_json::from_value::<ramflux_protocol::CreateSurfaceCommand>(invalid).is_err());
     Ok(())
 }

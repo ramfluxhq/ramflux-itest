@@ -6,6 +6,8 @@
 use super::*;
 use serde_json::{Value, json};
 use std::os::unix::fs::{MetadataExt, PermissionsExt};
+#[path = "k5a_agent_host/diagnostics.rs"]
+mod diagnostics;
 #[path = "k5a_agent_host/surfaces.rs"]
 mod surfaces;
 type TestResult<T = ()> = Result<T, Box<dyn std::error::Error>>;
@@ -77,6 +79,7 @@ async fn run(node: &S8RealnetNode, surface_case: bool) -> TestResult {
     let mut b =
         client_directory_daemon_command(&rf, &b_socket, &root.join("agent"), &node.ca_cert, None)
             .spawn()?;
+    let evidence = diagnostics::HostEvidence::new(&root);
     let result=tokio::time::timeout(Duration::from_mins(5),async {
         mvp_s4_wait_for_socket(&a_socket).await?;mvp_s4_wait_for_socket(&b_socket).await?;
         let mut alice=ramflux_sdk::LocalBusClient::connect(&a_socket).await?;
@@ -86,9 +89,15 @@ async fn run(node: &S8RealnetNode, surface_case: bool) -> TestResult {
         for (bus,id,from,to) in [(&mut alice,"alice",&own,&peer),(&mut agent,"agent",&peer,&own)]{
             let contact=call(bus,id,"contact.add",json!({"link_id":format!("friend_k5a_{id}"),"requester_id":from["principal_commitment"],"target_id":to["principal_commitment"]})).await?;assert_eq!(contact["state"],"accepted");
         }
-        let config=root.join("host.json");let state=root.join("cursor.json");
+        for (bus,id,target) in [(&mut alice,"alice",&peer),(&mut agent,"agent",&own)] {
+            let directory=call(bus,id,"identity.directory",json!({"limit":100})).await?;
+            let row=directory["identities"].as_array().ok_or("identities")?.iter().find(|row|row["principal_id"]==target["principal_id"]).ok_or("resolved peer identity")?;
+            assert_eq!(row["contact_identity_commitment"],target["principal_commitment"],"contact resolution must persist the peer commitment");
+            assert!(row["devices"].as_array().ok_or("devices")?.iter().any(|device|device["device_id"]==target["device_id"] && device["target_delivery_id"]==target["target_delivery_id"]),"contact resolution must persist the target route");
+        }
+        let config=root.join("host.json");let state=evidence.state.clone();
         std::fs::write(&config,serde_json::to_vec(&json!({"socket":b_socket,"state_file":state,"account_id":"agent","per_conversation_interval_ms":100,"rules":[{"pattern":"@agent ping","reply":"pong"},{"pattern":"@agent summarize","reply":"Summary\n- deterministic\n- complete"},{"pattern":"@agent checklist","reply":surfaces::REPLY,"surface":{"chunk_bytes":256,"choices":[{"id":"thu","label":"Thursday"},{"id":"mon","label":"Monday"}],"close_on_action":true}}]}))?)?;
-        let mut host=spawn_host(&binary,&config)?;wait_checkpoint(&state,None).await?;
+        let mut host=evidence.spawn(&binary,&config)?;wait_checkpoint(&state,None).await?;
         send_dm(&mut alice,&own,&peer,"ping_dm").await?;
         wait_replies(&mut alice,"dm_k5a",1,&peer).await?;
         create_group(&mut alice,&mut agent,&own,&peer).await?;
@@ -98,7 +107,7 @@ async fn run(node: &S8RealnetNode, surface_case: bool) -> TestResult {
         let before=wait_checkpoint(&state,None).await?;
         host.start_kill()?;host.wait().await?;
         let previous_inode=std::fs::metadata(&state)?.ino();
-        let mut host=spawn_host(&binary,&config)?;
+        let mut host=evidence.spawn(&binary,&config)?;
         let after=wait_checkpoint(&state,Some(previous_inode)).await?;assert!(after>=before,"cursor must survive process restart");
         tokio::time::sleep(Duration::from_secs(2)).await;
         wait_replies(&mut alice,"dm_k5a",1,&peer).await?;wait_replies(&mut alice,"group_thread_k5a",1,&peer).await?;
@@ -108,6 +117,9 @@ async fn run(node: &S8RealnetNode, surface_case: bool) -> TestResult {
         host.start_kill()?;host.wait().await?;
         Ok::<(),Box<dyn std::error::Error>>(())
     }).await;
+    if !matches!(&result, Ok(Ok(()))) {
+        evidence.report();
+    }
     let _ = a.start_kill();
     let _ = b.start_kill();
     let _ = a.wait().await;
@@ -117,13 +129,6 @@ async fn run(node: &S8RealnetNode, surface_case: bool) -> TestResult {
     result??;
     std::fs::remove_dir_all(root)?;
     Ok(())
-}
-fn spawn_host(binary: &Path, config: &Path) -> TestResult<tokio::process::Child> {
-    Ok(tokio::process::Command::new(binary)
-        .arg("--config")
-        .arg(config)
-        .kill_on_drop(true)
-        .spawn()?)
 }
 async fn wait_checkpoint(path: &Path, previous_inode: Option<u64>) -> TestResult<u64> {
     for _ in 0..100 {
@@ -215,6 +220,7 @@ async fn wait_replies(
     count: usize,
     agent: &Value,
 ) -> TestResult {
+    eprintln!("STEP: k5a wait reply conversation={conversation} expected_count={count}");
     for _ in 0..100 {
         call(alice, "alice", "message.receive", json!({"limit":32,"auto_fetch_attachments":false}))
             .await?;
@@ -250,11 +256,17 @@ async fn wait_replies(
                         })
                 }
             ));
+            eprintln!(
+                "STEP: k5a reply observed conversation={conversation} expected_count={count}"
+            );
             return Ok(());
         }
         tokio::time::sleep(Duration::from_millis(100)).await;
     }
-    Err("timed out waiting for agent reply".into())
+    Err(format!(
+        "timed out waiting for agent reply conversation={conversation} expected_count={count}"
+    )
+    .into())
 }
 async fn create_group(
     alice: &mut ramflux_sdk::LocalBusClient,
