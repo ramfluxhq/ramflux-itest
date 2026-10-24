@@ -8,7 +8,7 @@ pub(super) async fn call(
     method: &str,
     body: Value,
 ) -> TestResult<Value> {
-    Ok(bus.request(Some(account.into()), "task", method, body).await?)
+    traced_call(bus, Some(account), method, body).await
 }
 pub(super) async fn create(
     bus: &mut ramflux_sdk::LocalBusClient,
@@ -49,7 +49,7 @@ pub(super) async fn create(
             prekey_http_url: None,
         },
     };
-    Ok(bus.request(None, "account", "account.create", serde_json::to_value(request)?).await?)
+    traced_call(bus, None, "account.create", serde_json::to_value(request)?).await
 }
 pub(super) async fn wait_task(
     bus: &mut ramflux_sdk::LocalBusClient,
@@ -130,4 +130,50 @@ pub(super) async fn grant_from_second_human_device(
         tokio::time::sleep(Duration::from_millis(100)).await;
     }
     Err("requester signed decision did not return to the assignee daemon".into())
+}
+
+async fn traced_call(
+    bus: &mut ramflux_sdk::LocalBusClient,
+    account: Option<&str>,
+    method: &str,
+    body: Value,
+) -> TestResult<Value> {
+    static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
+    let label =
+        account.or_else(|| body["local_account_id"].as_str()).unwrap_or("daemon").to_owned();
+    eprintln!("STEP: begin method={method} account={label}");
+    let frame = ramflux_sdk::LocalBusFrame::request(
+        format!("k3b-step-{}", NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed)),
+        account.map(str::to_owned),
+        if method == "account.create" { "account" } else { "task" },
+        method,
+        body,
+    );
+    match bus.request_frame_response(frame).await {
+        Ok(response)
+            if response.kind == ramflux_sdk::LocalBusFrameKind::Error
+                || response.ok == Some(false) =>
+        {
+            let json = serde_json::to_string(&response)?;
+            let detail = truncated(&json);
+            eprintln!("STEP: failure method={method} account={label} response={detail}");
+            Err(format!("{method} on {label} rejected: {detail}").into())
+        }
+        Ok(response) => {
+            eprintln!("STEP: complete method={method} account={label}");
+            Ok(response.body)
+        }
+        Err(error) => {
+            let text = error.to_string();
+            eprintln!("STEP: failure method={method} account={label} error={}", truncated(&text));
+            Err(error.into())
+        }
+    }
+}
+fn truncated(text: &str) -> &str {
+    let mut end = text.len().min(1024);
+    while !text.is_char_boundary(end) {
+        end -= 1;
+    }
+    &text[..end]
 }
