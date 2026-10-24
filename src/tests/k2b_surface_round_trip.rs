@@ -85,14 +85,16 @@ async fn run(node: &S8RealnetNode) -> TestResult {
         mvp_s4_wait_for_socket(&human_sibling_socket).await?;mvp_s4_wait_for_socket(&agent_sibling_socket).await?;
         let mut human2=ramflux_sdk::LocalBusClient::connect(&human_sibling_socket).await?;
         let mut agent2=ramflux_sdk::LocalBusClient::connect(&agent_sibling_socket).await?;
-        let own2=create_terminal(&mut human2,node,"human2","human",(41,43),false).await?;
+        create_terminal(&mut human2,node,"human2","human",(41,43),false).await?;
         create_terminal(&mut agent2,node,"agent2","agent",(45,47),true).await?;
         contacts(&mut human,&mut agent,&own,&peer).await?;
         call(&mut human,"human","message.submit",json!({"conversation_id":"dm_k2b","message_id":"seed","envelope_id":"seed_k2b","source_principal_id":own["principal_id"],"sender_id":own["device_id"],"recipient_device_id":peer["device_id"],"recipient_principal_commitment":peer["principal_commitment"],"target_delivery_id":peer["target_delivery_id"],"encrypted_body_base64":"","plaintext_body_base64":ramflux_protocol::encode_base64url(b"surface conversation"),"created_at":realnet_now_i64(),"ttl":300})).await?;
         wait_conversation(&mut agent,"agent","dm_k2b").await?;
-        round_trip(&mut human,&mut agent,(&mut human2,&mut agent2),&b_socket,"dm_k2b","surface-dm").await?;
-        group(&mut human,&mut agent,&mut human2,&own,&peer,&own2).await?;
-        round_trip(&mut human,&mut agent,(&mut human2,&mut agent2),&b_socket,"group_thread_k2b","surface-group").await?;
+        round_trip(&mut human,&mut agent,Some((&mut human2,&mut agent2)),&b_socket,"dm_k2b","surface-dm").await?;
+        // GRP-SYNC-01 owns multi-device group roster propagation. This group case checks the
+        // two verifiably joined primary devices; the DM above retains both sibling checks.
+        group(&mut human,&mut agent,&own,&peer).await?;
+        round_trip(&mut human,&mut agent,None,&b_socket,"group_thread_k2b","surface-group").await?;
         let before=call(&mut human,"human","surface.get",json!({"surface_id":"surface-group"})).await?;
         drop(human);a.start_kill()?;a.wait().await?;let _=std::fs::remove_file(&a_socket);
         a=client_directory_daemon_command(&rf,&a_socket,&root.join("human"),&node.ca_cert,None).spawn()?;mvp_s4_wait_for_socket(&a_socket).await?;
@@ -121,7 +123,7 @@ async fn run(node: &S8RealnetNode) -> TestResult {
 async fn round_trip(
     human: &mut ramflux_sdk::LocalBusClient,
     agent: &mut ramflux_sdk::LocalBusClient,
-    siblings: (&mut ramflux_sdk::LocalBusClient, &mut ramflux_sdk::LocalBusClient),
+    mut siblings: Option<(&mut ramflux_sdk::LocalBusClient, &mut ramflux_sdk::LocalBusClient)>,
     b_socket: &Path,
     conversation: &str,
     surface: &str,
@@ -130,7 +132,6 @@ async fn round_trip(
         A2uiConversationCommand as C, CreateSurfaceCommand, PatchSurfaceCommand,
         StreamAppendCommand, SurfacePatchOp, SurfaceType,
     };
-    let (human2, agent2) = siblings;
     let content = CreateSurfaceCommand {
         surface_id: surface.into(),
         surface_type: SurfaceType::StatusPanel,
@@ -159,9 +160,11 @@ async fn round_trip(
     )
     .await?;
     let current = wait_surface(human, "human", surface, 2).await?;
-    for (bus, account) in [(&mut *human2, "human2"), (&mut *agent2, "agent2")] {
-        let other = wait_surface(bus, account, surface, 2).await?;
-        assert_eq!(other["surface_hash"], current["surface_hash"]);
+    if let Some((human2, agent2)) = &mut siblings {
+        for (bus, account) in [(&mut **human2, "human2"), (&mut **agent2, "agent2")] {
+            let other = wait_surface(bus, account, surface, 2).await?;
+            assert_eq!(other["surface_hash"], current["surface_hash"]);
+        }
     }
     let stale =
         action_wire(conversation, surface, 1, first["surface_hash"].as_str().ok_or("hash")?)?;
@@ -201,12 +204,16 @@ async fn round_trip(
         current["surface_hash"].as_str().ok_or("hash")?,
     )
     .await?;
-    check_replica(agent, agent2, surface, &accepted).await?;
+    if let Some((_, agent2)) = &mut siblings {
+        check_replica(agent, agent2, surface, &accepted).await?;
+    }
     let closed = finish_surface(human, agent, conversation, surface, &current).await?;
-    for (bus, account) in [(human2, "human2"), (agent2, "agent2")] {
-        let other = wait_surface(bus, account, surface, 4).await?;
-        assert_eq!(other["surface_hash"], closed["surface_hash"]);
-        assert_eq!(other["closed"], true);
+    if let Some((human2, agent2)) = siblings {
+        for (bus, account) in [(human2, "human2"), (agent2, "agent2")] {
+            let other = wait_surface(bus, account, surface, 4).await?;
+            assert_eq!(other["surface_hash"], closed["surface_hash"]);
+            assert_eq!(other["closed"], true);
+        }
     }
     assert_eq!(closed["hash_history"].as_array().map(Vec::len), Some(4));
     let list =

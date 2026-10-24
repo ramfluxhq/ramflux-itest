@@ -168,24 +168,29 @@ pub(super) fn action_wire(
 pub(super) async fn group(
     human: &mut ramflux_sdk::LocalBusClient,
     agent: &mut ramflux_sdk::LocalBusClient,
-    human2: &mut ramflux_sdk::LocalBusClient,
     own: &Value,
     peer: &Value,
-    own2: &Value,
 ) -> TestResult {
     let a = call(human, "human", "identity.directory", json!({"limit":100})).await?;
     let b = call(agent, "agent", "identity.directory", json!({"limit":100})).await?;
-    let c = call(human2, "human2", "identity.directory", json!({"limit":100})).await?;
     let creator = device(&a, own)?;
     call(human,"human","group.create",json!({"group_id":"group_k2b","conversation_id":"group_thread_k2b","creator_id":own["device_id"],"creator_signing_public_key":creator["signing_public_key"],"creator_target_delivery_id":own["target_delivery_id"]})).await?;
-    // Normal group text delivery addresses member devices. A peer sibling must join explicitly;
-    // sharing its identity root alone cannot grant group membership or a delivery route.
-    for (account, directory) in [(peer, &b), (own2, &c)] {
-        let member = device(directory, account)?;
-        call(human,"human","group.member.add",json!({"group_id":"group_k2b","member_id":account["device_id"],"role":"member","member_signing_public_key":member["signing_public_key"],"member_principal_commitment":account["principal_commitment"],"target_delivery_id":account["target_delivery_id"]})).await?;
-    }
-    for (bus, id) in [(agent, "agent"), (human2, "human2")] {
-        wait_roster(bus, id, &[&own["device_id"], &peer["device_id"], &own2["device_id"]]).await?;
+    let member = device(&b, peer)?;
+    call(human,"human","group.member.add",json!({"group_id":"group_k2b","member_id":peer["device_id"],"role":"member","member_signing_public_key":member["signing_public_key"],"member_principal_commitment":peer["principal_commitment"],"target_delivery_id":peer["target_delivery_id"]})).await?;
+    wait_roster(agent, "agent", &[&own["device_id"], &peer["device_id"]]).await?;
+    // GRP-SYNC-01 covers full roster propagation and sibling membership. No sibling joins here.
+    for (bus, id) in [(&mut *human, "human"), (&mut *agent, "agent")] {
+        let state = call(bus, id, "group.members", json!({"group_id":"group_k2b"})).await?;
+        let actual = state["members"].as_array().ok_or("group members")?;
+        assert_eq!(
+            actual.len(),
+            2,
+            "GRP-SYNC-01 owns the multi-device group case; this slice requires exactly the two joined primary devices"
+        );
+        assert!(
+            actual.contains(&own["device_id"]) && actual.contains(&peer["device_id"]),
+            "GRP-SYNC-01 scope boundary requires both primary devices to be verified members"
+        );
     }
     call(human,"human","group.send",json!({"group_id":"group_k2b","conversation_id":"group_thread_k2b","message_id":"group-k2b-seed","sender_id":own["device_id"],"encrypted_body_base64":"","plaintext_body_base64":ramflux_protocol::encode_base64url(b"group surface conversation")})).await?;
     Ok(())

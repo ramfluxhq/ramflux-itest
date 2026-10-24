@@ -2622,7 +2622,7 @@ dependencies = [
 [[package]]
 name = "ramflux-core"
 version = "0.1.0"
-source = "git+https://github.com/ramfluxhq/ramflux.git?rev=66673f90588c1c13c815ff140ad4be152f9b348a#66673f90588c1c13c815ff140ad4be152f9b348a"
+source = "git+https://github.com/ramfluxhq/ramflux.git?rev=08284b5aae6cf50790e951c493d456e770cfca20#08284b5aae6cf50790e951c493d456e770cfca20"
 dependencies = [
  "serde",
  "thiserror",
@@ -2640,7 +2640,7 @@ dependencies = [
 [[package]]
 name = "ramflux-crypto"
 version = "0.1.0"
-source = "git+https://github.com/ramfluxhq/ramflux.git?rev=66673f90588c1c13c815ff140ad4be152f9b348a#66673f90588c1c13c815ff140ad4be152f9b348a"
+source = "git+https://github.com/ramfluxhq/ramflux.git?rev=08284b5aae6cf50790e951c493d456e770cfca20#08284b5aae6cf50790e951c493d456e770cfca20"
 dependencies = [
  "argon2",
  "base64",
@@ -2650,8 +2650,8 @@ dependencies = [
  "getrandom 0.3.4",
  "hex",
  "hmac",
- "ramflux-core 0.1.0 (git+https://github.com/ramfluxhq/ramflux.git?rev=66673f90588c1c13c815ff140ad4be152f9b348a)",
- "ramflux-protocol 0.1.0 (git+https://github.com/ramfluxhq/ramflux.git?rev=66673f90588c1c13c815ff140ad4be152f9b348a)",
+ "ramflux-core 0.1.0 (git+https://github.com/ramfluxhq/ramflux.git?rev=08284b5aae6cf50790e951c493d456e770cfca20)",
+ "ramflux-protocol 0.1.0 (git+https://github.com/ramfluxhq/ramflux.git?rev=08284b5aae6cf50790e951c493d456e770cfca20)",
  "secrecy",
  "serde",
  "serde_json",
@@ -2705,14 +2705,14 @@ dependencies = [
  "proptest",
  "quinn",
  "ramflux-cli-pro",
- "ramflux-core 0.1.0 (git+https://github.com/ramfluxhq/ramflux.git?rev=66673f90588c1c13c815ff140ad4be152f9b348a)",
- "ramflux-crypto 0.1.0 (git+https://github.com/ramfluxhq/ramflux.git?rev=66673f90588c1c13c815ff140ad4be152f9b348a)",
+ "ramflux-core 0.1.0 (git+https://github.com/ramfluxhq/ramflux.git?rev=08284b5aae6cf50790e951c493d456e770cfca20)",
+ "ramflux-crypto 0.1.0 (git+https://github.com/ramfluxhq/ramflux.git?rev=08284b5aae6cf50790e951c493d456e770cfca20)",
  "ramflux-node-core",
- "ramflux-protocol 0.1.0 (git+https://github.com/ramfluxhq/ramflux.git?rev=66673f90588c1c13c815ff140ad4be152f9b348a)",
- "ramflux-sdk 0.1.0 (git+https://github.com/ramfluxhq/ramflux.git?rev=66673f90588c1c13c815ff140ad4be152f9b348a)",
- "ramflux-storage 0.1.0 (git+https://github.com/ramfluxhq/ramflux.git?rev=66673f90588c1c13c815ff140ad4be152f9b348a)",
- "ramflux-sync 0.1.0 (git+https://github.com/ramfluxhq/ramflux.git?rev=66673f90588c1c13c815ff140ad4be152f9b348a)",
- "ramflux-transport 0.1.0 (git+https://github.com/ramfluxhq/ramflux.git?rev=66673f90588c1c13c815ff140ad4be152f9b348a)",
+ "ramflux-protocol 0.1.0 (git+https://github.com/ramfluxhq/ramflux.git?rev=08284b5aae6cf50790e951c493d456e770cfca20)",
+ "ramflux-sdk 0.1.0 (git+https://github.com/ramfluxhq/ramflux.git?rev=08284b5aae6cf50790e951c493d456e770cfca20)",
+ "ramflux-storage 0.1.0 (git+https://github.com/ramfluxhq/ramflux.git?rev=08284b5aae6cf50790e951c493d456e770cfca20)",
+ "ramflux-sync 0.1.0 (git+https://github.com/ramfluxhq/ramflux.git?rev=08284b5aae6cf50790e951c493d456e770cfca20)",
+ "ramflux-transport 0.1.0 (git+https://github.com/ramfluxhq/ramflux.git?rev=08284b5aae6cf50790e951c493d456e770cfca20)",
  "ratatui",
  "rcgen",
  "reqwest",
@@ -2730,14 +2730,14 @@ dependencies = [
 [[package]]
 name = "ramflux-node-core"
 version = "0.1.0"
-source = "git+https://github.com/ramfluxhq/ramflux.git?rev=66673f90588c1c13c815ff140ad4be152f9b348a#66673f90588c1c13c815ff140ad4be152f9b348a"
+source = "git+https://github.com/ramfluxhq/ramflux.git?rev=08284b5aae6cf50790e951c493d456e770cfca20#08284b5aae6cf50790e951c493d456e770cfca20"
 dependencies = [
  "arc-swap",
  "crc32fast",
  "hmac",
  "postcard",
- "ramflux-crypto 0.1.0 (git+https://github.com/ramfluxhq/ramflux.git?rev=66673f90588c1c13c815ff140ad4be152f9b348a)",
- "ramflux-protocol 0.1.0 (git+https://github.com/ramfluxhq/ramflux.git?rev=66673f90588c1c13c815ff140ad4be152f9b348a)",
+ "ramflux-crypto 0.1.0 (git+https://github.com/ramfluxhq/ramflux.git?rev=08284b5aae6cf50790e951c493d456e770cfca20)",
+ "ramflux-protocol 0.1.0 (git+https://github.com/ramfluxhq/ramflux.git?rev=08284b5aae6cf50790e951c493d456e770cfca20)",
  "redb",
  "serde",
  "serde_json",
@@ -2750,12 +2750,12 @@ dependencies = [
 [[package]]
 name = "ramflux-protocol"
 version = "0.1.0"
-source = "git+https://github.com/ramfluxhq/ramflux.git?rev=66673f90588c1c13c815ff140ad4be152f9b348a#66673f90588c1c13c815ff140ad4be152f9b348a"
+source = "git+https://github.com/ramfluxhq/ramflux.git?rev=08284b5aae6cf50790e951c493d456e770cfca20#08284b5aae6cf50790e951c493d456e770cfca20"
 dependencies = [
  "base64",
  "blake3",
  "ed25519-dalek",
- "ramflux-core 0.1.0 (git+https://github.com/ramfluxhq/ramflux.git?rev=66673f90588c1c13c815ff140ad4be152f9b348a)",
+ "ramflux-core 0.1.0 (git+https://github.com/ramfluxhq/ramflux.git?rev=08284b5aae6cf50790e951c493d456e770cfca20)",
  "serde",
  "serde_json",
  "serde_json_canonicalizer",
@@ -2782,18 +2782,18 @@ dependencies = [
 [[package]]
 name = "ramflux-sdk"
 version = "0.1.0"
-source = "git+https://github.com/ramfluxhq/ramflux.git?rev=66673f90588c1c13c815ff140ad4be152f9b348a#66673f90588c1c13c815ff140ad4be152f9b348a"
+source = "git+https://github.com/ramfluxhq/ramflux.git?rev=08284b5aae6cf50790e951c493d456e770cfca20#08284b5aae6cf50790e951c493d456e770cfca20"
 dependencies = [
  "aes-gcm",
  "blake3",
  "cbindgen",
  "hmac",
  "mime",
- "ramflux-crypto 0.1.0 (git+https://github.com/ramfluxhq/ramflux.git?rev=66673f90588c1c13c815ff140ad4be152f9b348a)",
- "ramflux-protocol 0.1.0 (git+https://github.com/ramfluxhq/ramflux.git?rev=66673f90588c1c13c815ff140ad4be152f9b348a)",
- "ramflux-storage 0.1.0 (git+https://github.com/ramfluxhq/ramflux.git?rev=66673f90588c1c13c815ff140ad4be152f9b348a)",
- "ramflux-sync 0.1.0 (git+https://github.com/ramfluxhq/ramflux.git?rev=66673f90588c1c13c815ff140ad4be152f9b348a)",
- "ramflux-transport 0.1.0 (git+https://github.com/ramfluxhq/ramflux.git?rev=66673f90588c1c13c815ff140ad4be152f9b348a)",
+ "ramflux-crypto 0.1.0 (git+https://github.com/ramfluxhq/ramflux.git?rev=08284b5aae6cf50790e951c493d456e770cfca20)",
+ "ramflux-protocol 0.1.0 (git+https://github.com/ramfluxhq/ramflux.git?rev=08284b5aae6cf50790e951c493d456e770cfca20)",
+ "ramflux-storage 0.1.0 (git+https://github.com/ramfluxhq/ramflux.git?rev=08284b5aae6cf50790e951c493d456e770cfca20)",
+ "ramflux-sync 0.1.0 (git+https://github.com/ramfluxhq/ramflux.git?rev=08284b5aae6cf50790e951c493d456e770cfca20)",
+ "ramflux-transport 0.1.0 (git+https://github.com/ramfluxhq/ramflux.git?rev=08284b5aae6cf50790e951c493d456e770cfca20)",
  "reqwest",
  "rustls",
  "rustls-pemfile",
@@ -2835,13 +2835,13 @@ dependencies = [
 [[package]]
 name = "ramflux-storage"
 version = "0.1.0"
-source = "git+https://github.com/ramfluxhq/ramflux.git?rev=66673f90588c1c13c815ff140ad4be152f9b348a#66673f90588c1c13c815ff140ad4be152f9b348a"
+source = "git+https://github.com/ramfluxhq/ramflux.git?rev=08284b5aae6cf50790e951c493d456e770cfca20#08284b5aae6cf50790e951c493d456e770cfca20"
 dependencies = [
  "blake3",
  "chacha20poly1305",
- "ramflux-core 0.1.0 (git+https://github.com/ramfluxhq/ramflux.git?rev=66673f90588c1c13c815ff140ad4be152f9b348a)",
- "ramflux-crypto 0.1.0 (git+https://github.com/ramfluxhq/ramflux.git?rev=66673f90588c1c13c815ff140ad4be152f9b348a)",
- "ramflux-protocol 0.1.0 (git+https://github.com/ramfluxhq/ramflux.git?rev=66673f90588c1c13c815ff140ad4be152f9b348a)",
+ "ramflux-core 0.1.0 (git+https://github.com/ramfluxhq/ramflux.git?rev=08284b5aae6cf50790e951c493d456e770cfca20)",
+ "ramflux-crypto 0.1.0 (git+https://github.com/ramfluxhq/ramflux.git?rev=08284b5aae6cf50790e951c493d456e770cfca20)",
+ "ramflux-protocol 0.1.0 (git+https://github.com/ramfluxhq/ramflux.git?rev=08284b5aae6cf50790e951c493d456e770cfca20)",
  "rusqlite",
  "serde",
  "serde_json",
@@ -2869,12 +2869,12 @@ dependencies = [
 [[package]]
 name = "ramflux-sync"
 version = "0.1.0"
-source = "git+https://github.com/ramfluxhq/ramflux.git?rev=66673f90588c1c13c815ff140ad4be152f9b348a#66673f90588c1c13c815ff140ad4be152f9b348a"
+source = "git+https://github.com/ramfluxhq/ramflux.git?rev=08284b5aae6cf50790e951c493d456e770cfca20#08284b5aae6cf50790e951c493d456e770cfca20"
 dependencies = [
  "chacha20poly1305",
- "ramflux-core 0.1.0 (git+https://github.com/ramfluxhq/ramflux.git?rev=66673f90588c1c13c815ff140ad4be152f9b348a)",
- "ramflux-crypto 0.1.0 (git+https://github.com/ramfluxhq/ramflux.git?rev=66673f90588c1c13c815ff140ad4be152f9b348a)",
- "ramflux-protocol 0.1.0 (git+https://github.com/ramfluxhq/ramflux.git?rev=66673f90588c1c13c815ff140ad4be152f9b348a)",
+ "ramflux-core 0.1.0 (git+https://github.com/ramfluxhq/ramflux.git?rev=08284b5aae6cf50790e951c493d456e770cfca20)",
+ "ramflux-crypto 0.1.0 (git+https://github.com/ramfluxhq/ramflux.git?rev=08284b5aae6cf50790e951c493d456e770cfca20)",
+ "ramflux-protocol 0.1.0 (git+https://github.com/ramfluxhq/ramflux.git?rev=08284b5aae6cf50790e951c493d456e770cfca20)",
  "serde",
  "serde_json",
  "thiserror",
@@ -2899,7 +2899,7 @@ dependencies = [
 [[package]]
 name = "ramflux-transport"
 version = "0.1.0"
-source = "git+https://github.com/ramfluxhq/ramflux.git?rev=66673f90588c1c13c815ff140ad4be152f9b348a#66673f90588c1c13c815ff140ad4be152f9b348a"
+source = "git+https://github.com/ramfluxhq/ramflux.git?rev=08284b5aae6cf50790e951c493d456e770cfca20#08284b5aae6cf50790e951c493d456e770cfca20"
 dependencies = [
  "arc-swap",
  "blake3",
@@ -2908,8 +2908,8 @@ dependencies = [
  "http",
  "postcard",
  "quinn",
- "ramflux-core 0.1.0 (git+https://github.com/ramfluxhq/ramflux.git?rev=66673f90588c1c13c815ff140ad4be152f9b348a)",
- "ramflux-protocol 0.1.0 (git+https://github.com/ramfluxhq/ramflux.git?rev=66673f90588c1c13c815ff140ad4be152f9b348a)",
+ "ramflux-core 0.1.0 (git+https://github.com/ramfluxhq/ramflux.git?rev=08284b5aae6cf50790e951c493d456e770cfca20)",
+ "ramflux-protocol 0.1.0 (git+https://github.com/ramfluxhq/ramflux.git?rev=08284b5aae6cf50790e951c493d456e770cfca20)",
  "reqwest",
  "rustls",
  "rustls-pemfile",
