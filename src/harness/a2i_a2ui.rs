@@ -112,7 +112,7 @@ pub(crate) async fn mvp_s17_assert_a2i_a2ui_control_surface(
                     .is_some_and(|snapshot| snapshot.contains("approval_card"))
             );
             let surface_hash = rendered["surface_hash"].as_str().ok_or("missing surface hash")?;
-            assert_eq!(surface_hash, ramflux_sync::a2ui_surface_hash(&surface)?);
+            assert_eq!(surface_hash, ramflux_sync::legacy_a2ui_render_profile_hash(&surface)?);
 
             let action = ramflux_sync::A2uiAction {
                 surface_id: "surface_s17_approval".to_owned(),
