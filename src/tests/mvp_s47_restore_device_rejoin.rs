@@ -3,6 +3,8 @@
 
 #![allow(unused_imports)]
 use super::*;
+#[cfg(feature = "realnet")]
+use std::io::Write;
 
 #[cfg(feature = "realnet")]
 #[test]
@@ -495,11 +497,20 @@ fn mvp_s47_assert_unauthorized_device_register_rejected(
         registration_pow: None,
         source_ip_hash: Some("s47-unauthorized-source".to_owned()),
     };
-    let response: serde_json::Value = ramflux_node_core::itest_http_post_json(
-        &format!("{}/mvp1/identity/register", node.gateway_url),
-        &request,
+    let address = node.gateway_url.strip_prefix("http://").ok_or("expected HTTP fixture")?;
+    let mut stream = std::net::TcpStream::connect(address)?;
+    stream.set_read_timeout(Some(Duration::from_secs(10)))?;
+    let body = serde_json::to_vec(&request)?;
+    write!(
+        stream,
+        "POST /mvp1/identity/register HTTP/1.1\r\nHost: {address}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+        body.len()
     )?;
-    let failure: ramflux_protocol::IdentityRegistrationFailure = serde_json::from_value(response)?;
+    stream.write_all(&body)?;
+    let response = ramflux_node_core::read_http_response_by_content_length(&mut stream)?;
+    assert!(response.status_line.starts_with("HTTP/1.1 409"), "{}", response.status_line);
+    let failure: ramflux_protocol::IdentityRegistrationFailure =
+        serde_json::from_slice(&response.body)?;
     assert_eq!(
         failure.error.reason_code,
         ramflux_protocol::IdentityDirectoryReason::InvalidRegistration
