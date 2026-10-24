@@ -22,6 +22,8 @@ pub(super) async fn create(
     let device = format!("device_k3b_{id}");
     let target = format!("target_k3b_{id}");
     let request = ramflux_sdk::LocalBusAccountCreateRequest {
+        label: None,
+        kind: None,
         node_id: None,
         local_account_id: id.into(),
         principal_id: principal.clone(),
