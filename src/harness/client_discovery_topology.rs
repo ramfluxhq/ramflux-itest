@@ -13,6 +13,13 @@ pub(crate) struct ClientDiscoveryTopology {
 
 pub(crate) fn start_client_discovery_topology()
 -> Result<ClientDiscoveryTopology, Box<dyn std::error::Error>> {
+    start_client_discovery_topology_named("ramflux-s72-client-discovery", 58400)
+}
+
+pub(crate) fn start_client_discovery_topology_named(
+    project: &str,
+    port_base: u16,
+) -> Result<ClientDiscoveryTopology, Box<dyn std::error::Error>> {
     let root = code_root();
     let deploy = root.join("ramflux/deploy");
     for file in [
@@ -72,10 +79,18 @@ pub(crate) fn start_client_discovery_topology()
         .into_iter()
         .map(|(key, value)| (key.to_owned(), value.to_owned())),
     );
-    let project = "ramflux-s72-client-discovery";
+    for (_, value) in &mut env {
+        for offset in [43_u16, 47, 78, 79, 82, 53] {
+            *value = value.replace(
+                &(58400 + offset).to_string(),
+                &(port_base.checked_add(offset).ok_or("client topology port overflow")?)
+                    .to_string(),
+            );
+        }
+    }
     let guard = ProductionComposeDownGuard::new(deploy.clone(), project.to_owned(), env.clone());
     run_production_compose_project(&deploy, project, &env, &["up", "--build", "-d"])?;
-    let origin = "http://127.0.0.1:58482".to_owned();
+    let origin = format!("http://127.0.0.1:{}", port_base + 82);
     wait_for_federation(&origin)?;
     Ok(ClientDiscoveryTopology {
         origin,

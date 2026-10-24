@@ -199,3 +199,5 @@ mod mvp_s74_event_stream;
 
 #[path = "k2b_surface_round_trip.rs"]
 mod k2b_surface_round_trip;
+#[path = "contact01_contact_resolution.rs"]
+mod contact01_contact_resolution;
