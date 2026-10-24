@@ -110,7 +110,7 @@ async fn create(
     let device = format!("id01-{id}-one");
     let target = format!("id01-target-{id}-one");
     let body = json!({"node_id":null,"local_account_id":id,"principal_id":principal,"principal_commitment":"","device_id":device,"target_delivery_id":target,"account_secret":"id01-test-secret","root_seed":root_seed,"device_seed":device_seed,"client_mode":"attended_cli","kind":"human","gateway":{"bind_addr":"0.0.0.0:0","gateway_addr":node.gateway_quic_addr.to_string(),"server_name":"localhost","ca_cert":node.ca_cert,"principal_id":principal,"device_id":device,"target_delivery_id":target,"prekey_http_url":null}});
-    let value = bus.request(None, "account", "account.create", &body).await?;
+    let value = bus.request(None, "account", "account.create", body).await?;
     assert_eq!(value["local_account_id"], id);
     Ok(value)
 }
@@ -121,7 +121,7 @@ async fn call(
     body: Value,
 ) -> TestResult<Value> {
     Ok(bus
-        .request(Some(account.into()), method.split('.').next().ok_or("method")?, method, &body)
+        .request(Some(account.into()), method.split('.').next().ok_or("method")?, method, body)
         .await?)
 }
 async fn send(
