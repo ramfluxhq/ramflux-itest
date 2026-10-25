@@ -10,12 +10,12 @@ pub(crate) async fn mvp_s2_assert_sdk_session_dm_resume(
     gateway_quic_addr: std::net::SocketAddr,
     ca_cert: &Path,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    mvp_s2_assert_sdk_session_dm_resume_with_transport(
+    Box::pin(mvp_s2_assert_sdk_session_dm_resume_with_transport(
         gateway_url,
         gateway_quic_addr,
         ca_cert,
         MvpS2GatewayTransport::Quic,
-    )
+    ))
     .await
 }
 
@@ -25,12 +25,12 @@ pub(crate) async fn mvp_s2_assert_sdk_session_dm_resume_tcp_tls(
     gateway_tcp_addr: std::net::SocketAddr,
     ca_cert: &Path,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    mvp_s2_assert_sdk_session_dm_resume_with_transport(
+    Box::pin(mvp_s2_assert_sdk_session_dm_resume_with_transport(
         gateway_url,
         gateway_tcp_addr,
         ca_cert,
         MvpS2GatewayTransport::TcpTls,
-    )
+    ))
     .await
 }
 
@@ -40,7 +40,7 @@ pub(crate) async fn mvp_s2_assert_sdk_session_dm_resume_auto_prefers_quic(
     gateway_quic_addr: std::net::SocketAddr,
     ca_cert: &Path,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    mvp_s2_assert_sdk_session_dm_resume_with_transport(
+    Box::pin(mvp_s2_assert_sdk_session_dm_resume_with_transport(
         gateway_url,
         gateway_quic_addr,
         ca_cert,
@@ -49,7 +49,7 @@ pub(crate) async fn mvp_s2_assert_sdk_session_dm_resume_auto_prefers_quic(
             quic_fallback_timeout: Duration::from_millis(1_500),
             expected_active: ramflux_sdk::GatewaySessionTransportKind::Quic,
         },
-    )
+    ))
     .await
 }
 
@@ -59,7 +59,7 @@ pub(crate) async fn mvp_s2_assert_sdk_session_dm_resume_auto_quic_survives_frame
     gateway_quic_addr: std::net::SocketAddr,
     ca_cert: &Path,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    mvp_s2_assert_sdk_session_dm_resume_with_transport(
+    Box::pin(mvp_s2_assert_sdk_session_dm_resume_with_transport(
         gateway_url,
         gateway_quic_addr,
         ca_cert,
@@ -68,7 +68,7 @@ pub(crate) async fn mvp_s2_assert_sdk_session_dm_resume_auto_quic_survives_frame
             quic_fallback_timeout: Duration::from_millis(500),
             expected_active: ramflux_sdk::GatewaySessionTransportKind::Quic,
         },
-    )
+    ))
     .await
 }
 
@@ -79,7 +79,7 @@ pub(crate) async fn mvp_s2_assert_sdk_session_dm_resume_auto_falls_back_tcp_tls(
     gateway_tcp_addr: std::net::SocketAddr,
     ca_cert: &Path,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    mvp_s2_assert_sdk_session_dm_resume_with_transport(
+    Box::pin(mvp_s2_assert_sdk_session_dm_resume_with_transport(
         gateway_url,
         blocked_quic_addr,
         ca_cert,
@@ -88,7 +88,7 @@ pub(crate) async fn mvp_s2_assert_sdk_session_dm_resume_auto_falls_back_tcp_tls(
             quic_fallback_timeout: Duration::from_secs(1),
             expected_active: ramflux_sdk::GatewaySessionTransportKind::TcpTls,
         },
-    )
+    ))
     .await
 }
 
