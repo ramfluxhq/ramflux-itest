@@ -109,14 +109,16 @@ fn initialize(dir: &Path, node_id: &str) -> Result {
     validate_saved_trust(dir, &identity, timestamp)?;
     let key_path = dir.join("certs/node-identity/node-signing.key");
     std::fs::create_dir_all(key_path.parent().ok_or("missing discovery secret directory")?)?;
+    // Group-readable: the capability-dropped services read it through RAMFLUX_SECRET_GID.
     let mut key = std::fs::OpenOptions::new()
         .write(true)
         .create(true)
         .truncate(true)
-        .mode(0o600)
-        .open(key_path)?;
+        .mode(0o640)
+        .open(&key_path)?;
     key.write_all(encode_base64url(identity.discovery).as_bytes())?;
     key.sync_all()?;
+    std::fs::set_permissions(&key_path, std::os::unix::fs::PermissionsExt::from_mode(0o640))?;
     let env = format!(
         "RAMFLUX_NODE_SERVICE_SIGNING_SEED_B64URL={}\nRAMFLUX_GATEWAY_V3_ISSUER_SEED={}\nRAMFLUX_FEDERATION_PROVIDER_OFFLINE_ROOT_PUBLIC_KEY={}\nRAMFLUX_FEDERATION_NODE_SIGNING_SEED_FILE=/etc/ramflux/node-identity/node-signing.key\nRAMFLUX_ROUTER_ADMIN_TOKEN={}\nRAMFLUX_FEDERATION_ADMIN_TOKEN={}\nDEMO_EXPECTED_NODE_PUBLIC_KEY={}\n",
         encode_base64url(identity.service),
@@ -299,9 +301,11 @@ mod tests {
         for (file, bytes) in files.iter().zip(before) {
             assert_eq!(std::fs::read(dir.0.join(file))?, bytes);
         }
-        for file in ["identity.json", "identity.env", "certs/node-identity/node-signing.key"] {
+        for file in ["identity.json", "identity.env"] {
             assert_eq!(std::fs::metadata(dir.0.join(file))?.permissions().mode() & 0o777, 0o600);
         }
+        let key = dir.0.join("certs/node-identity/node-signing.key");
+        assert_eq!(std::fs::metadata(key)?.permissions().mode() & 0o777, 0o640);
         let identity: Identity =
             serde_json::from_slice(&std::fs::read(dir.0.join("identity.json"))?)?;
         let environment = std::fs::read_to_string(dir.0.join("identity.env"))?;

@@ -498,10 +498,23 @@ fn add_itest_compose_files(command: &mut std::process::Command, overrides: Itest
 }
 
 #[cfg(all(test, feature = "realnet"))]
+fn operator_gid() -> Option<String> {
+    let output = std::process::Command::new("id").arg("-g").output().ok()?;
+    let gid = String::from_utf8(output.stdout).ok()?.trim().to_owned();
+    (output.status.success() && !gid.is_empty() && gid.bytes().all(|byte| byte.is_ascii_digit()))
+        .then_some(gid)
+}
+
+#[cfg(all(test, feature = "realnet"))]
 fn compose_env_with_required_defaults(env: &[(String, String)]) -> Vec<(String, String)> {
     let mut compose_env = env.to_vec();
     ensure_itest_node_service_signing_seed_env(&mut compose_env);
     ensure_compose_default_env(&mut compose_env, "RAMFLUX_VERSION", "dev");
+    // Production services drop every capability and read the 0640 node secrets through the
+    // owning group: with rootful Docker that is the operator's group, not container root's.
+    if let Some(gid) = operator_gid() {
+        ensure_compose_default_env(&mut compose_env, "RAMFLUX_SECRET_GID", &gid);
+    }
     // podman-compose 1.3.0 can preserve a self-referential service default literally.
     // Supply a concrete outer value to both the env file and compose process instead.
     ensure_compose_default_env(

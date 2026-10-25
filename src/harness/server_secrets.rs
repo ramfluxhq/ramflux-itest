@@ -28,7 +28,8 @@ pub(crate) fn write_discovery_secret(
     #[cfg(unix)]
     {
         use std::os::unix::fs::OpenOptionsExt;
-        options.mode(0o600);
+        // Group-readable: capability-dropped containers read it through RAMFLUX_SECRET_GID.
+        options.mode(0o640);
     }
     let mut file = options.open(&temporary)?;
     file.write_all(encoded.as_bytes())?;
@@ -51,7 +52,7 @@ fn fixture_secret_matches_discovery_pin_and_has_private_mode()
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
-        assert_eq!(std::fs::metadata(&path)?.permissions().mode() & 0o777, 0o600);
+        assert_eq!(std::fs::metadata(&path)?.permissions().mode() & 0o777, 0o640);
     }
     let custom = root.join("per-node");
     write_discovery_secret(
