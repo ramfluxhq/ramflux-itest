@@ -16,7 +16,11 @@ pub(crate) fn write_discovery_secret(
     if bytes.len() != 32 {
         return Err("fixture discovery secret must contain 32 bytes".into());
     }
-    let path = deploy.join("certs/federation/node-signing.key");
+    let certs = env
+        .iter()
+        .find(|(key, _)| key == "RAMFLUX_CERTS_DIR")
+        .map_or_else(|| deploy.join("certs"), |(_, value)| deploy.join(value));
+    let path = certs.join("federation/node-signing.key");
     std::fs::create_dir_all(path.parent().ok_or("secret parent missing")?)?;
     let temporary = path.with_extension(format!("key.{}", std::process::id()));
     let mut options = std::fs::OpenOptions::new();
@@ -49,6 +53,15 @@ fn fixture_secret_matches_discovery_pin_and_has_private_mode()
         use std::os::unix::fs::PermissionsExt;
         assert_eq!(std::fs::metadata(&path)?.permissions().mode() & 0o777, 0o600);
     }
+    let custom = root.join("per-node");
+    write_discovery_secret(
+        &root,
+        &[
+            ("RAMFLUX_FEDERATION_NODE_SIGNING_SEED_B64URL".into(), seed.clone()),
+            ("RAMFLUX_CERTS_DIR".into(), custom.to_string_lossy().into_owned()),
+        ],
+    )?;
+    assert_eq!(std::fs::read_to_string(custom.join("federation/node-signing.key"))?, seed);
     std::fs::remove_dir_all(root)?;
     Ok(())
 }
