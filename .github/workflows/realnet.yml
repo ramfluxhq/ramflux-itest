@@ -32,8 +32,11 @@ on:
         required: false
         default: ""
 
+# Main runs are never cancelled. On other refs a newer run cancels the older
+# one, separately per product override so a product-branch run does not cancel
+# the regular run of the same itest branch.
 concurrency:
-  group: realnet-${{ github.ref == 'refs/heads/main' && github.run_id || github.ref }}
+  group: realnet-${{ github.ref == 'refs/heads/main' && github.run_id || format('{0}-{1}', github.ref, inputs.product_ref) }}
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 permissions:
@@ -325,7 +328,6 @@ jobs:
           RAMFLUX_CROSS_GATEWAY: "1"
           RAMFLUX_ITEST_VOICE: ${{ matrix.voice || '' }}
           PLAIN: ${{ matrix.plain || '' }}
-          CARGO_LOG: ${{ matrix.slice == 'k5a' && 'cargo::core::compiler::fingerprint=info' || '' }}
           # Short: fixtures put Unix sockets under TMPDIR (108-byte sun_path).
           # tmpfs: k5a detects the agent-host restart by a new inode of its
           # atomically renamed checkpoint; ext4 recycles freed inode numbers at
@@ -334,7 +336,6 @@ jobs:
         run: |
           mkdir -p "$TMPDIR" ../logs/containers
           [ -n "$RAMFLUX_ITEST_VOICE" ] || unset RAMFLUX_ITEST_VOICE
-          [ -n "$CARGO_LOG" ] || unset CARGO_LOG
           if [ -n "$PLAIN" ]; then unset RAMFLUX_OBJECT_V3 RAMFLUX_CROSS_GATEWAY; fi
           env | grep -E '^RAMFLUX_' | sort
           # Snapshot container logs while the test runs: the fixtures tear
