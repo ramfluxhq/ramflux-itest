@@ -236,6 +236,7 @@ impl S13Session {
         let binding = session_binding.map_or_else(|| self.session_id.clone(), str::to_owned);
         let signed_request =
             self.signed_request(ramflux_node_core::PUSH_ROUTE_PATH, &body, Some(&binding))?;
+        let request_id = signed_request.request_id.clone();
         mvp_s1_write_client_frame(
             &mut self.send,
             &ramflux_node_core::GatewayClientFrame::PushRouteRegister {
@@ -247,10 +248,22 @@ impl S13Session {
         )
         .await?;
         loop {
-            match mvp_s1_read_server_frame(&mut self.recv).await? {
+            let frame = mvp_s1_read_server_frame(&mut self.recv).await?;
+            // Answers are asynchronous and carry the signed request id.
+            let answered = match &frame {
+                ramflux_node_core::GatewayServerFrame::PushRouteRegistered {
+                    request_id: id,
+                    ..
+                } => id.as_deref() == Some(request_id.as_str()),
+                ramflux_node_core::GatewayServerFrame::PushRouteRefused {
+                    request_id: id, ..
+                } => id == &request_id,
                 ramflux_node_core::GatewayServerFrame::InBandWake { .. }
-                | ramflux_node_core::GatewayServerFrame::Deliver { .. } => {}
-                frame => return Ok(frame),
+                | ramflux_node_core::GatewayServerFrame::Deliver { .. } => false,
+                _ => return Ok(frame),
+            };
+            if answered {
+                return Ok(frame);
             }
         }
     }

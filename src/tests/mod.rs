@@ -187,6 +187,8 @@ mod mvp_s71_t22_production_keyless_v3_positive;
 mod mvp_s72_client_node_discovery;
 #[path = "objects.rs"]
 mod objects;
+#[path = "push_route_wire.rs"]
+mod push_route_wire;
 #[path = "transport_node_store.rs"]
 mod transport_node_store;
 

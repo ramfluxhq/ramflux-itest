@@ -25,12 +25,12 @@ pub(crate) async fn mvp_s13_assert_push_provider_wake_bridge(
     };
     let refused = bob.register_push_route(webpush.clone(), Some("another-session")).await?;
     assert!(
-        matches!(refused, ramflux_node_core::GatewayServerFrame::Nack { .. }),
+        matches!(refused, ramflux_node_core::GatewayServerFrame::PushRouteRefused { .. }),
         "a route bound to another session must be refused: {refused:?}"
     );
     let before = itest_now_unix_seconds().unsigned_abs();
     let registered = bob.register_push_route(webpush, None).await?;
-    let ramflux_node_core::GatewayServerFrame::PushRouteRegistered { expires_at } = registered
+    let ramflux_node_core::GatewayServerFrame::PushRouteRegistered { expires_at, .. } = registered
     else {
         return Err(format!("expected push_route_registered, got {registered:?}").into());
     };
