@@ -471,6 +471,9 @@ fn add_itest_compose_files(command: &mut std::process::Command, overrides: Itest
     if cross_gateway_compose_enabled() {
         command.arg("-f").arg("docker-compose.itest.cross-gateway.yml");
     }
+    if std::env::var("RAMFLUX_ITEST_VOICE").as_deref() == Ok("1") {
+        command.arg("-f").arg("docker-compose.itest.voice.yml");
+    }
     if object_v3_compose_enabled() {
         command.arg("-f").arg("docker-compose.itest.object-v3.yml");
     }

@@ -209,3 +209,4 @@ mod k5a_agent_host;
 
 #[cfg(feature = "realnet")]
 mod proof01_durable_identity;
+mod call01_voice;

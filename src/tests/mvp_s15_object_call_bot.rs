@@ -68,24 +68,9 @@ fn mvp_s15_realnet_rf_call_signaling() -> Result<(), Box<dyn std::error::Error>>
         return Ok(());
     }
 
-    let realnet = start_realnet_compose()?;
-    let code_root = code_root();
-    let ca_cert = code_root.join("ramflux/deploy/certs/ca.pem");
-    let gateway_quic_addr: std::net::SocketAddr = std::env::var("RAMFLUX_ITEST_GATEWAY_QUIC_ADDR")
-        .unwrap_or_else(|_| "127.0.0.1:18443".to_owned())
-        .parse()?;
-    let runtime = tokio::runtime::Builder::new_current_thread().enable_all().build()?;
-    runtime.block_on(async {
-        Box::pin(mvp_s15_assert_rf_call_signaling(
-            gateway_quic_addr,
-            &ca_cert,
-            &realnet.gateway_url,
-        ))
-        .await?;
-        Ok::<(), Box<dyn std::error::Error>>(())
-    })?;
-    drop(realnet);
-    Ok(())
+    // This replaces the old local-only offer/answer echo with real daemon-to-daemon signaling,
+    // including the same CLI commands, encrypted media, and node-opacity assertions.
+    assert_realnet_voice_round_trip("ramflux-s15-voice")
 }
 
 #[cfg(feature = "realnet")]
