@@ -237,6 +237,9 @@ async fn wait_requested(bus: &mut ramflux_sdk::LocalBusClient, principal: &str) 
                 && event.body["principal_id"] == principal
                 && event.body["message_count"] == 1
             {
+                assert!(event.body.get("preview").is_none());
+                assert!(event.body.get("note").is_none());
+                assert!(event.body.get("safety_number").is_none());
                 assert!(event.body.get("manifest").is_none());
                 assert!(event.body.get("signature").is_none());
                 assert!(event.body.get("private_key").is_none());
