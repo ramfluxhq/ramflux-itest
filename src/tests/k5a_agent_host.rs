@@ -171,7 +171,11 @@ async fn create(
     let target = format!("target_k5a_{id}");
     let request = ramflux_sdk::LocalBusAccountCreateRequest {
         node_id: None,
-        kind: Some(if headless { "headless_ai" } else { "human" }.into()),
+        kind: Some(if headless {
+            ramflux_protocol::PrincipalKind::HeadlessAi
+        } else {
+            ramflux_protocol::PrincipalKind::Human
+        }),
         label: None,
         local_account_id: id.into(),
         principal_id: principal.clone(),
