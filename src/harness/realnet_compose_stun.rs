@@ -119,6 +119,9 @@ pub(crate) fn run_docker_compose_with_env_and_overrides(
 ) -> Result<(), Box<dyn std::error::Error>> {
     ensure_itest_shared_network()?;
     let compose_env = compose_env_with_required_defaults(env);
+    if args.contains(&"up") {
+        super::server_secrets::write_discovery_secret(deploy_root, &compose_env)?;
+    }
     let mut command = std::process::Command::new(container_runtime());
     command.arg("compose");
     let _env_file = add_compose_env_file_arg(&mut command, "itest", &compose_env)?;
@@ -434,6 +437,9 @@ pub(crate) fn run_docker_compose_project_with_overrides(
 ) -> Result<(), Box<dyn std::error::Error>> {
     ensure_itest_shared_network()?;
     let compose_env = compose_env_with_required_defaults(env);
+    if args.contains(&"up") {
+        super::server_secrets::write_discovery_secret(deploy_root, &compose_env)?;
+    }
     let mut command = std::process::Command::new(container_runtime());
     command.arg("compose");
     let _env_file = add_compose_env_file_arg(&mut command, project_name, &compose_env)?;
@@ -695,6 +701,9 @@ pub(crate) fn run_production_compose_project(
     args: &[&str],
 ) -> Result<(), Box<dyn std::error::Error>> {
     let compose_env = compose_env_with_required_defaults(env);
+    if args.contains(&"up") {
+        super::server_secrets::write_discovery_secret(deploy_root, &compose_env)?;
+    }
     let mut command = std::process::Command::new(container_runtime());
     command.arg("compose");
     let _env_file = add_compose_env_file_arg(&mut command, project_name, &compose_env)?;
