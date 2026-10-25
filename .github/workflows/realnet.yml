@@ -74,16 +74,28 @@ jobs:
         uses: actions/checkout@b9e0990d219a03df7633c93f6f005a8fecbcab22
         with:
           path: ramflux-itest
+          persist-credentials: false
 
+      # Untrusted values (the product_ref input and anything derived from it)
+      # reach scripts only through env, never through ${{ }} inside run:.
       - name: Resolve product ref
         id: ref
         env:
           PRODUCT_REF: ${{ inputs.product_ref }}
         run: |
+          if [ -n "$PRODUCT_REF" ]; then
+            if [ "${#PRODUCT_REF}" -gt 200 ] \
+               || ! printf '%s' "$PRODUCT_REF" | grep -qxE '[A-Za-z0-9._/-]+' \
+               || [ "$(printf '%s' "$PRODUCT_REF" | wc -l)" -ne 0 ] \
+               || case "$PRODUCT_REF" in -*|*..*) true ;; *) false ;; esac; then
+              echo "::error::invalid product_ref (allowed: [A-Za-z0-9._/-], at most 200 chars, no '..', no leading '-')"
+              exit 1
+            fi
+          fi
           pin=$(grep -oE 'ramfluxhq/ramflux\.git", rev = "[0-9a-f]{40}"' ramflux-itest/Cargo.toml \
             | grep -oE '[0-9a-f]{40}' | sort -u)
-          if [ "$(printf '%s\n' "$pin" | wc -l)" -ne 1 ] || [ -z "$pin" ]; then
-            echo "Cargo.toml must pin exactly one product SHA, found: $pin"; exit 1
+          if [ "$(printf '%s\n' "$pin" | wc -l)" -ne 1 ] || ! printf '%s' "$pin" | grep -qxE '[0-9a-f]{40}'; then
+            echo "::error::Cargo.toml must pin exactly one product SHA, found: $pin"; exit 1
           fi
           echo "pin=$pin" >> "$GITHUB_OUTPUT"
           echo "ref=${PRODUCT_REF:-$pin}" >> "$GITHUB_OUTPUT"
@@ -94,34 +106,54 @@ jobs:
           repository: ramfluxhq/ramflux
           ref: ${{ steps.ref.outputs.ref }}
           path: ramflux
+          persist-credentials: false
 
       - name: Record product SHA
         id: product
+        env:
+          REF: ${{ steps.ref.outputs.ref }}
+          PIN: ${{ steps.ref.outputs.pin }}
         run: |
           sha=$(git -C ramflux rev-parse HEAD)
+          printf '%s' "$sha" | grep -qxE '[0-9a-f]{40}' || { echo "::error::unexpected product SHA"; exit 1; }
           echo "sha=$sha" >> "$GITHUB_OUTPUT"
+          if [ "$sha" = "$PIN" ]; then
+            echo "override=false" >> "$GITHUB_OUTPUT"
+            echo "LOCKED_FLAG=--locked" >> "$GITHUB_ENV"
+          else
+            echo "override=true" >> "$GITHUB_OUTPUT"
+            echo "LOCKED_FLAG=" >> "$GITHUB_ENV"
+          fi
           {
-            echo "product ref: \`${{ steps.ref.outputs.ref }}\`"
+            echo "product ref: \`$REF\`"
             echo "product SHA: \`$sha\`"
-            echo "Cargo.toml pin: \`${{ steps.ref.outputs.pin }}\`"
+            echo "Cargo.toml pin: \`$PIN\`"
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Re-pin itest to the overriding product SHA
-        if: steps.product.outputs.sha != steps.ref.outputs.pin
+        if: steps.product.outputs.override == 'true'
+        env:
+          PIN: ${{ steps.ref.outputs.pin }}
+          SHA: ${{ steps.product.outputs.sha }}
         run: |
-          sed -i "s/${{ steps.ref.outputs.pin }}/${{ steps.product.outputs.sha }}/g" ramflux-itest/Cargo.toml
-          echo "LOCKED_FLAG=" >> "$GITHUB_ENV"
+          for v in "$PIN" "$SHA"; do
+            printf '%s' "$v" | grep -qxE '[0-9a-f]{40}' || { echo "::error::not a 40-hex SHA"; exit 1; }
+          done
+          sed -i "s/$PIN/$SHA/g" ramflux-itest/Cargo.toml
           echo "itest dependencies re-pinned to the product override (Cargo.lock updated, not --locked)" >> "$GITHUB_STEP_SUMMARY"
-
-      - name: Locked build
-        if: steps.product.outputs.sha == steps.ref.outputs.pin
-        run: echo "LOCKED_FLAG=--locked" >> "$GITHUB_ENV"
 
       - name: Cache keys
         id: keys
+        env:
+          SHA: ${{ steps.product.outputs.sha }}
+          OVERRIDE: ${{ steps.product.outputs.override }}
         run: |
-          echo "build=realnet-build-${{ steps.product.outputs.sha }}-${{ github.run_id }}-${{ github.run_attempt }}" >> "$GITHUB_OUTPUT"
-          echo "handoff=realnet-handoff-${{ github.run_id }}-${{ github.run_attempt }}" >> "$GITHUB_OUTPUT"
+          # Override runs use their own prefix, which normal runs never restore.
+          prefix=realnet-build
+          [ "$OVERRIDE" = true ] && prefix=realnet-override-build
+          echo "prefix=$prefix" >> "$GITHUB_OUTPUT"
+          echo "build=$prefix-$SHA-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT" >> "$GITHUB_OUTPUT"
+          echo "handoff=realnet-handoff-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT" >> "$GITHUB_OUTPUT"
 
       - name: Toolchain
         # Same components as rust-toolchain.toml, so rustup does not fetch them mid-test.
@@ -138,7 +170,7 @@ jobs:
             ramflux-itest/target
           key: ${{ steps.keys.outputs.build }}
           restore-keys: |
-            realnet-build-${{ steps.product.outputs.sha }}-
+            ${{ steps.keys.outputs.prefix }}-${{ steps.product.outputs.sha }}-
             realnet-build-
 
       - name: Prebuild service binaries
@@ -173,6 +205,8 @@ jobs:
           echo "realnet tests available: $(wc -l < ../stage/realnet-tests.txt)" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Save build cache
+        # Override runs never seed the shared build cache.
+        if: steps.product.outputs.override != 'true'
         uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830
         with:
           path: |
@@ -273,6 +307,7 @@ jobs:
         uses: actions/checkout@b9e0990d219a03df7633c93f6f005a8fecbcab22
         with:
           path: ramflux-itest
+          persist-credentials: false
 
       - name: Checkout ramflux (product)
         uses: actions/checkout@b9e0990d219a03df7633c93f6f005a8fecbcab22
@@ -280,6 +315,7 @@ jobs:
           repository: ramfluxhq/ramflux
           ref: ${{ needs.build.outputs.product_sha }}
           path: ramflux
+          persist-credentials: false
 
       - name: Toolchain
         # Same components as rust-toolchain.toml, so rustup does not fetch them mid-test.

@@ -43,12 +43,14 @@ jobs:
           repository: ramfluxhq/ramflux
           ref: 601593b7216e8325bad3e4c1be5a5e5b378d8063
           path: ramflux
+          persist-credentials: false
 
       - name: Checkout ramflux-itest (this repo)
         uses: actions/checkout@b9e0990d219a03df7633c93f6f005a8fecbcab22
         with:
           ref: ${{ github.sha }}
           path: ramflux-itest
+          persist-credentials: false
 
       - name: Cache
         uses: Swatinem/rust-cache@baf1a810e98b6a3001d0d7234864ed75a17c42fb
