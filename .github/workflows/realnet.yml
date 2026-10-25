@@ -222,12 +222,19 @@ jobs:
           - slice: call01
             tests: tests::call01_voice::call01_realnet_voice_round_trip
             voice: "1"
+          # s15 is a plain single-mesh slice: the object-v3 overlay would need
+          # provider-keyring material it does not supply, so it runs without
+          # RAMFLUX_OBJECT_V3 / RAMFLUX_CROSS_GATEWAY. Its call-signaling test
+          # is a voice acceptance test and runs with the voice overlay.
           - slice: s15
+            plain: "1"
             tests: >-
               tests::mvp_s15_object_call_bot::mvp_s15_realnet_rf_object_put_get
               tests::mvp_s15_object_call_bot::mvp_s15_realnet_object_store_persistence_after_daemon_restart
-              tests::mvp_s15_object_call_bot::mvp_s15_realnet_rf_call_signaling
               tests::mvp_s15_object_call_bot::mvp_s15_realnet_rf_bot
+          - slice: s15-call
+            tests: tests::mvp_s15_object_call_bot::mvp_s15_realnet_rf_call_signaling
+            voice: "1"
     steps:
       - name: Free disk space
         run: |
@@ -266,8 +273,11 @@ jobs:
         # A fresh checkout stamps every file with the current time, which would
         # make cargo rebuild every workspace crate the fixtures build on demand.
         # The restored target was built from exactly this product SHA.
+        # Directories too: build scripts may declare rerun-if-changed on a directory.
         working-directory: ramflux
-        run: git ls-files -z | xargs -0 touch -h -d '2000-01-01T00:00:00Z'
+        run: |
+          find . -path ./target -prune -o -path ./.git -prune -o -print0 \
+            | xargs -0 touch -h -d '2000-01-01T00:00:00Z'
 
       - name: Download binaries
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
@@ -291,11 +301,17 @@ jobs:
           RAMFLUX_OBJECT_V3: "1"
           RAMFLUX_CROSS_GATEWAY: "1"
           RAMFLUX_ITEST_VOICE: ${{ matrix.voice || '' }}
+          PLAIN: ${{ matrix.plain || '' }}
           # Short: fixtures put Unix sockets under TMPDIR (108-byte sun_path).
-          TMPDIR: /tmp/rfq
+          # tmpfs: k5a detects the agent-host restart by a new inode of its
+          # atomically renamed checkpoint; ext4 recycles freed inode numbers at
+          # once, tmpfs does not.
+          TMPDIR: /dev/shm/rfq
         run: |
           mkdir -p "$TMPDIR" ../logs/containers
           [ -n "$RAMFLUX_ITEST_VOICE" ] || unset RAMFLUX_ITEST_VOICE
+          if [ -n "$PLAIN" ]; then unset RAMFLUX_OBJECT_V3 RAMFLUX_CROSS_GATEWAY; fi
+          env | grep -E '^RAMFLUX_' | sort
           # Snapshot container logs while the test runs: the fixtures tear
           # the compose projects down before the test process exits.
           (
