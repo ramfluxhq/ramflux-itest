@@ -89,13 +89,7 @@ async fn run(node: &S8RealnetNode) -> TestResult {
         a.start_kill()?;
         a.wait().await?;
         std::fs::remove_file(&sockets[0])?;
-        realnet_step(
-            "PROOF-01 waiting for stopped account proof expiry",
-            format!("expires_at={} ttl={TTL}", original.expires_at),
-        );
-        while itest_now_unix_seconds() <= original.expires_at + 2 {
-            tokio::time::sleep(Duration::from_secs(1)).await;
-        }
+        wait_past_expiry(original.expires_at).await;
         let expired = manifest(node, &alice_root)?;
         assert_eq!(
             expired.devices[0].branch_proof.proof_id, original.proof_id,
@@ -152,6 +146,15 @@ async fn run(node: &S8RealnetNode) -> TestResult {
     let _ = std::fs::remove_dir_all(root);
     result??;
     Ok(())
+}
+async fn wait_past_expiry(expires_at: i64) {
+    realnet_step(
+        "PROOF-01 waiting for stopped account proof expiry",
+        format!("expires_at={expires_at} ttl={TTL}"),
+    );
+    while itest_now_unix_seconds() <= expires_at + 2 {
+        tokio::time::sleep(Duration::from_secs(1)).await;
+    }
 }
 fn manifest(
     node: &S8RealnetNode,
