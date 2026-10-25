@@ -146,3 +146,6 @@ pub(crate) use client_record_origin::*;
 mod client_directory_topology;
 #[cfg(feature = "realnet")]
 pub(crate) use client_directory_topology::*;
+
+#[cfg(all(test, feature = "realnet"))]
+pub(crate) mod sdk_receive_diagnostics;

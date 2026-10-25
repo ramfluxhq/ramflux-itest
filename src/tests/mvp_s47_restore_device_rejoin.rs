@@ -14,6 +14,8 @@ fn mvp_s47_realnet_restore_device_rejoin_manifest_gate() -> Result<(), Box<dyn s
         return Ok(());
     }
 
+    crate::harness::sdk_receive_diagnostics::install();
+    crate::realnet_step("s47 start", "restore-device-rejoin");
     let ports = S8ComposePorts {
         gateway_http: 64_761,
         gateway_quic: 64_621,
@@ -32,7 +34,13 @@ fn mvp_s47_realnet_restore_device_rejoin_manifest_gate() -> Result<(), Box<dyn s
     let node = start_s8_realnet_compose_project_with_env(
         "ramflux-s47-restore-device",
         ports,
-        &[("RAMFLUX_GATEWAY_ITEST_CAPTURE_JSON".to_owned(), gateway_capture.to_owned())],
+        &[
+            ("RAMFLUX_GATEWAY_ITEST_CAPTURE_JSON".to_owned(), gateway_capture.to_owned()),
+            (
+                "RAMFLUX_ITEST_FAILURE_LOG_SERVICES".to_owned(),
+                "ramflux-gateway,ramflux-gateway-b,ramflux-router".to_owned(),
+            ),
+        ],
     )?;
     let runtime = tokio::runtime::Builder::new_current_thread().enable_all().build()?;
     runtime.block_on(async {
@@ -57,6 +65,7 @@ async fn mvp_s47_assert_restore_device_rejoin(
     compose_project: &str,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let temp_root = temp_root("s47_restore_device_rejoin")?;
+    crate::realnet_step("s47 daemon setup", format!("root={}", temp_root.display()));
     let alice_primary_socket = temp_root.join("alice_a/rfd.sock");
     let alice_restored_socket = temp_root.join("alice_b/rfd.sock");
     let bob_socket = temp_root.join("bob/rfd.sock");
@@ -88,6 +97,7 @@ async fn mvp_s47_assert_restore_device_rejoin(
                 ramflux_sdk::LocalBusClient::connect(&alice_restored_socket).await?;
             let mut bob = ramflux_sdk::LocalBusClient::connect(&bob_socket).await?;
 
+            crate::realnet_step("s47 phase", "create primary account");
             let alice_commitment = mvp_s47_create_account(
                 &mut alice_primary,
                 node,
@@ -101,6 +111,7 @@ async fn mvp_s47_assert_restore_device_rejoin(
                 },
             )
             .await?;
+            crate::realnet_step("s47 phase", "create peer account");
             let bob_commitment = mvp_s47_create_account(
                 &mut bob,
                 node,
@@ -115,6 +126,7 @@ async fn mvp_s47_assert_restore_device_rejoin(
             )
             .await?;
 
+            crate::realnet_step("s47 phase", "exchange contacts");
             mvp_s47_add_contact(
                 &mut alice_primary,
                 "alice_s47_account",
@@ -147,6 +159,7 @@ async fn mvp_s47_assert_restore_device_rejoin(
             )
             .await?;
 
+            crate::realnet_step("s47 phase", "export root backup");
             alice_primary
                 .request(
                     Some("alice_s47_account".to_owned()),
@@ -158,6 +171,7 @@ async fn mvp_s47_assert_restore_device_rejoin(
                     })?,
                 )
                 .await?;
+            crate::realnet_step("s47 phase", "import root backup");
             alice_restored
                 .request(
                     None,
@@ -170,6 +184,7 @@ async fn mvp_s47_assert_restore_device_rejoin(
                 )
                 .await?;
 
+            crate::realnet_step("s47 phase", "activate restored device");
             let activated: ramflux_sdk::LocalBusDeviceActivateResponse = serde_json::from_value(
                 alice_restored
                     .request(
@@ -194,6 +209,7 @@ async fn mvp_s47_assert_restore_device_rejoin(
                 &["alice_device_s47_a", "alice_device_s47_b"],
             )?;
 
+            crate::realnet_step("s47 phase", "refresh peer safety after activation");
             let bob_joined_safety =
                 mvp_s47_safety(&mut bob, "bob_s47_account", &alice_commitment).await?;
             assert_eq!(bob_joined_safety["contact_device_count"], 2);
@@ -224,8 +240,10 @@ async fn mvp_s47_assert_restore_device_rejoin(
                 .await?;
             assert_eq!(reverified["verification_state"], "verified");
 
+            crate::realnet_step("s47 phase", "reject unauthorized registration");
             mvp_s47_assert_unauthorized_device_register_rejected(node, &alice_commitment)?;
 
+            crate::realnet_step("s47 phase", "submit first post-activation message");
             mvp_s47_send_dm(
                 &mut bob,
                 &alice_commitment,
@@ -235,9 +253,24 @@ async fn mvp_s47_assert_restore_device_rejoin(
                 b"s47 new device can decrypt after join",
             )
             .await?;
+            crate::realnet_step("s47 phase", "receive first post-activation message");
             let alice_b_received =
                 mvp_s47_receive(&mut alice_restored, "alice_s47_account", "conv_s47_bob_alice")
                     .await?;
+            crate::harness::sdk_receive_diagnostics::response(
+                "first-after-activation",
+                &alice_b_received,
+            );
+            if !mvp_s47_decrypted_contains(
+                &alice_b_received,
+                b"s47 new device can decrypt after join",
+            ) {
+                crate::harness::sdk_receive_diagnostics::failure_state(
+                    &mut alice_restored,
+                    "alice_s47_account",
+                )
+                .await;
+            }
             assert!(
                 mvp_s47_decrypted_contains(
                     &alice_b_received,
@@ -246,6 +279,7 @@ async fn mvp_s47_assert_restore_device_rejoin(
                 "restored device cannot decrypt after join; receive response: {alice_b_received}"
             );
 
+            crate::realnet_step("s47 phase", "revoke restored device");
             let revoked = alice_restored
                 .request(
                     Some("alice_s47_account".to_owned()),
@@ -310,6 +344,13 @@ async fn mvp_s47_assert_restore_device_rejoin(
         }))
         .await
         .map_err(|_elapsed| "S47 restore-device rejoin flow timed out")?;
+    for (name, result) in [
+        ("primary", &alice_primary_result),
+        ("restored", &alice_restored_result),
+        ("peer", &bob_result),
+    ] {
+        crate::realnet_step("s47 daemon exit", format!("daemon={name} result={result:?}"));
+    }
     alice_primary_result?;
     alice_restored_result?;
     bob_result?;
@@ -596,7 +637,7 @@ async fn mvp_s47_receive(
     account: &str,
     conversation_id: &str,
 ) -> Result<serde_json::Value, Box<dyn std::error::Error>> {
-    Ok(bus
+    let result = bus
         .request(
             Some(account.to_owned()),
             "message",
@@ -608,7 +649,12 @@ async fn mvp_s47_receive(
                 relay_service_key_base64: None,
             })?,
         )
-        .await?)
+        .await;
+    if let Err(error) = &result {
+        crate::realnet_step("s47 receive error", error.to_string());
+        crate::harness::sdk_receive_diagnostics::failure_state(bus, account).await;
+    }
+    Ok(result?)
 }
 
 #[cfg(all(test, feature = "realnet"))]
