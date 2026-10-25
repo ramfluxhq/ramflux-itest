@@ -7,6 +7,9 @@ const OPUS_SILENCE: &[u8] = &[0xf8, 0xff, 0xfe];
 struct Engine {
     socket: std::sync::Arc<tokio::net::UdpSocket>,
     token: String,
+    lease_id: String,
+    side: u8,
+    rebind_key: [u8; 32],
     sender: ramflux_crypto::SFrameSender,
     receiver: ramflux_crypto::SFrameReceiver,
     ssrc: u32,
@@ -32,7 +35,13 @@ impl Engine {
         )?;
         let socket = std::sync::Arc::new(tokio::net::UdpSocket::bind("0.0.0.0:0").await?);
         socket.connect(endpoint).await?;
-        Ok(Self { socket, token, sender, receiver, ssrc })
+        let lease_id = value["relay"]["lease_id"].as_str().ok_or("lease id missing")?.to_owned();
+        let side = u8::try_from(value["relay"]["side"].as_u64().ok_or("relay side missing")?)?;
+        let bytes = ramflux_protocol::decode_base64url(
+            value["relay"]["rebind_key"].as_str().ok_or("rebind key missing")?,
+        )?;
+        let rebind_key = bytes.as_slice().try_into().map_err(|_| "rebind key length")?;
+        Ok(Self { socket, token, lease_id, side, rebind_key, sender, receiver, ssrc })
     }
     fn packet(&mut self, seq: u16) -> VoiceResult<Vec<u8>> {
         let mut header = vec![0x80, 111];
@@ -78,6 +87,16 @@ async fn one_way(from: &mut Engine, to: &mut Engine, seq: u16, probe: bool) -> V
             };
             let len = received?;
             let wire = &buffer[..len];
+            if wire.starts_with(b"RFVC") {
+                let response = ramflux_crypto::voice_rebind_response(
+                    &to.rebind_key,
+                    &to.lease_id,
+                    to.side,
+                    wire,
+                )?;
+                to.send(&response).await?;
+                continue;
+            }
             if wire.len() < 12 {
                 return Err("truncated forwarded media".into());
             }
@@ -106,15 +125,16 @@ async fn one_way(from: &mut Engine, to: &mut Engine, seq: u16, probe: bool) -> V
 pub(super) async fn round_trip(alice: &Value, bob: &Value) -> VoiceResult {
     let mut a = Engine::new(alice, 0x1111_1111).await?;
     let mut b = Engine::new(bob, 0x2222_2222).await?;
+    one_way(&mut a, &mut b, 0, true).await?;
+    one_way(&mut b, &mut a, 0, true).await?;
+    rebind(&mut a, &mut b).await?;
     let keep_a = a.socket.clone();
     let keep_b = b.socket.clone();
     let packet_a = ramflux_node_core::encode_voice_datagram(&a.token, &[])?;
     let packet_b = ramflux_node_core::encode_voice_datagram(&b.token, &[])?;
     let media = async {
-        one_way(&mut a, &mut b, 0, true).await?;
-        one_way(&mut b, &mut a, 0, true).await?;
         tokio::time::sleep(Duration::from_secs(6)).await;
-        for seq in 1..=8 {
+        for seq in 3..=10 {
             one_way(&mut a, &mut b, seq, false).await?;
             one_way(&mut b, &mut a, seq, false).await?;
         }
@@ -137,4 +157,38 @@ async fn keep_alive(
         a.send(&packet_a).await?;
         b.send(&packet_b).await?;
     }
+}
+
+async fn rebind(account: &mut Engine, peer: &mut Engine) -> VoiceResult {
+    realnet_step(
+        "voice rebind",
+        "cookie plus copied token must fail; private HMAC proof must succeed",
+    );
+    let socket = std::sync::Arc::new(tokio::net::UdpSocket::bind("0.0.0.0:0").await?);
+    socket.connect(account.socket.peer_addr()?).await?;
+    socket.send(&ramflux_node_core::encode_voice_datagram(&account.token, &[])?).await?;
+    let mut buffer = [0; 2048];
+    let len = tokio::time::timeout(Duration::from_secs(3), socket.recv(&mut buffer)).await??;
+    let challenge = &buffer[..len];
+    let forged = ramflux_crypto::voice_rebind_response(
+        &[0; 32],
+        &account.lease_id,
+        account.side,
+        challenge,
+    )?;
+    socket.send(&ramflux_node_core::encode_voice_datagram(&account.token, &forged)?).await?;
+    // This packet must still arrive at the old pinned socket after a token thief's cookie echo.
+    one_way(peer, account, 1, false).await?;
+    let response = ramflux_crypto::voice_rebind_response(
+        &account.rebind_key,
+        &account.lease_id,
+        account.side,
+        challenge,
+    )?;
+    socket.send(&ramflux_node_core::encode_voice_datagram(&account.token, &response)?).await?;
+    account.socket = socket;
+    // Keep the existing SFrame sender/counter and replay window when only the socket changes.
+    one_way(peer, account, 2, true).await?;
+    one_way(account, peer, 1, true).await?;
+    Ok(())
 }

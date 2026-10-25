@@ -106,6 +106,15 @@ async fn flow(node: &S8RealnetNode, rf: &Path, sockets: &[PathBuf; 2]) -> VoiceR
     assert_eq!(peer["sframe"]["cipher_suite"], 5);
     assert_eq!(own["sframe"]["send"]["kid"], 0);
     assert_eq!(peer["sframe"]["send"]["kid"], 1);
+    assert_eq!(own["relay"]["side"], 0);
+    assert_eq!(peer["relay"]["side"], 1);
+    assert_eq!(own["relay"]["lease_id"], peer["relay"]["lease_id"]);
+    if own["relay"]["token"] == peer["relay"]["token"]
+        || own["relay"]["rebind_key"] == peer["relay"]["rebind_key"]
+    {
+        return Err("participant-private relay credentials overlap".into());
+    }
+
     if own["sframe"]["send"]["base_key"] != peer["sframe"]["receive"]["base_key"]
         || peer["sframe"]["send"]["base_key"] != own["sframe"]["receive"]["base_key"]
     {

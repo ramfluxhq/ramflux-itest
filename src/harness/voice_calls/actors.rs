@@ -31,7 +31,7 @@ pub(super) async fn create(
     let target = format!("target_call01_{id}");
     let request = ramflux_sdk::LocalBusAccountCreateRequest {
         node_id: None,
-        kind: Some("human".into()),
+        kind: Some(ramflux_protocol::PrincipalKind::Human),
         label: None,
         local_account_id: id.into(),
         principal_id: principal.clone(),
@@ -122,8 +122,16 @@ pub(super) fn public_fields_only(value: &Value) -> VoiceResult {
     match value {
         Value::Object(fields) => {
             for (key, value) in fields {
-                if ["base_key", "caller_token", "callee_token", "sframe", "allocation", "token"]
-                    .contains(&key.as_str())
+                if [
+                    "base_key",
+                    "caller_token",
+                    "callee_token",
+                    "sframe",
+                    "allocation",
+                    "token",
+                    "rebind_key",
+                ]
+                .contains(&key.as_str())
                 {
                     return Err("media secrets entered a public call projection".into());
                 }
