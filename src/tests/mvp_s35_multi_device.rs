@@ -308,10 +308,13 @@ struct MvpS35GatewayFrameSession {
     recv: quinn::RecvStream,
     open: ramflux_node_core::GatewayOpenFrame,
     session: ramflux_node_core::GatewaySessionEstablishedFrame,
+    root_commitment: String,
+    device_seed: [u8; 32],
 }
 
 #[cfg(all(test, feature = "realnet"))]
 struct MvpS35FrameDevice<'a> {
+    root_seed: [u8; 32],
     principal_id: &'a str,
     device_id: &'a str,
     target_delivery_id: &'a str,
@@ -330,6 +333,7 @@ async fn mvp_s35_assert_second_device_deliver_frame_transport(
         gateway_quic_addr,
         ca_cert,
         MvpS35FrameDevice {
+            root_seed: [0x35; 32],
             principal_id: "principal_s35_bob",
             device_id: "bob_device_s35_b",
             target_delivery_id: "target_s35_bob_b",
@@ -347,6 +351,7 @@ async fn mvp_s35_assert_second_device_deliver_frame_transport(
         gateway_quic_addr,
         ca_cert,
         MvpS35FrameDevice {
+            root_seed: [0x45; 32],
             principal_id: "principal_s35_alice",
             device_id: "alice_device_s35",
             target_delivery_id: "target_s35_alice",
@@ -366,7 +371,9 @@ async fn mvp_s35_assert_second_device_deliver_frame_transport(
         "ramflux.test.s35.second_device_frame.v1",
         envelope.encrypted_payload.as_bytes(),
     );
-    let submit = mvp_s1_submit_frame(&alice.open, envelope.clone())?;
+    let submit =
+        mvp_s35_submit_frame(&alice.open, envelope, &alice.root_commitment, alice.device_seed)?;
+    let envelope = submit.envelope.clone();
     mvp_s1_write_client_frame(
         &mut alice.send,
         &ramflux_node_core::GatewayClientFrame::Submit { submit },
@@ -406,6 +413,7 @@ async fn mvp_s35_assert_second_device_deliver_frame_transport(
         gateway_quic_addr,
         ca_cert,
         MvpS35FrameDevice {
+            root_seed: [0x35; 32],
             principal_id: "principal_s35_bob",
             device_id: "bob_device_s35_a",
             target_delivery_id: "target_s35_bob_a",
@@ -426,6 +434,7 @@ async fn mvp_s35_assert_second_device_deliver_frame_transport(
         "ramflux.test.s35.own_device_frame_fanout.v1",
         fanout_envelope.encrypted_payload.as_bytes(),
     );
+    mvp_s35_bind_source(&mut fanout_envelope, &bob_a.root_commitment, bob_a.device_seed)?;
     let fanout = mvp_s35_own_device_fanout_frame(
         &bob_a.open,
         "principal_s35_bob",
@@ -500,11 +509,15 @@ async fn mvp_s35_open_registered_gateway_frame_session(
     open.target_delivery_id = device.target_delivery_id.to_owned();
     open.stream_nonce = format!("nonce_s35_{}", device.nonce_suffix);
     open.source_ip_hash = Some("mvp_s35_source".to_owned());
-    let auth = mvp_s1_auth_frame_for_registered_device(
+    let root = ramflux_crypto::create_identity_root(device.principal_id, device.root_seed);
+    let root_commitment =
+        ramflux_crypto::identity_root_commitment(&root.signing_key.verifying_key());
+    let auth = mvp_s35_rooted_auth(
         &open,
         device.principal_id,
         device.device_epoch,
         device.device_seed,
+        &root_commitment,
     )?;
     mvp_s1_write_client_frame(
         &mut send,
@@ -514,7 +527,16 @@ async fn mvp_s35_open_registered_gateway_frame_session(
     mvp_s1_write_client_frame(&mut send, &ramflux_node_core::GatewayClientFrame::Auth { auth })
         .await?;
     let session = mvp_s1_expect_session_established(&mut recv).await?;
-    Ok(MvpS35GatewayFrameSession { _endpoint: endpoint, connection, send, recv, open, session })
+    Ok(MvpS35GatewayFrameSession {
+        _endpoint: endpoint,
+        connection,
+        send,
+        recv,
+        open,
+        session,
+        root_commitment,
+        device_seed: device.device_seed,
+    })
 }
 
 #[cfg(all(test, feature = "realnet"))]
@@ -751,4 +773,104 @@ async fn mvp_s35_wait_own_device_plaintext(
         }
         tokio::time::sleep(Duration::from_millis(50)).await;
     }
+}
+
+#[cfg(all(test, feature = "realnet"))]
+fn mvp_s35_rooted_auth(
+    open: &ramflux_node_core::GatewayOpenFrame,
+    principal: &str,
+    epoch: u64,
+    seed: [u8; 32],
+    root: &str,
+) -> Result<ramflux_node_core::GatewayAuthFrame, Box<dyn std::error::Error>> {
+    let mut auth = mvp_s1_auth_frame_for_registered_device(open, principal, epoch, seed)?;
+    auth.device_proof.ext.ext.insert("source_root_commitment".into(), serde_json::json!(root));
+    auth.device_proof.signed.signature =
+        ramflux_crypto::sign_protocol_object_with_seed(&auth.device_proof, seed)?;
+    auth.signed_request.device_proof_hash = ramflux_crypto::blake3_256_base64url(
+        ramflux_node_core::GATEWAY_DEVICE_PROOF_HASH_DOMAIN,
+        &ramflux_protocol::canonical_json_bytes(&auth.device_proof)?,
+    );
+    auth.signed_request.signed.signature =
+        ramflux_crypto::sign_protocol_object_with_seed(&auth.signed_request, seed)?;
+    Ok(auth)
+}
+#[cfg(all(test, feature = "realnet"))]
+fn mvp_s35_submit_frame(
+    open: &ramflux_node_core::GatewayOpenFrame,
+    mut envelope: ramflux_protocol::Envelope,
+    root: &str,
+    seed: [u8; 32],
+) -> Result<ramflux_node_core::GatewaySubmitFrame, Box<dyn std::error::Error>> {
+    mvp_s35_bind_source(&mut envelope, root, seed)?;
+    let mut submit = mvp_s1_submit_frame(open, envelope)?;
+    submit.signed_request.signed.signing_key_id = format!("device:{}", open.device_id);
+    submit.signed_request.signed.signature =
+        ramflux_crypto::sign_protocol_object_with_seed(&submit.signed_request, seed)?;
+    Ok(submit)
+}
+#[cfg(all(test, feature = "realnet"))]
+fn mvp_s35_bind_source(
+    envelope: &mut ramflux_protocol::Envelope,
+    root: &str,
+    seed: [u8; 32],
+) -> Result<(), Box<dyn std::error::Error>> {
+    envelope.ext.ext.insert("source_root_commitment".into(), serde_json::json!(root));
+    envelope.signed.signing_key_id = format!("device:{}", envelope.source_device_id);
+    envelope.signed.signature = ramflux_crypto::sign_canonical_bytes_with_seed(
+        &ramflux_protocol::envelope_sender_signed_bytes(envelope)?,
+        seed,
+    );
+    Ok(())
+}
+#[cfg(all(test, feature = "realnet"))]
+#[test]
+fn s35_raw_frames_bind_known_roots_and_the_actual_device_keys()
+-> Result<(), Box<dyn std::error::Error>> {
+    for (principal, device, root_seed, seed) in [
+        ("principal_s35_alice", "alice_device_s35", 0x45, 0x46),
+        ("principal_s35_bob", "bob_device_s35_a", 0x35, 0x36),
+        ("principal_s35_bob", "bob_device_s35_b", 0x35, 0x37),
+    ] {
+        let root = ramflux_crypto::create_identity_root(principal, [root_seed; 32]);
+        let root = ramflux_crypto::identity_root_commitment(&root.signing_key.verifying_key());
+        let mut open = mvp_s1_open_frame(None, 1_760_000_035, "root-binding");
+        open.device_id = device.into();
+        let auth = mvp_s35_rooted_auth(&open, principal, 1, [seed; 32], &root)?;
+        assert_eq!(auth.device_proof.ext.ext["source_root_commitment"], root);
+        let key = ramflux_crypto::public_key_base64url_from_seed([seed; 32]);
+        ramflux_crypto::verify_canonical_signature(
+            &ramflux_protocol::signed_bytes(&auth.device_proof)?,
+            &auth.device_proof.signed.signature,
+            &key,
+        )?;
+        ramflux_crypto::verify_canonical_signature(
+            &ramflux_protocol::signed_bytes(&auth.signed_request)?,
+            &auth.signed_request.signed.signature,
+            &key,
+        )?;
+        assert_eq!(
+            auth.signed_request.device_proof_hash,
+            ramflux_crypto::blake3_256_base64url(
+                ramflux_node_core::GATEWAY_DEVICE_PROOF_HASH_DOMAIN,
+                &ramflux_protocol::canonical_json_bytes(&auth.device_proof)?
+            )
+        );
+        let mut envelope = itest_envelope("rooted-envelope", "target");
+        envelope.source_principal_id = principal.into();
+        envelope.source_device_id = device.into();
+        let submit = mvp_s35_submit_frame(&open, envelope, &root, [seed; 32])?;
+        ramflux_crypto::verify_canonical_signature(
+            &ramflux_protocol::signed_bytes(&submit.signed_request)?,
+            &submit.signed_request.signed.signature,
+            &key,
+        )?;
+        let envelope = submit.envelope;
+        ramflux_crypto::verify_canonical_signature(
+            &ramflux_protocol::envelope_sender_signed_bytes(&envelope)?,
+            &envelope.signed.signature,
+            &key,
+        )?;
+    }
+    Ok(())
 }
