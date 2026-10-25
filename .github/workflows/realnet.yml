@@ -1,0 +1,337 @@
+name: Realnet
+
+# Runs the realnet regression slices against the real docker compose mesh.
+#
+# Layout: the product (ramfluxhq/ramflux) and this repo are checked out as the
+# sibling directories the harness expects (<parent>/ramflux and
+# <parent>/ramflux-itest). By default the product is checked out at the exact
+# SHA pinned in Cargo.toml. A workflow_dispatch `product_ref` overrides that
+# pin (branch, tag or SHA): the itest git dependencies are re-pinned to the
+# resolved product SHA so the harness and the services come from one revision.
+#
+# Job `build` compiles everything once: the seven service binaries (the
+# product's run-realnet.sh in RAMFLUX_REALNET_PREBUILD_ONLY=1 mode), the
+# client binaries the fixtures build on demand, and the itest test executable.
+# The build cache entry saved by this run is restored by the slice jobs (so
+# on-demand fixture builds are no-ops); the service binaries and the test
+# executable are uploaded as artifacts.
+#
+# Job `slice` runs one realnet slice per matrix entry with
+#   --exact --nocapture --test-threads=1
+# and treats a reported skip (false green) or a run that executed fewer tests
+# than requested as a failure.
+on:
+  push:
+    branches: ["**"]
+  schedule:
+    - cron: "23 2 * * *"
+  workflow_dispatch:
+    inputs:
+      product_ref:
+        description: Product ref (branch, tag or SHA) overriding the Cargo.toml pin; empty = pinned SHA
+        required: false
+        default: ""
+
+concurrency:
+  group: realnet-${{ github.ref == 'refs/heads/main' && github.run_id || github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: never
+  # Incremental artifacts are large and never reused here; keeping the setting
+  # identical in every job also keeps cargo fingerprints valid across jobs.
+  CARGO_INCREMENTAL: "0"
+  RUST_TOOLCHAIN: "1.99.0"
+
+jobs:
+  build:
+    name: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    outputs:
+      product_sha: ${{ steps.product.outputs.sha }}
+      cache_key: ${{ steps.keys.outputs.handoff }}
+    steps:
+      - name: Free disk space
+        run: |
+          df -h /
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL /usr/local/share/boost
+          docker image prune -af >/dev/null
+          df -h /
+
+      - name: Checkout ramflux-itest
+        uses: actions/checkout@b9e0990d219a03df7633c93f6f005a8fecbcab22
+        with:
+          path: ramflux-itest
+
+      - name: Resolve product ref
+        id: ref
+        env:
+          PRODUCT_REF: ${{ inputs.product_ref }}
+        run: |
+          pin=$(grep -oE 'ramfluxhq/ramflux\.git", rev = "[0-9a-f]{40}"' ramflux-itest/Cargo.toml \
+            | grep -oE '[0-9a-f]{40}' | sort -u)
+          if [ "$(printf '%s\n' "$pin" | wc -l)" -ne 1 ] || [ -z "$pin" ]; then
+            echo "Cargo.toml must pin exactly one product SHA, found: $pin"; exit 1
+          fi
+          echo "pin=$pin" >> "$GITHUB_OUTPUT"
+          echo "ref=${PRODUCT_REF:-$pin}" >> "$GITHUB_OUTPUT"
+
+      - name: Checkout ramflux (product)
+        uses: actions/checkout@b9e0990d219a03df7633c93f6f005a8fecbcab22
+        with:
+          repository: ramfluxhq/ramflux
+          ref: ${{ steps.ref.outputs.ref }}
+          path: ramflux
+
+      - name: Record product SHA
+        id: product
+        run: |
+          sha=$(git -C ramflux rev-parse HEAD)
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+          {
+            echo "product ref: \`${{ steps.ref.outputs.ref }}\`"
+            echo "product SHA: \`$sha\`"
+            echo "Cargo.toml pin: \`${{ steps.ref.outputs.pin }}\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Re-pin itest to the overriding product SHA
+        if: steps.product.outputs.sha != steps.ref.outputs.pin
+        run: |
+          sed -i "s/${{ steps.ref.outputs.pin }}/${{ steps.product.outputs.sha }}/g" ramflux-itest/Cargo.toml
+          echo "LOCKED_FLAG=" >> "$GITHUB_ENV"
+          echo "itest dependencies re-pinned to the product override (Cargo.lock updated, not --locked)" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Locked build
+        if: steps.product.outputs.sha == steps.ref.outputs.pin
+        run: echo "LOCKED_FLAG=--locked" >> "$GITHUB_ENV"
+
+      - name: Cache keys
+        id: keys
+        run: |
+          echo "handoff=realnet-build-${{ steps.product.outputs.sha }}-${{ github.run_id }}-${{ github.run_attempt }}" >> "$GITHUB_OUTPUT"
+
+      - name: Toolchain
+        run: rustup toolchain install "$RUST_TOOLCHAIN" --profile minimal
+
+      - name: Restore build cache
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+            ramflux/target
+            ramflux-itest/target
+          key: ${{ steps.keys.outputs.handoff }}
+          restore-keys: |
+            realnet-build-${{ steps.product.outputs.sha }}-
+            realnet-build-
+
+      - name: Prebuild service binaries
+        run: RAMFLUX_REALNET_PREBUILD_ONLY=1 ramflux/deploy/scripts/run-realnet.sh
+
+      - name: Prebuild fixture client binaries
+        # The same commands the fixtures run on demand (rf_cli.rs,
+        # voice_calls/actors.rs, k5a_agent_host/build.rs), run from the itest
+        # dir so the toolchain resolves exactly as it does under the test.
+        working-directory: ramflux-itest
+        run: |
+          cargo build --quiet --features itest-local-mint,itest-identity-proof \
+            --manifest-path ../ramflux/apps/rf/Cargo.toml
+          cargo build --bin rf --features itest-local-mint \
+            --manifest-path ../ramflux/apps/rf/Cargo.toml --target-dir ../ramflux/target
+          cargo build --bin ramflux-agent-host \
+            --manifest-path ../ramflux/Cargo.toml --target-dir ../ramflux/target
+
+      - name: Build itest test executable
+        working-directory: ramflux-itest
+        run: |
+          exe=$(cargo test $LOCKED_FLAG --features realnet --no-default-features --no-run \
+            --message-format=json \
+            | jq -r 'select(.reason == "compiler-artifact" and .profile.test == true
+                       and .target.kind == ["lib"]) | .executable' | tail -1)
+          test -x "$exe"
+          mkdir -p ../stage/bin
+          cp "$exe" ../stage/bin/ramflux-itest-realnet
+          cp -r ../ramflux/deploy/itest-bin ../stage/itest-bin
+          ../stage/bin/ramflux-itest-realnet --list 2>/dev/null \
+            | sed -n 's/: test$//p' | grep 'realnet_' > ../stage/realnet-tests.txt
+          echo "realnet tests available: $(wc -l < ../stage/realnet-tests.txt)" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Save build cache (also the hand-off to the slice jobs)
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+            ramflux/target
+            ramflux-itest/target
+          key: ${{ steps.keys.outputs.handoff }}
+
+      - name: Upload binaries
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: realnet-binaries
+          path: stage/
+          if-no-files-found: error
+          retention-days: 7
+
+  slice:
+    name: ${{ matrix.slice }}
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      max-parallel: 4
+      matrix:
+        include:
+          - slice: contact01
+            tests: tests::contact01_contact_resolution::contact01_realnet_add_then_dm
+          - slice: id01
+            tests: tests::id01_root_bound_devices::id01_realnet_root_bound_device_add_revoke
+          - slice: proof01
+            tests: tests::proof01_durable_identity::proof01_realnet_durable_identity_after_session_proof_expiry
+          - slice: k2b
+            tests: tests::k2b_surface_round_trip::k2b_realnet_surface_round_trip
+          - slice: k3b
+            tests: tests::k3b_task_needs_me_approval::k3b_realnet_task_needs_me_approval
+          - slice: k5a
+            tests: tests::k5a_agent_host::k5a_realnet_agent_replies_in_dm_and_group
+          - slice: k5a2
+            tests: tests::k5a_agent_host::k5a2_realnet_agent_surface
+          - slice: s35
+            tests: tests::mvp_s35_multi_device::mvp_s35_realnet_multi_device_activation_fanout
+          - slice: s42
+            tests: tests::mvp_s42_tui_object_attachment::mvp_s42_realnet_tui_object_attachment_panel
+          - slice: s47
+            tests: tests::mvp_s47_restore_device_rejoin::mvp_s47_realnet_restore_device_rejoin_manifest_gate
+          - slice: s48
+            tests: tests::mvp_s48_own_device_sync::mvp_s48_realnet_own_device_history_group_key_sync
+          - slice: s73
+            tests: tests::mvp_s73_client_read_model::mvp_s73_realnet_client_read_model_actionable_ids
+          - slice: s74
+            tests: tests::mvp_s74_event_stream::mvp_s74_realnet_autonomous_sync_replay_and_daemon_restart
+          - slice: k12
+            tests: tests::k12_deferred_attachment_fetch::k12_realnet_deferred_attachment_fetch
+          - slice: call01
+            tests: tests::call01_voice::call01_realnet_voice_round_trip
+            voice: "1"
+          - slice: s15
+            tests: >-
+              tests::mvp_s15_object_call_bot::mvp_s15_realnet_rf_object_put_get
+              tests::mvp_s15_object_call_bot::mvp_s15_realnet_object_store_persistence_after_daemon_restart
+              tests::mvp_s15_object_call_bot::mvp_s15_realnet_rf_call_signaling
+              tests::mvp_s15_object_call_bot::mvp_s15_realnet_rf_bot
+    steps:
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+          docker image prune -af >/dev/null
+          df -h /
+
+      - name: Checkout ramflux-itest
+        uses: actions/checkout@b9e0990d219a03df7633c93f6f005a8fecbcab22
+        with:
+          path: ramflux-itest
+
+      - name: Checkout ramflux (product)
+        uses: actions/checkout@b9e0990d219a03df7633c93f6f005a8fecbcab22
+        with:
+          repository: ramfluxhq/ramflux
+          ref: ${{ needs.build.outputs.product_sha }}
+          path: ramflux
+
+      - name: Toolchain
+        run: rustup toolchain install "$RUST_TOOLCHAIN" --profile minimal
+
+      - name: Restore build from the build job
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+            ramflux/target
+            ramflux-itest/target
+          key: ${{ needs.build.outputs.cache_key }}
+          fail-on-cache-miss: true
+
+      - name: Mark product sources older than the restored build
+        # A fresh checkout stamps every file with the current time, which would
+        # make cargo rebuild every workspace crate the fixtures build on demand.
+        # The restored target was built from exactly this product SHA.
+        working-directory: ramflux
+        run: git ls-files -z | xargs -0 touch -h -d '2000-01-01T00:00:00Z'
+
+      - name: Download binaries
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: realnet-binaries
+          path: stage
+
+      - name: Stage binaries
+        run: |
+          rm -rf ramflux/deploy/itest-bin
+          cp -r stage/itest-bin ramflux/deploy/itest-bin
+          chmod +x stage/bin/ramflux-itest-realnet ramflux/deploy/itest-bin/*
+          for t in ${{ matrix.tests }}; do
+            grep -qx "$t" stage/realnet-tests.txt || { echo "unknown realnet test: $t"; exit 97; }
+          done
+
+      - name: Run ${{ matrix.slice }}
+        working-directory: ramflux-itest
+        env:
+          RAMFLUX_ITEST_REALNET: "1"
+          RAMFLUX_OBJECT_V3: "1"
+          RAMFLUX_CROSS_GATEWAY: "1"
+          RAMFLUX_ITEST_VOICE: ${{ matrix.voice || '' }}
+          # Short: fixtures put Unix sockets under TMPDIR (108-byte sun_path).
+          TMPDIR: /tmp/rfq
+        run: |
+          mkdir -p "$TMPDIR" ../logs/containers
+          [ -n "$RAMFLUX_ITEST_VOICE" ] || unset RAMFLUX_ITEST_VOICE
+          # Snapshot container logs while the test runs: the fixtures tear
+          # the compose projects down before the test process exits.
+          (
+            while sleep 15; do
+              for c in $(docker ps -a --format '{{.Names}}' | grep -i ramflux); do
+                docker logs --timestamps "$c" > "../logs/containers/$c.log" 2>&1 || true
+              done
+            done
+          ) &
+          snap=$!
+          want=$(echo ${{ matrix.tests }} | wc -w)
+          start=$(date +%s)
+          set +e
+          ../stage/bin/ramflux-itest-realnet ${{ matrix.tests }} \
+            --exact --nocapture --test-threads=1 2>&1 | tee ../logs/test.log
+          rc=${PIPESTATUS[0]}
+          set -e
+          kill "$snap" 2>/dev/null || true
+          elapsed=$(( $(date +%s) - start ))
+          # A realnet test that is not fully enabled prints "skipping ..." and returns Ok.
+          if [ "$rc" -eq 0 ] && grep -viE 'PREBUILD_ONLY|host pre-build' ../logs/test.log \
+               | grep -qiE '^skipping|skipping .*realnet'; then
+            echo "::error::FALSE-GREEN: test reported a skip"; rc=96
+          fi
+          passed=$(sed -nE 's/^test result: ok\. ([0-9]+) passed.*/\1/p' ../logs/test.log | tail -1)
+          if [ "$rc" -eq 0 ] && [ "${passed:-0}" -ne "$want" ]; then
+            echo "::error::NO-TEST: expected $want passed, got ${passed:-0}"; rc=97
+          fi
+          echo "| ${{ matrix.slice }} | exit $rc | ${elapsed}s |" >> "$GITHUB_STEP_SUMMARY"
+          exit "$rc"
+
+      - name: Upload logs
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: realnet-${{ matrix.slice }}-logs
+          path: logs/
+          if-no-files-found: warn
+          retention-days: 14

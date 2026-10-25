@@ -1,21 +1,23 @@
 name: CI
 
 on:
-  pull_request:
   push:
-    branches: [main]
+    branches: ["**"]
+  pull_request:
+  workflow_dispatch:
 
+# One group per ref: a newer push to a feature branch cancels the older run.
+# Main runs get a per-commit group so they are never cancelled or superseded.
 concurrency:
-  group: ci-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  group: ci-${{ github.workflow }}-${{ github.ref == 'refs/heads/main' && github.sha || github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 permissions:
   contents: read
 
-# NOTE: the `realnet` integration tests require a live Docker mesh
-# (deploy/docker-compose.itest*.yml) and are only runnable on the qa
-# node. CI therefore COMPILES everything (including the realnet feature)
-# but RUNS no tests.
+# NOTE: this workflow only COMPILES everything (including the realnet
+# feature). The `realnet` integration tests need the product checkout and a
+# live Docker compose mesh; they run in realnet.yml.
 jobs:
   build:
     name: fmt, clippy, build
