@@ -200,9 +200,9 @@ mod mvp_s74_event_stream;
 
 #[path = "contact01_contact_resolution.rs"]
 mod contact01_contact_resolution;
-#[path = "k5a_agent_host.rs"]
-mod k5a_agent_host;
 #[cfg(feature = "realnet")]
 mod id01_root_bound_devices;
 #[path = "k2b_surface_round_trip.rs"]
 mod k2b_surface_round_trip;
+#[path = "k5a_agent_host.rs"]
+mod k5a_agent_host;
