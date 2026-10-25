@@ -72,8 +72,9 @@ pub(super) async fn cli(
 ) -> VoiceResult<Value> {
     let socket = socket.to_str().ok_or("invalid socket path")?;
     let mut args = vec!["--socket", socket, "call", action, "--account", account];
-    if let Some((flag, value)) = argument {
-        args.extend([flag, value]);
+    let selector = argument.map(|(flag, value)| format!("{flag}={value}"));
+    if let Some(selector) = selector.as_deref() {
+        args.push(selector);
     }
     mvp_s4_rf_json(rf, &args).await
 }
