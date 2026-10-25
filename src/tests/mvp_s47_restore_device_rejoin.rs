@@ -238,10 +238,13 @@ async fn mvp_s47_assert_restore_device_rejoin(
             let alice_b_received =
                 mvp_s47_receive(&mut alice_restored, "alice_s47_account", "conv_s47_bob_alice")
                     .await?;
-            assert!(mvp_s47_decrypted_contains(
-                &alice_b_received,
-                b"s47 new device can decrypt after join"
-            ));
+            assert!(
+                mvp_s47_decrypted_contains(
+                    &alice_b_received,
+                    b"s47 new device can decrypt after join"
+                ),
+                "restored device cannot decrypt after join; receive response: {alice_b_received}"
+            );
 
             let revoked = alice_restored
                 .request(
