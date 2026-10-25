@@ -107,7 +107,7 @@ fn initialize(dir: &Path, node_id: &str) -> Result {
         }
     }
     validate_saved_trust(dir, &identity, timestamp)?;
-    let key_path = dir.join("certs/federation/node-signing.key");
+    let key_path = dir.join("certs/node-identity/node-signing.key");
     std::fs::create_dir_all(key_path.parent().ok_or("missing discovery secret directory")?)?;
     let mut key = std::fs::OpenOptions::new()
         .write(true)
@@ -118,7 +118,7 @@ fn initialize(dir: &Path, node_id: &str) -> Result {
     key.write_all(encode_base64url(identity.discovery).as_bytes())?;
     key.sync_all()?;
     let env = format!(
-        "RAMFLUX_NODE_SERVICE_SIGNING_SEED_B64URL={}\nRAMFLUX_GATEWAY_V3_ISSUER_SEED={}\nRAMFLUX_FEDERATION_PROVIDER_OFFLINE_ROOT_PUBLIC_KEY={}\nRAMFLUX_FEDERATION_NODE_SIGNING_SEED_FILE=/etc/ramflux/mesh/node-signing.key\nRAMFLUX_ROUTER_ADMIN_TOKEN={}\nRAMFLUX_FEDERATION_ADMIN_TOKEN={}\nDEMO_EXPECTED_NODE_PUBLIC_KEY={}\n",
+        "RAMFLUX_NODE_SERVICE_SIGNING_SEED_B64URL={}\nRAMFLUX_GATEWAY_V3_ISSUER_SEED={}\nRAMFLUX_FEDERATION_PROVIDER_OFFLINE_ROOT_PUBLIC_KEY={}\nRAMFLUX_FEDERATION_NODE_SIGNING_SEED_FILE=/etc/ramflux/node-identity/node-signing.key\nRAMFLUX_ROUTER_ADMIN_TOKEN={}\nRAMFLUX_FEDERATION_ADMIN_TOKEN={}\nDEMO_EXPECTED_NODE_PUBLIC_KEY={}\n",
         encode_base64url(identity.service),
         encode_base64url(identity.attestation),
         ramflux_crypto::public_key_base64url_from_seed(identity.offline),
@@ -286,7 +286,7 @@ mod tests {
         let files = [
             "identity.json",
             "identity.env",
-            "certs/federation/node-signing.key",
+            "certs/node-identity/node-signing.key",
             "secrets/gateway-v3/issuer-cert.json",
             "secrets/federation/provider-keyring.json",
             "secrets/federation/trust-snapshot.json",
@@ -299,7 +299,7 @@ mod tests {
         for (file, bytes) in files.iter().zip(before) {
             assert_eq!(std::fs::read(dir.0.join(file))?, bytes);
         }
-        for file in ["identity.json", "identity.env", "certs/federation/node-signing.key"] {
+        for file in ["identity.json", "identity.env", "certs/node-identity/node-signing.key"] {
             assert_eq!(std::fs::metadata(dir.0.join(file))?.permissions().mode() & 0o777, 0o600);
         }
         let identity: Identity =

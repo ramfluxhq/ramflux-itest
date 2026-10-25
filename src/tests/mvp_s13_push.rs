@@ -21,7 +21,11 @@ fn mvp_s13_realnet_push_provider_wake_bridge() -> Result<(), Box<dyn std::error:
         return Ok(());
     }
 
-    let realnet = start_realnet_compose()?;
+    // The provider credential and WebPush origin are node configuration, so the mock (whose
+    // port is part of the origin) starts before notify does.
+    let mock = S13MockPushProvider::start(2)?;
+    let provider = s13_provider_config(&mock)?;
+    let realnet = start_realnet_compose_with_env(&provider.env)?;
     let code_root = code_root();
     let ca_cert = code_root.join("ramflux/deploy/certs/ca.pem");
     let gateway_quic_addr: std::net::SocketAddr = std::env::var("RAMFLUX_ITEST_GATEWAY_QUIC_ADDR")
@@ -30,8 +34,8 @@ fn mvp_s13_realnet_push_provider_wake_bridge() -> Result<(), Box<dyn std::error:
     let router_url = std::env::var("RAMFLUX_ITEST_ROUTER_URL")
         .unwrap_or_else(|_| "http://127.0.0.1:18080".to_owned());
     wait_for_itest_service(&router_url, "router")?;
-    mvp_s1_register_identity(&router_url)?;
-    let mock = S13MockPushProvider::start(2)?;
+    s13_register_rooted_device(&router_url, S13_SENDER)?;
+    s13_register_rooted_device(&router_url, S13_RECIPIENT)?;
     let runtime = tokio::runtime::Builder::new_current_thread().enable_all().build()?;
     runtime.block_on(async {
         Box::pin(mvp_s13_assert_push_provider_wake_bridge(
@@ -61,7 +65,9 @@ fn mvp_s13_realnet_compio_notify_push_provider_wake_bridge()
         return Ok(());
     }
 
-    let realnet = start_realnet_compose_with_env_and_notify_compio(&[], true)?;
+    let mock = S13MockPushProvider::start(2)?;
+    let provider = s13_provider_config(&mock)?;
+    let realnet = start_realnet_compose_with_env_and_notify_compio(&provider.env, true)?;
     let code_root = code_root();
     let ca_cert = code_root.join("ramflux/deploy/certs/ca.pem");
     let gateway_quic_addr: std::net::SocketAddr = std::env::var("RAMFLUX_ITEST_GATEWAY_QUIC_ADDR")
@@ -70,8 +76,8 @@ fn mvp_s13_realnet_compio_notify_push_provider_wake_bridge()
     let router_url = std::env::var("RAMFLUX_ITEST_ROUTER_URL")
         .unwrap_or_else(|_| "http://127.0.0.1:18080".to_owned());
     wait_for_itest_service(&router_url, "router")?;
-    mvp_s1_register_identity(&router_url)?;
-    let mock = S13MockPushProvider::start(2)?;
+    s13_register_rooted_device(&router_url, S13_SENDER)?;
+    s13_register_rooted_device(&router_url, S13_RECIPIENT)?;
     let runtime = tokio::runtime::Builder::new_current_thread().enable_all().build()?;
     runtime.block_on(async {
         Box::pin(mvp_s13_assert_push_provider_wake_bridge(

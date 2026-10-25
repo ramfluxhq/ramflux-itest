@@ -274,6 +274,11 @@ jobs:
             tests: tests::mvp_s74_event_stream::mvp_s74_realnet_autonomous_sync_replay_and_daemon_restart
           - slice: k12
             tests: tests::k12_deferred_attachment_fetch::k12_realnet_deferred_attachment_fetch
+          # s13 drives production push registration (authenticated gateway session,
+          # node-owned provider credentials) on the plain single-mesh stack.
+          - slice: s13
+            plain: "1"
+            tests: tests::mvp_s13_push::mvp_s13_realnet_push_provider_wake_bridge
           - slice: call01
             tests: tests::call01_voice::call01_realnet_voice_round_trip
             voice: "1"

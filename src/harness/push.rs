@@ -4,6 +4,10 @@
 #![allow(unused_imports)]
 use crate::*;
 
+/// S13 drives production push registration end to end. Bob registers a `WebPush` route over his
+/// authenticated gateway session (refused when bound to another session), goes offline, and a
+/// message from Alice wakes him through the node-owned provider credential. A synthetic FCM route
+/// is added through the itest-only API so both provider adapters stay covered.
 #[cfg(all(test, feature = "realnet"))]
 pub(crate) async fn mvp_s13_assert_push_provider_wake_bridge(
     gateway_quic_addr: std::net::SocketAddr,
@@ -11,38 +15,45 @@ pub(crate) async fn mvp_s13_assert_push_provider_wake_bridge(
     notify_url: &str,
     mock: &S13MockPushProvider,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    mvp_s13_register_provider_credentials(notify_url, mock)?;
-    mvp_s13_register_push_route(
-        notify_url,
-        ramflux_node_core::PushProviderKind::WebPush,
-        "s13-webpush",
-        "target_s13_bob_offline",
-        "webpush-token-s13",
-        &mock.container_url("/webpush"),
-    )?;
+    let mut bob = s13_open_session(gateway_quic_addr, ca_cert, S13_RECIPIENT).await?;
+    let webpush = ramflux_node_core::PushRouteRegistration {
+        provider: ramflux_node_core::PushProviderKind::WebPush,
+        token: "webpush-token-s13".to_owned(),
+        endpoint: Some(mock.container_url("/webpush")),
+        webpush_p256dh: Some(s13_webpush_subscription_p256dh()?),
+        webpush_auth: Some(s13_webpush_subscription_auth()),
+    };
+    let refused = bob.register_push_route(webpush.clone(), Some("another-session")).await?;
+    assert!(
+        matches!(refused, ramflux_node_core::GatewayServerFrame::Nack { .. }),
+        "a route bound to another session must be refused: {refused:?}"
+    );
+    let before = itest_now_unix_seconds().unsigned_abs();
+    let registered = bob.register_push_route(webpush, None).await?;
+    let ramflux_node_core::GatewayServerFrame::PushRouteRegistered { expires_at } = registered
+    else {
+        return Err(format!("expected push_route_registered, got {registered:?}").into());
+    };
+    let after = itest_now_unix_seconds().unsigned_abs();
+    assert!(
+        expires_at >= before + ramflux_node_core::PUSH_ROUTE_TTL_SECONDS - 60
+            && expires_at <= after + ramflux_node_core::PUSH_ROUTE_TTL_SECONDS + 60,
+        "server-assigned route lifetime must be the sliding 30-day TTL: {expires_at}"
+    );
+    bob.connection.close(0_u32.into(), b"s13-bob-backgrounded");
+    // Added after the authenticated binding so the owner keeps both provider routes.
     mvp_s13_register_push_route(
         notify_url,
         ramflux_node_core::PushProviderKind::Fcm,
         "s13-fcm",
-        "target_s13_bob_offline",
+        S13_RECIPIENT.target_delivery_id,
         "fcm-token-s13",
         &mock.container_url("/fcm"),
     )?;
+    tokio::time::sleep(Duration::from_millis(500)).await;
 
-    let (_endpoint, connection, mut send, mut recv) =
-        mvp_s1_open_quic_stream(gateway_quic_addr, ca_cert).await?;
-    let open = mvp_s1_open_frame(None, 1_760_000_000, "s13_push");
-    let auth = mvp_s1_auth_frame(&open)?;
-    mvp_s1_write_client_frame(
-        &mut send,
-        &ramflux_node_core::GatewayClientFrame::Open { open: open.clone() },
-    )
-    .await?;
-    mvp_s1_write_client_frame(&mut send, &ramflux_node_core::GatewayClientFrame::Auth { auth })
-        .await?;
-    let _established = mvp_s1_expect_session_established(&mut recv).await?;
-
-    let mut envelope = itest_envelope("env_s13_push_dm", "target_s13_bob_offline");
+    let mut alice = s13_open_session(gateway_quic_addr, ca_cert, S13_SENDER).await?;
+    let mut envelope = itest_envelope("env_s13_push_dm", S13_RECIPIENT.target_delivery_id);
     envelope.encrypted_payload =
         ramflux_protocol::encode_base64url(b"s13 opaque ciphertext not plaintext");
     envelope.payload_hash = ramflux_crypto::blake3_256_base64url(
@@ -51,19 +62,11 @@ pub(crate) async fn mvp_s13_assert_push_provider_wake_bridge(
     );
     let plaintext = b"s13 forbidden plaintext conversation_id group_id SRTP_MEDIA_KEY run_shell";
     assert_node_opaque_payload(&envelope.encrypted_payload, plaintext);
-    let submit = mvp_s1_submit_frame(&open, envelope)?;
-    mvp_s1_write_client_frame(&mut send, &ramflux_node_core::GatewayClientFrame::Submit { submit })
-        .await?;
-    let delivered = mvp_s1_expect_deliver(&mut recv).await?;
+    let delivered = alice.submit(envelope).await?;
     assert_eq!(delivered.envelope.envelope_id, "env_s13_push_dm");
-    let wake = mvp_s1_read_server_frame(&mut recv).await?;
-    assert!(
-        matches!(wake, ramflux_node_core::GatewayServerFrame::InBandWake { ref target_delivery_id, .. } if target_delivery_id == "target_s13_bob_offline"),
-        "expected S13 in-band wake, got {wake:?}"
-    );
-    connection.close(0_u32.into(), b"s13-push-done");
+    alice.connection.close(0_u32.into(), b"s13-push-done");
 
-    let requests = mock.wait_for_requests(Duration::from_secs(10))?;
+    let requests = mock.wait_for_requests(Duration::from_secs(20))?;
     assert_eq!(requests.len(), 2);
     let providers = requests
         .iter()
@@ -93,7 +96,7 @@ fn assert_s13_provider_attempts_recorded(
     assert!(providers.contains(&ramflux_node_core::PushProviderKind::Fcm));
     for attempt in &attempts {
         assert_eq!(attempt.queue_id, "wake_env_s13_push_dm");
-        assert_eq!(attempt.device_delivery_id, "target_s13_bob_offline");
+        assert_eq!(attempt.device_delivery_id, S13_RECIPIENT.target_delivery_id);
         assert!(attempt.accepted, "S13 provider attempt was not accepted: {attempt:?}");
         assert_eq!(attempt.action, ramflux_node_core::NotifyDeliveryAction::Accept);
         assert_eq!(
@@ -167,7 +170,13 @@ fn assert_s13_provider_request(
         request.payload.delivery_class,
         ramflux_protocol::NotificationDeliveryClass::UserContentNotification
     );
-    assert!(request.payload.collapse_key.as_deref().unwrap_or_default().contains("target:"));
+    // Providers see a node-keyed pseudonym, never the canonical collapse key.
+    let collapse = request.payload.collapse_key.as_deref().ok_or("missing collapse value")?;
+    assert!(!collapse.contains("target:"), "raw collapse key reached the provider: {collapse}");
+    assert_eq!(
+        request.headers.get("ramflux-collapse-key-hash").map(String::as_str),
+        Some(collapse)
+    );
     let payload_json = serde_json::to_vec(&request.payload)?;
     for forbidden in [
         b"s13 forbidden plaintext".as_slice(),
@@ -206,10 +215,9 @@ fn assert_s13_provider_auth_headers(
 }
 
 #[cfg(all(test, feature = "realnet"))]
-pub(crate) fn mvp_s13_register_provider_credentials(
-    notify_url: &str,
+pub(crate) fn s13_provider_credentials(
     mock: &S13MockPushProvider,
-) -> Result<(), Box<dyn std::error::Error>> {
+) -> Vec<ramflux_node_core::ProviderCredential> {
     let fcm_account = serde_json::json!({
         "client_email": "s13-fcm@example.iam.gserviceaccount.com",
         "private_key": S13_RSA_PRIVATE_KEY,
@@ -234,14 +242,20 @@ pub(crate) fn mvp_s13_register_provider_credentials(
             provider_ca_pem_ref: Some(mock.ca_pem_secret_ref()),
         },
     );
-    let _: serde_json::Value = ramflux_node_core::itest_http_post_json(
-        &format!("{notify_url}/s13/notify/provider-credential"),
-        &fcm,
-    )?;
-    let _: serde_json::Value = ramflux_node_core::itest_http_post_json(
-        &format!("{notify_url}/s13/notify/provider-credential"),
-        &webpush,
-    )?;
+    vec![webpush, fcm]
+}
+
+#[cfg(all(test, feature = "realnet"))]
+pub(crate) fn mvp_s13_register_provider_credentials(
+    notify_url: &str,
+    mock: &S13MockPushProvider,
+) -> Result<(), Box<dyn std::error::Error>> {
+    for credential in s13_provider_credentials(mock) {
+        let _: serde_json::Value = ramflux_node_core::itest_http_post_json(
+            &format!("{notify_url}/s13/notify/provider-credential"),
+            &credential,
+        )?;
+    }
     Ok(())
 }
 
@@ -373,7 +387,7 @@ fn s13_webpush_subscription_secret() -> Result<p256::SecretKey, Box<dyn std::err
 }
 
 #[cfg(all(test, feature = "realnet"))]
-fn s13_webpush_subscription_p256dh() -> Result<String, Box<dyn std::error::Error>> {
+pub(crate) fn s13_webpush_subscription_p256dh() -> Result<String, Box<dyn std::error::Error>> {
     use p256::elliptic_curve::sec1::ToEncodedPoint;
 
     let secret = s13_webpush_subscription_secret()?;
@@ -382,7 +396,7 @@ fn s13_webpush_subscription_p256dh() -> Result<String, Box<dyn std::error::Error
 }
 
 #[cfg(all(test, feature = "realnet"))]
-fn s13_webpush_subscription_auth() -> String {
+pub(crate) fn s13_webpush_subscription_auth() -> String {
     ramflux_protocol::encode_base64url(S13_WEBPUSH_AUTH_SECRET)
 }
 

@@ -20,7 +20,7 @@ pub(crate) fn write_discovery_secret(
         .iter()
         .find(|(key, _)| key == "RAMFLUX_CERTS_DIR")
         .map_or_else(|| deploy.join("certs"), |(_, value)| deploy.join(value));
-    let path = certs.join("federation/node-signing.key");
+    let path = certs.join("node-identity/node-signing.key");
     std::fs::create_dir_all(path.parent().ok_or("secret parent missing")?)?;
     let temporary = path.with_extension(format!("key.{}", std::process::id()));
     let mut options = std::fs::OpenOptions::new();
@@ -46,7 +46,7 @@ fn fixture_secret_matches_discovery_pin_and_has_private_mode()
         &root,
         &[("RAMFLUX_FEDERATION_NODE_SIGNING_SEED_B64URL".into(), seed.clone())],
     )?;
-    let path = root.join("certs/federation/node-signing.key");
+    let path = root.join("certs/node-identity/node-signing.key");
     assert_eq!(std::fs::read_to_string(&path)?, seed);
     #[cfg(unix)]
     {
@@ -61,7 +61,7 @@ fn fixture_secret_matches_discovery_pin_and_has_private_mode()
             ("RAMFLUX_CERTS_DIR".into(), custom.to_string_lossy().into_owned()),
         ],
     )?;
-    assert_eq!(std::fs::read_to_string(custom.join("federation/node-signing.key"))?, seed);
+    assert_eq!(std::fs::read_to_string(custom.join("node-identity/node-signing.key"))?, seed);
     std::fs::remove_dir_all(root)?;
     Ok(())
 }

@@ -121,6 +121,9 @@ pub(crate) use objects_calls_bots::*;
 #[path = "push.rs"]
 pub(crate) mod push;
 pub(crate) use push::*;
+#[path = "push_registration.rs"]
+pub(crate) mod push_registration;
+pub(crate) use push_registration::*;
 #[path = "rf_cli.rs"]
 pub(crate) mod rf_cli;
 pub(crate) use rf_cli::*;
