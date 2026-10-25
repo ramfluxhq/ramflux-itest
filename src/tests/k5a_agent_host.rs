@@ -5,7 +5,8 @@
 #![cfg(feature = "realnet")]
 use super::*;
 use serde_json::{Value, json};
-use std::os::unix::fs::{MetadataExt, PermissionsExt};
+use std::os::unix::fs::PermissionsExt;
+use std::time::SystemTime;
 #[path = "k5a_agent_host/build.rs"]
 mod build;
 #[path = "k5a_agent_host/diagnostics.rs"]
@@ -105,9 +106,13 @@ async fn run(node: &S8RealnetNode, surface_case: bool) -> TestResult {
         let surface = if surface_case { Some(surfaces::round_trip(&mut alice,&own,&peer).await?) } else {None};
         let before=wait_checkpoint(&state,None).await?;
         host.start_kill()?;host.wait().await?;
-        let previous_inode=std::fs::metadata(&state)?.ino();
+        // Restart marker: stamp the stopped host's checkpoint with a sentinel mtime. The
+        // restarted host replaces the file on startup, which yields a fresh mtime. (Inode
+        // numbers are no signal: ext4 recycles the freed inode on the next atomic rename.)
+        let sentinel=SystemTime::UNIX_EPOCH+Duration::from_secs(1);
+        std::fs::File::options().write(true).open(&state)?.set_modified(sentinel)?;
         let mut host=evidence.spawn(&binary,&config)?;
-        let after=wait_checkpoint(&state,Some(previous_inode)).await?;assert!(after>=before,"cursor must survive process restart");
+        let after=wait_checkpoint(&state,Some(sentinel)).await?;assert!(after>=before,"cursor must survive process restart");
         tokio::time::sleep(Duration::from_secs(2)).await;
         wait_replies(&mut alice,"dm_k5a",1,&peer).await?;wait_replies(&mut alice,"group_thread_k5a",1,&peer).await?;
         if let Some(before)=surface {surfaces::after_restart(&mut alice,&before).await?;}
@@ -129,10 +134,12 @@ async fn run(node: &S8RealnetNode, surface_case: bool) -> TestResult {
     std::fs::remove_dir_all(root)?;
     Ok(())
 }
-async fn wait_checkpoint(path: &Path, previous_inode: Option<u64>) -> TestResult<u64> {
+async fn wait_checkpoint(path: &Path, stale_mtime: Option<SystemTime>) -> TestResult<u64> {
     for _ in 0..100 {
-        if previous_inode.is_some_and(|inode| {
-            std::fs::metadata(path).is_ok_and(|metadata| metadata.ino() == inode)
+        if stale_mtime.is_some_and(|stale| {
+            std::fs::metadata(path)
+                .and_then(|metadata| metadata.modified())
+                .is_ok_and(|m| m == stale)
         }) {
             tokio::time::sleep(Duration::from_millis(100)).await;
             continue;

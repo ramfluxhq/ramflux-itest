@@ -293,6 +293,28 @@ pub(crate) async fn mvp_s20_wait_for_daemon_status(
     Err(last_err.unwrap_or_else(|| "daemon status never became ready after restart".into()))
 }
 
+/// Polls `daemon status` after a restart until at least `min_accounts` accounts are open.
+/// rfd answers `daemon status` before its startup restore has reopened the persisted
+/// accounts, so the first answer can legitimately report zero.
+#[cfg(all(test, feature = "realnet"))]
+pub(crate) async fn mvp_s20_wait_for_daemon_accounts(
+    rf_binary: &Path,
+    socket_arg: &str,
+    min_accounts: u64,
+) -> Result<serde_json::Value, Box<dyn std::error::Error>> {
+    let deadline = std::time::Instant::now() + Duration::from_secs(30);
+    loop {
+        let status = mvp_s20_wait_for_daemon_status(rf_binary, socket_arg).await?;
+        if status["accounts"].as_u64().unwrap_or_default() >= min_accounts {
+            return Ok(status);
+        }
+        if std::time::Instant::now() >= deadline {
+            return Ok(status);
+        }
+        tokio::time::sleep(Duration::from_millis(250)).await;
+    }
+}
+
 #[cfg(all(test, feature = "realnet"))]
 pub(crate) async fn mvp_s20_assert_bob_read_contains(
     rf_binary: &Path,

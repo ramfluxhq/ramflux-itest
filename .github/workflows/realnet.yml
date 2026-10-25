@@ -329,10 +329,7 @@ jobs:
           RAMFLUX_ITEST_VOICE: ${{ matrix.voice || '' }}
           PLAIN: ${{ matrix.plain || '' }}
           # Short: fixtures put Unix sockets under TMPDIR (108-byte sun_path).
-          # tmpfs: k5a detects the agent-host restart by a new inode of its
-          # atomically renamed checkpoint; ext4 recycles freed inode numbers at
-          # once, tmpfs does not.
-          TMPDIR: /dev/shm/rfq
+          TMPDIR: /tmp/rfq
         run: |
           mkdir -p "$TMPDIR" ../logs/containers
           [ -n "$RAMFLUX_ITEST_VOICE" ] || unset RAMFLUX_ITEST_VOICE

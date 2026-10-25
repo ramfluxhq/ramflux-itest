@@ -255,7 +255,7 @@ pub(crate) async fn mvp_s15_assert_rf_object_store_persistence_after_daemon_rest
 
         mvp_s20_stop_rf_daemon(&mut alice_daemon).await?;
         alice_daemon = mvp_s20_spawn_rf_daemon(&rf_binary, &alice_socket_arg, &alice_data_arg)?;
-        let status = mvp_s20_wait_for_daemon_status(&rf_binary, &alice_socket_arg).await?;
+        let status = mvp_s20_wait_for_daemon_accounts(&rf_binary, &alice_socket_arg, 1).await?;
         assert!(status["accounts"].as_u64().unwrap_or_default() >= 1);
         mvp_s15_assert_account_transport_quic(&rf_binary, &alice_socket_arg, ACCOUNT).await?;
         let got = mvp_s10_rf_json(
@@ -296,7 +296,7 @@ pub(crate) async fn mvp_s15_assert_rf_object_store_persistence_after_daemon_rest
 
         mvp_s20_stop_rf_daemon(&mut alice_daemon).await?;
         alice_daemon = mvp_s20_spawn_rf_daemon(&rf_binary, &alice_socket_arg, &alice_data_arg)?;
-        let status = mvp_s20_wait_for_daemon_status(&rf_binary, &alice_socket_arg).await?;
+        let status = mvp_s20_wait_for_daemon_accounts(&rf_binary, &alice_socket_arg, 1).await?;
         assert!(status["accounts"].as_u64().unwrap_or_default() >= 1);
         mvp_s15_assert_account_transport_quic(&rf_binary, &alice_socket_arg, ACCOUNT).await?;
         let rejected = mvp_s10_rf_json(
