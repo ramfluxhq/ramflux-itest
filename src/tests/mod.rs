@@ -200,6 +200,8 @@ mod mvp_s74_event_stream;
 
 #[path = "contact01_contact_resolution.rs"]
 mod contact01_contact_resolution;
+#[path = "contact02_contact_requests.rs"]
+mod contact02_contact_requests;
 #[cfg(feature = "realnet")]
 mod id01_root_bound_devices;
 #[path = "k2b_surface_round_trip.rs"]
