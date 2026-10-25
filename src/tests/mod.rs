@@ -206,3 +206,6 @@ mod id01_root_bound_devices;
 mod k2b_surface_round_trip;
 #[path = "k5a_agent_host.rs"]
 mod k5a_agent_host;
+
+#[cfg(feature = "realnet")]
+mod proof01_durable_identity;

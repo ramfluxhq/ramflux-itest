@@ -295,8 +295,15 @@ pub(crate) async fn mvp_s4_build_rf_binary() -> Result<PathBuf, Box<dyn std::err
     let status = tokio::task::spawn_blocking(move || {
         std::process::Command::new("cargo")
             // T22-A1 / RQ-04: the itest rf binary enables itest-local-mint so LocalMint object tests
-            // (e.g. mvp_s40 `--relay-service-key`) keep working. Production rf is built without it.
-            .args(["build", "--quiet", "--features", "itest-local-mint", "--manifest-path"])
+            // (e.g. mvp_s40 `--relay-service-key`) keep working. Short proof lifetimes are separately
+            // gated for expiry/renewal acceptance. Production rf uses neither test feature.
+            .args([
+                "build",
+                "--quiet",
+                "--features",
+                "itest-local-mint,itest-identity-proof",
+                "--manifest-path",
+            ])
             .arg(manifest)
             .status()
     })
