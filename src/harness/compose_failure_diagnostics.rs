@@ -69,6 +69,12 @@ fn collect_service_logs(
 /// it. A readiness wait calls this when it gives up: the fixture guard has not torn the project
 /// down yet, and an exited container (notify refusing its configuration, for example) still
 /// holds the output that explains why it never answered.
+///
+/// The listing is host-wide on purpose: the wait only knows the service's short name, not the
+/// project, and realnet slices run one at a time. On a shared host another project's container
+/// of the same service is printed too (its name carries the project), and a service that is
+/// also in `RAMFLUX_ITEST_FAILURE_LOG_SERVICES` appears again in the guard's dump. Both are
+/// accepted noise: a readiness timeout is rare and the extra output is labelled.
 pub(crate) fn dump_service_container_logs(service_name: &str) {
     let service = compose_service_name(service_name);
     let runtime = container_runtime();
