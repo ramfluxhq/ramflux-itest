@@ -151,17 +151,18 @@ async fn negotiate(
     assert_eq!(wait_task(human, "human", "dm_k3b", 6).await?["state"], "done");
     let messages =
         call(human, "human", "message.read", json!({"conversation_id":"dm_k3b"})).await?;
-    let tasks = messages["messages"]
+    let task_rows = messages["messages"]
         .as_array()
-        .ok_or("missing messages")?
+        .ok_or("message timeline missing")?
         .iter()
-        .filter(|message| message["content_type"] == "task")
+        .filter(|row| row["content_type"] == "task" && row["task_id"] == "task-k3b")
         .collect::<Vec<_>>();
-    assert!(!tasks.is_empty(), "task fallback messages must remain visible");
-    for message in tasks {
-        assert_eq!(message["actor_kind_verified"], true);
-        let fallback = message["body_utf8"].as_str().ok_or("missing task fallback")?;
-        assert!(!fallback.contains("actor kind unverified"));
-    }
+    assert!(!task_rows.is_empty(), "committed task timeline missing");
+    assert!(task_rows.iter().all(|row| row["actor_kind_verified"] == true));
+    let fallbacks =
+        task_rows.iter().filter_map(|row| row["body_utf8"].as_str()).collect::<Vec<_>>();
+    assert!(fallbacks.iter().any(|text| text.contains("Task task-k3b accepted")));
+    assert!(fallbacks.iter().any(|text| text.contains("Task task-k3b: done")));
+    assert!(fallbacks.iter().all(|text| !text.contains("actor kind unverified")));
     Ok(())
 }

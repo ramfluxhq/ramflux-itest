@@ -204,6 +204,8 @@ mod mvp_s74_event_stream;
 mod contact01_contact_resolution;
 #[path = "contact02_contact_requests.rs"]
 mod contact02_contact_requests;
+#[path = "grpsync01_membership_and_name.rs"]
+mod grpsync01_membership_and_name;
 #[cfg(feature = "realnet")]
 mod id01_root_bound_devices;
 #[path = "k2b_surface_round_trip.rs"]

@@ -96,8 +96,8 @@ async fn run(node: &S8RealnetNode) -> TestResult {
         wait_conversation(&mut agent,"agent","dm_k2b").await?;
         step("dm_round_trip", "dm_k2b");
         round_trip(&mut human,&mut agent,Some((&mut human2,&mut agent2)),&b_socket,"dm_k2b","surface-dm").await?;
-        // GRP-SYNC-01 owns multi-device group roster propagation. This group case checks the
-        // two verifiably joined primary devices; the DM above retains both sibling checks.
+        // Group membership now follows both authenticated account roots, including siblings.
+        // This surface round trip retains its primary-device decisions and restart checks.
         group(&mut human,&mut agent,&own,&peer).await?;
         step("group_round_trip", "group_thread_k2b");
         round_trip(&mut human,&mut agent,None,&b_socket,"group_thread_k2b","surface-group").await?;

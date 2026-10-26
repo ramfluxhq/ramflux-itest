@@ -269,6 +269,8 @@ jobs:
       max-parallel: 4
       matrix:
         include:
+          - slice: grpsync01
+            tests: tests::grpsync01_membership_and_name::grpsync01_realnet_membership_and_name
           - slice: contact01
             tests: tests::contact01_contact_resolution::contact01_realnet_add_then_dm
           - slice: id01

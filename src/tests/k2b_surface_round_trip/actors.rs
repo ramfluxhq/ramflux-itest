@@ -190,18 +190,25 @@ pub(super) async fn group(
     call(human,"human","group.member.add",json!({"group_id":"group_k2b","member_id":peer["device_id"],"role":"member","member_signing_public_key":member["signing_public_key"],"member_principal_commitment":peer["principal_commitment"],"target_delivery_id":peer["target_delivery_id"]})).await?;
     step("group_roster_wait", "group_thread_k2b");
     wait_roster(agent, "agent", &[&own["device_id"], &peer["device_id"]]).await?;
-    // GRP-SYNC-01 covers full roster propagation and sibling membership. No sibling joins here.
+    // Account-root membership includes both already-active sibling devices automatically.
+    let members = [
+        own["device_id"].clone(),
+        peer["device_id"].clone(),
+        json!("device_k2b_human2"),
+        json!("device_k2b_agent2"),
+    ];
     for (bus, id) in [(&mut *human, "human"), (&mut *agent, "agent")] {
+        wait_roster(bus, id, &members.iter().collect::<Vec<_>>()).await?;
         let state = call(bus, id, "group.members", json!({"group_id":"group_k2b"})).await?;
         let actual = state["members"].as_array().ok_or("group members")?;
         assert_eq!(
             actual.len(),
-            2,
-            "GRP-SYNC-01 owns the multi-device group case; this slice requires exactly the two joined primary devices"
+            4,
+            "both authenticated account roots include their active sibling devices"
         );
         assert!(
-            actual.contains(&own["device_id"]) && actual.contains(&peer["device_id"]),
-            "GRP-SYNC-01 scope boundary requires both primary devices to be verified members"
+            members.iter().all(|member| actual.contains(member)),
+            "the complete current device roster must converge before group surfaces"
         );
     }
     step("group_seed", "group_thread_k2b");

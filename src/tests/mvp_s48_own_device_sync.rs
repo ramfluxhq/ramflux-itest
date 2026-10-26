@@ -199,9 +199,15 @@ async fn mvp_s48_assert_own_device_sync(
                 b"s48 group history",
             )
             .await?;
+            let group_message_id = ramflux_protocol::group_message_id(
+                "group_s48",
+                &alice_commitment,
+                "alice_device_s48_a",
+                "msg_s48_group_history",
+            )?;
             assert_eq!(
                 group_sent["message_id"],
-                "msg_s48_group_history",
+                group_message_id.as_str(),
                 "s48 group send payload: {}",
                 serde_json::to_string_pretty(&group_sent)
                     .unwrap_or_else(|error| format!("failed to format group send JSON: {error}"))
@@ -209,7 +215,7 @@ async fn mvp_s48_assert_own_device_sync(
             let primary_group_list =
                 mvp_s48_message_list(&mut alice_primary, "alice_s48_account", "group_s48").await?;
             let group_created_at =
-                mvp_s48_message_created_at(&primary_group_list, "msg_s48_group_history")?;
+                mvp_s48_message_created_at(&primary_group_list, &group_message_id)?;
 
             mvp_s48_backup_and_activate_restored_device(
                 &mut alice_primary,
@@ -266,7 +272,7 @@ async fn mvp_s48_assert_own_device_sync(
             let restored_group_list =
                 mvp_s48_message_list(&mut alice_restored, "alice_s48_account", "group_s48").await?;
             assert_eq!(
-                mvp_s48_message_created_at(&restored_group_list, "msg_s48_group_history")?,
+                mvp_s48_message_created_at(&restored_group_list, &group_message_id)?,
                 group_created_at
             );
             let members = alice_restored
@@ -287,7 +293,7 @@ async fn mvp_s48_assert_own_device_sync(
             restored_reader.open_account_index(&alice_restored_data)?;
             restored_reader.unlock_account("alice_s48_account", b"s48-bus-secret")?;
             let plaintext =
-                restored_reader.decrypt_group_message("group_s48", "msg_s48_group_history")?;
+                restored_reader.decrypt_group_message("group_s48", &group_message_id)?;
             assert_eq!(plaintext, b"s48 group history");
 
             drop(alice_primary);
