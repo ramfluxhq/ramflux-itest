@@ -142,13 +142,17 @@ pub(super) async fn grant_from_second_human_device(
 }
 
 async fn approval_delivery_diagnostics(bus: &mut ramflux_sdk::LocalBusClient, id: &str) {
-    for (method, body) in
-        [("sync.status.get", json!({})), ("message.read", json!({"conversation_id":"dm_k3b"}))]
-    {
+    for (method, body) in [
+        ("sync.status.get", json!({})),
+        ("message.read", json!({"conversation_id":"dm_k3b"})),
+        ("task.get", json!({"conversation_id":"dm_k3b","task_id":"task-k3b"})),
+    ] {
         match call(bus, id, method, body).await {
             Ok(row) => {
                 let safe = if method == "message.read" {
                     json!({"rejected":row["rejected"]})
+                } else if method == "task.get" {
+                    json!({"approval_decisions":row["approval_decisions"]})
                 } else {
                     row
                 };
