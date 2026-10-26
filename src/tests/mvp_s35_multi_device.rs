@@ -4,6 +4,9 @@
 #![allow(unused_imports)]
 use super::*;
 #[cfg(feature = "realnet")]
+#[path = "s35_fixture.rs"]
+mod fixture;
+#[cfg(feature = "realnet")]
 #[path = "s35_owncopy.rs"]
 mod owncopy;
 
@@ -13,6 +16,10 @@ fn mvp_s35_realnet_multi_device_activation_fanout() -> Result<(), Box<dyn std::e
     if std::env::var("RAMFLUX_ITEST_REALNET").as_deref() != Ok("1") {
         eprintln!("skipping realnet full test; set RAMFLUX_ITEST_REALNET=1");
         return Ok(());
+    }
+
+    if std::env::var("RAMFLUX_S35_CLIENT_ENV_READY").as_deref() == Ok("1") {
+        return fixture::run_client();
     }
 
     let ports = S8ComposePorts {
@@ -31,7 +38,7 @@ fn mvp_s35_realnet_multi_device_activation_fanout() -> Result<(), Box<dyn std::e
     };
     // The v3 overlay requires signed provider material even though this slice sends no objects.
     // Reuse the shared material owner so compose teardown precedes removal of its bind mounts.
-    let mut stack = start_client_directory_stack_named(
+    let mut stack = start_client_directory_stack_with_issuer(
         "ramflux-s35-multi-device",
         ports,
         &[
@@ -44,6 +51,8 @@ fn mvp_s35_realnet_multi_device_activation_fanout() -> Result<(), Box<dyn std::e
                 "ramflux-relay,ramflux-gateway,ramflux-gateway-b,ramflux-notify".to_owned(),
             ),
         ],
+        fixture::OWNER_HOME_NODE,
+        "gw-b",
     )?;
     let node = &stack.node;
     wait_for_itest_service(&format!("http://127.0.0.1:{}", ports.notify_http), "notify")?;
@@ -57,12 +66,15 @@ fn mvp_s35_realnet_multi_device_activation_fanout() -> Result<(), Box<dyn std::e
             wait_relay_quic_healthy("127.0.0.1:63365", "ramflux-relay", &node.ca_cert).await?;
         }
         wait_for_private_gateway_quic(node.gateway_quic_addr, &node.ca_cert).await?;
-        Box::pin(mvp_s35_assert_multi_device_activation(
+        let status = fixture::child_command(
+            &std::env::current_exe()?,
             node.gateway_quic_addr,
             &node.ca_cert,
             &format!("http://127.0.0.1:{}", ports.relay_http),
-        ))
+        )
+        .status()
         .await?;
+        assert!(status.success(), "s35 configured client child failed: {status}");
         Ok::<(), Box<dyn std::error::Error>>(())
     })?;
     stack.node.guard.mark_success();
