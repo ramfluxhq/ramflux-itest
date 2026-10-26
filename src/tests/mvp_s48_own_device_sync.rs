@@ -230,7 +230,8 @@ async fn mvp_s48_assert_own_device_sync(
                         chunk_size: Some(4096),
                     })?,
                 )
-                .await?;
+                .await
+                .map_err(|error| format!("s48 device.sync.export: {error}"))?;
             assert_eq!(exported["envelope"]["target_device_id"], "alice_device_s48_b");
             assert_eq!(exported["transfer"]["state"], "complete");
 
@@ -244,7 +245,8 @@ async fn mvp_s48_assert_own_device_sync(
                         relay_service_key_base64: None,
                     })?,
                 )
-                .await?;
+                .await
+                .map_err(|error| format!("s48 device.sync.import: {error}"))?;
             assert!(imported["imported_messages"].as_u64().unwrap_or(0) >= 2);
             // Historical plaintext is transferred, but live device-pair ratchets stay on their owning device.
             assert_eq!(imported["imported_dm_sessions"], 0);
@@ -276,7 +278,8 @@ async fn mvp_s48_assert_own_device_sync(
                         group_id: "group_s48".to_owned(),
                     })?,
                 )
-                .await?;
+                .await
+                .map_err(|error| format!("s48 group.members: {error}"))?;
             assert_eq!(members["roles"]["alice_device_s48_b"], "owner");
             assert_eq!(members["roles"]["bob_device_s48"], "member");
 
@@ -358,7 +361,8 @@ async fn mvp_s48_create_account(
                 },
             })?,
         )
-        .await?,
+        .await
+        .map_err(|error| format!("s48 account.create: {error}"))?,
     )?;
     assert_eq!(response.local_account_id, spec.local_account_id);
     assert_eq!(response.device_id, spec.device_id);
@@ -383,7 +387,8 @@ async fn mvp_s48_add_contact(
                 target_id: target.to_owned(),
             })?,
         )
-        .await?;
+        .await
+        .map_err(|error| format!("s48 contact.add: {error}"))?;
     assert_eq!(added["state"], "accepted");
     Ok(())
 }
@@ -424,7 +429,8 @@ async fn mvp_s48_send_dm(
                 federation: None,
             })?,
         )
-        .await?;
+        .await
+        .map_err(|error| format!("s48 message.submit: {error}"))?;
     assert_eq!(submitted["envelope"]["envelope_id"], message_id);
     Ok(())
 }
@@ -447,7 +453,8 @@ async fn mvp_s48_receive_dm(
                 relay_service_key_base64: None,
             })?,
         )
-        .await?)
+        .await
+        .map_err(|error| format!("s48 message.receive: {error}"))?)
 }
 
 #[cfg(all(test, feature = "realnet"))]
@@ -465,7 +472,8 @@ async fn mvp_s48_message_list(
                 conversation_id: conversation_id.to_owned(),
             })?,
         )
-        .await?)
+        .await
+        .map_err(|error| format!("s48 message.list: {error}"))?)
 }
 
 #[cfg(all(test, feature = "realnet"))]
@@ -485,7 +493,8 @@ async fn mvp_s48_seed_group(
                 creator_signing_public_key: None,
             })?,
         )
-        .await?;
+        .await
+        .map_err(|error| format!("s48 group.create: {error}"))?;
     assert_eq!(created["roles"]["alice_device_s48_a"], "owner");
     let added = alice
         .request(
@@ -502,7 +511,8 @@ async fn mvp_s48_seed_group(
                 federation: None,
             })?,
         )
-        .await?;
+        .await
+        .map_err(|error| format!("s48 group.member.add: {error}"))?;
     assert_eq!(added["roles"]["bob_device_s48"], "member");
     Ok(())
 }
@@ -534,7 +544,8 @@ async fn mvp_s48_send_group(
                 ttl: Some(3600),
             })?,
         )
-        .await?)
+        .await
+        .map_err(|error| format!("s48 group.send: {error}"))?)
 }
 
 #[cfg(all(test, feature = "realnet"))]
@@ -553,7 +564,8 @@ async fn mvp_s48_backup_and_activate_restored_device(
                 passphrase: "s48-backup-passphrase-strong".to_owned(),
             })?,
         )
-        .await?;
+        .await
+        .map_err(|error| format!("s48 account.backup.export: {error}"))?;
     alice_restored
         .request(
             None,
@@ -564,7 +576,8 @@ async fn mvp_s48_backup_and_activate_restored_device(
                 passphrase: "s48-backup-passphrase-strong".to_owned(),
             })?,
         )
-        .await?;
+        .await
+        .map_err(|error| format!("s48 account.backup.import: {error}"))?;
     let activated: ramflux_sdk::LocalBusDeviceActivateResponse = serde_json::from_value(
         alice_restored
             .request(
@@ -579,7 +592,8 @@ async fn mvp_s48_backup_and_activate_restored_device(
                     device_epoch: Some(2),
                 })?,
             )
-            .await?,
+            .await
+            .map_err(|error| format!("s48 device.activate: {error}"))?,
     )?;
     assert_eq!(activated.device_id, "alice_device_s48_b");
     Ok(())
