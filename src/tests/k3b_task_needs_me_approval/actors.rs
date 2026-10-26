@@ -123,6 +123,7 @@ pub(super) async fn grant_from_second_human_device(
         call(human2, "human2", "grant.approve", json!({"approval_id":pending["approval_id"]}))
             .await?;
     assert_eq!(decision["status"], "approved");
+    eprintln!("STEP: requester approval receipt={decision}");
     for _ in 0..300 {
         let rows = call(agent, "agent", "grant.list", json!({})).await?;
         if let Some(grant) =
@@ -135,7 +136,31 @@ pub(super) async fn grant_from_second_human_device(
         }
         tokio::time::sleep(Duration::from_millis(100)).await;
     }
+    approval_delivery_diagnostics(human2, "human2").await;
+    approval_delivery_diagnostics(agent, "agent").await;
     Err("requester signed decision did not return to the assignee daemon".into())
+}
+
+async fn approval_delivery_diagnostics(bus: &mut ramflux_sdk::LocalBusClient, id: &str) {
+    for (method, body) in
+        [("sync.status.get", json!({})), ("message.read", json!({"conversation_id":"dm_k3b"}))]
+    {
+        match call(bus, id, method, body).await {
+            Ok(row) => {
+                let safe = if method == "message.read" {
+                    json!({"rejected":row["rejected"]})
+                } else {
+                    row
+                };
+                eprintln!(
+                    "STEP: approval delivery diagnostics account={id} method={method} row={safe}"
+                );
+            }
+            Err(error) => eprintln!(
+                "STEP: approval delivery diagnostics account={id} method={method} error={error}"
+            ),
+        }
+    }
 }
 
 async fn traced_call(
