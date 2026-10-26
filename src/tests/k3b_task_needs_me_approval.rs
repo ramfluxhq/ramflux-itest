@@ -150,6 +150,17 @@ async fn negotiate(
     assert_eq!(wait_task(human, "human", "dm_k3b", 6).await?["state"], "done");
     let messages =
         call(human, "human", "message.read", json!({"conversation_id":"dm_k3b"})).await?;
-    assert!(serde_json::to_string(&messages)?.contains("actor kind unverified"));
+    let tasks = messages["messages"]
+        .as_array()
+        .ok_or("missing messages")?
+        .iter()
+        .filter(|message| message["content_type"] == "task")
+        .collect::<Vec<_>>();
+    assert!(!tasks.is_empty(), "task fallback messages must remain visible");
+    for message in tasks {
+        assert_eq!(message["actor_kind_verified"], true);
+        let fallback = message["body_utf8"].as_str().ok_or("missing task fallback")?;
+        assert!(!fallback.contains("actor kind unverified"));
+    }
     Ok(())
 }

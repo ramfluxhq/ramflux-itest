@@ -62,7 +62,13 @@ pub(super) async fn wait_task(
             call(bus, id, "task.get", json!({"conversation_id":conversation,"task_id":"task-k3b"}))
                 .await?;
         if view["version"] == version {
-            assert_eq!(view["actor_kind_verified"], false);
+            assert_eq!(view["actor_kind_verified"], true);
+            assert_eq!(view["actors"]["assignee"]["actor_kind"], "headless_ai");
+            assert_eq!(view["actors"]["assignee"]["actor_kind_verified"], true);
+            if !view["actors"]["requester"]["principal_id"].is_null() {
+                assert_eq!(view["actors"]["requester"]["actor_kind"], "human");
+                assert_eq!(view["actors"]["requester"]["actor_kind_verified"], true);
+            }
             return Ok(view);
         }
         tokio::time::sleep(Duration::from_millis(100)).await;
