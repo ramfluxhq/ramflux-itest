@@ -65,6 +65,12 @@ fn sdk_push_route_frames_parse_as_node_frames_with_identical_body_hashes()
         ramflux_node_core::GatewayServerFrame::PushRouteRefused {
             request_id: "req-1".into(),
             reason: "refused".into(),
+            code: ramflux_node_core::PushRouteRefusal::ProviderUnavailable,
+        },
+        ramflux_node_core::GatewayServerFrame::PushRouteRefused {
+            request_id: "req-1".into(),
+            reason: "refused".into(),
+            code: ramflux_node_core::PushRouteRefusal::Superseded,
         },
         ramflux_node_core::GatewayServerFrame::PushRouteDeregistered {
             request_id: "req-1".into(),
