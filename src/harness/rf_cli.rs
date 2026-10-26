@@ -72,6 +72,9 @@ pub(crate) fn wait_for_itest_service(
         }
         std::thread::sleep(std::time::Duration::from_secs(1));
     }
+    // The container is still there (compose teardown runs when the fixture guard drops after
+    // this error), so its own output is the most direct evidence of why it never answered.
+    dump_service_container_logs(service_name);
     Err(format!("{service_name} did not become ready").into())
 }
 

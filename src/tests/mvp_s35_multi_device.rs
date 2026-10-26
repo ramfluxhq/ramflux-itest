@@ -38,7 +38,7 @@ fn mvp_s35_realnet_multi_device_activation_fanout() -> Result<(), Box<dyn std::e
             ("RAMFLUX_ITEST_RELAY_CLIENT_QUIC_PORT".to_owned(), "63365".to_owned()),
             (
                 COMPOSE_FAILURE_LOG_SERVICES_ENV.to_owned(),
-                "ramflux-relay,ramflux-gateway,ramflux-gateway-b".to_owned(),
+                "ramflux-relay,ramflux-gateway,ramflux-gateway-b,ramflux-notify".to_owned(),
             ),
         ],
     )?;

@@ -65,11 +65,116 @@ fn collect_service_logs(
         .output()?)
 }
 
+/// Prints the logs of every container of one compose service, whichever compose project started
+/// it. A readiness wait calls this when it gives up: the fixture guard has not torn the project
+/// down yet, and an exited container (notify refusing its configuration, for example) still
+/// holds the output that explains why it never answered.
+pub(crate) fn dump_service_container_logs(service_name: &str) {
+    let service = compose_service_name(service_name);
+    let runtime = container_runtime();
+    let listing =
+        std::process::Command::new(runtime).args(["ps", "-a", "--format", "{{.Names}}"]).output();
+    let names = match listing {
+        Ok(output) => String::from_utf8_lossy(&output.stdout).into_owned(),
+        Err(error) => {
+            realnet_step(
+                "service container logs unavailable",
+                format!("service={service}: {runtime} ps: {error}"),
+            );
+            return;
+        }
+    };
+    let containers = compose_service_containers(&names, &service);
+    if containers.is_empty() {
+        realnet_step(
+            "service container logs unavailable",
+            format!("service={service}: no container of this service exists"),
+        );
+    }
+    for container in containers {
+        realnet_step(
+            "service container logs begin",
+            format!("service={service} container={container}"),
+        );
+        match std::process::Command::new(runtime).args(["logs", "--timestamps", container]).output()
+        {
+            Ok(output) => {
+                eprintln!("{}", String::from_utf8_lossy(&output.stdout));
+                eprintln!("{}", String::from_utf8_lossy(&output.stderr));
+                realnet_step(
+                    "service container logs end",
+                    format!("service={service} container={container} exit={}", output.status),
+                );
+            }
+            Err(error) => realnet_step(
+                "service container logs unavailable",
+                format!("service={service} container={container}: {error}"),
+            ),
+        }
+    }
+}
+
+/// Readiness waits name services by their short name ("notify"); compose services carry the
+/// `ramflux-` prefix.
+fn compose_service_name(service_name: &str) -> String {
+    if service_name.starts_with("ramflux-") {
+        service_name.to_owned()
+    } else {
+        format!("ramflux-{service_name}")
+    }
+}
+
+/// The containers of `service` in a `ps --format {{.Names}}` listing: Docker Compose names them
+/// `<project>-<service>-<n>`, podman-compose `<project>_<service>_<n>`. Matching the whole service
+/// segment keeps `ramflux-gateway` apart from `ramflux-gateway-b`.
+fn compose_service_containers<'a>(names: &'a str, service: &str) -> Vec<&'a str> {
+    names
+        .lines()
+        .map(str::trim)
+        .filter(|name| {
+            ['-', '_'].into_iter().any(|separator| {
+                name.rsplit_once(separator).is_some_and(|(prefix, index)| {
+                    !index.is_empty()
+                        && index.bytes().all(|byte| byte.is_ascii_digit())
+                        && prefix.ends_with(&format!("{separator}{service}"))
+                })
+            })
+        })
+        .collect()
+}
+
 #[cfg(unix)]
 mod tests {
     use super::*;
     use crate::ComposeProjectDownGuard;
     use std::os::unix::fs::PermissionsExt;
+
+    #[test]
+    fn service_containers_match_docker_and_podman_compose_names_exactly() {
+        let names = "ramflux-s35-multi-device-ramflux-gateway-1\n\
+                     ramflux-s35-multi-device-ramflux-gateway-b-1\n\
+                     ramflux-s35-multi-device_ramflux-notify_1\n\
+                     ramflux-k2b-surfaces_ramflux-notify_1\n\
+                     unrelated-notify\n\
+                     \n";
+        assert_eq!(
+            compose_service_containers(names, "ramflux-gateway"),
+            vec!["ramflux-s35-multi-device-ramflux-gateway-1"]
+        );
+        assert_eq!(
+            compose_service_containers(names, "ramflux-gateway-b"),
+            vec!["ramflux-s35-multi-device-ramflux-gateway-b-1"]
+        );
+        assert_eq!(
+            compose_service_containers(names, &compose_service_name("notify")),
+            vec![
+                "ramflux-s35-multi-device_ramflux-notify_1",
+                "ramflux-k2b-surfaces_ramflux-notify_1"
+            ]
+        );
+        assert_eq!(compose_service_containers(names, "ramflux-relay"), Vec::<&str>::new());
+        assert_eq!(compose_service_name("ramflux-relay"), "ramflux-relay");
+    }
 
     #[test]
     fn failure_logs_precede_teardown_for_errors_and_unwinding()
