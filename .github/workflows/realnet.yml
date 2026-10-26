@@ -212,8 +212,20 @@ jobs:
         env:
           RAMFLUX_ITEST_PRODUCT_DEPLOY_DIR: ../ramflux/deploy
         run: |
-          ../stage/bin/ramflux-itest-realnet --exact --nocapture \
-            harness::realnet_compose_stun::self_referencing_defaults::tests::pinned_itest_compose_self_referencing_defaults_are_supplied_by_the_harness
+          lint=harness::realnet_compose_stun::self_referencing_defaults::tests::pinned_itest_compose_self_referencing_defaults_are_supplied_by_the_harness
+          # libtest exits 0 when an --exact filter matches nothing: require the test to exist and to have run.
+          ../stage/bin/ramflux-itest-realnet --list 2>/dev/null | grep -qxF "$lint: test" \
+            || { echo "::error::compose lint test not found in the executable: $lint"; exit 1; }
+          set +e
+          ../stage/bin/ramflux-itest-realnet --exact --nocapture "$lint" 2>&1 | tee ../logs-compose-lint.txt
+          rc=${PIPESTATUS[0]}
+          set -e
+          [ "$rc" -eq 0 ] || exit "$rc"
+          grep -qE '^test result: ok\. 1 passed' ../logs-compose-lint.txt \
+            || { echo "::error::compose lint test did not run"; exit 1; }
+          if grep -qi '^skipping' ../logs-compose-lint.txt; then
+            echo "::error::compose lint test skipped (no product tree)"; exit 1
+          fi
 
       - name: Save build cache
         # Override runs never seed the shared build cache.
