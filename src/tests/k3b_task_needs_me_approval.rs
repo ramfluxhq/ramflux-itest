@@ -56,6 +56,7 @@ async fn run(node: &S8RealnetNode) -> TestResult {
     for (id, socket) in ["human", "human2", "agent"].into_iter().zip(&sockets) {
         children.push(
             client_directory_daemon_command(&rf, socket, &root.join(id), &node.ca_cert, None)
+                .env("RAMFLUX_TEST_TASK_APPROVAL_DIAGNOSTICS", "1")
                 .spawn()?,
         );
     }
