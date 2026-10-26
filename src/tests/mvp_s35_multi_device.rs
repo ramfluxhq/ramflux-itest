@@ -57,8 +57,12 @@ fn mvp_s35_realnet_multi_device_activation_fanout() -> Result<(), Box<dyn std::e
             wait_relay_quic_healthy("127.0.0.1:63365", "ramflux-relay", &node.ca_cert).await?;
         }
         wait_for_private_gateway_quic(node.gateway_quic_addr, &node.ca_cert).await?;
-        Box::pin(mvp_s35_assert_multi_device_activation(node.gateway_quic_addr, &node.ca_cert))
-            .await?;
+        Box::pin(mvp_s35_assert_multi_device_activation(
+            node.gateway_quic_addr,
+            &node.ca_cert,
+            &format!("http://127.0.0.1:{}", ports.relay_http),
+        ))
+        .await?;
         Ok::<(), Box<dyn std::error::Error>>(())
     })?;
     stack.node.guard.mark_success();
@@ -70,6 +74,7 @@ fn mvp_s35_realnet_multi_device_activation_fanout() -> Result<(), Box<dyn std::e
 async fn mvp_s35_assert_multi_device_activation(
     gateway_quic_addr: std::net::SocketAddr,
     ca_cert: &Path,
+    relay_endpoint: &str,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let deadline = tokio::time::Instant::now() + Duration::from_mins(4);
     let temp_root = temp_root("s35_multi_device")?;
@@ -276,6 +281,13 @@ async fn mvp_s35_assert_multi_device_activation(
                 &mut bob_primary,
                 &mut bob_restored,
                 &bob_commitment,
+            )
+            .await?;
+
+            owncopy::assert_history_keeps_one_row(
+                &mut bob_primary,
+                &mut bob_restored,
+                relay_endpoint,
             )
             .await?;
 
