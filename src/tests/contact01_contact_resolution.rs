@@ -159,6 +159,8 @@ async fn create(binary: &Path, socket: &Path, id: &str, root: &str, device: &str
 fn assert_contact(response: &Value, principal: &str, source: &str) -> TestResult {
     let contact = &response["contact"];
     assert_eq!(contact["principal_id"], principal);
+    assert_eq!(contact["kind_asserted"], "human");
+    assert_eq!(contact["display_name"], principal);
     assert_eq!(contact["reachable"], true);
     assert_eq!(contact["verified"], false);
     assert_eq!(contact["root_source"], source);
@@ -198,6 +200,9 @@ async fn identity(
         .find(|r| r["principal_id"] == peer)
         .ok_or("contact did not populate the identity directory")?
         .clone();
+    assert_eq!(row["kind"], "human");
+    assert_eq!(row["kind_verified"], true);
+    assert_eq!(row["display_name"], peer);
     assert_eq!(row["reachable"], true);
     assert_eq!(row["verified"], false);
     assert_eq!(row["safety_number_available"], true);
