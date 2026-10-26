@@ -74,7 +74,7 @@ async fn run(node: &S8RealnetNode) -> TestResult {
             call(bus,id,"contact.add",json!({"link_id":format!("id01-{id}"),"requester_id":owner["principal_commitment"],"target_id":peer["principal_commitment"]})).await?;
         }
         let original=call(&mut b,"bob","device.refresh",json!({"principal_commitment":alice["principal_commitment"]})).await?;
-        assert_eq!(original["device_set_epoch"],1);assert_eq!(original["kind_asserted"],true);assert_eq!(original["kind_verified"],false);
+        assert_eq!(original["device_set_epoch"],1);assert_eq!(original["kind_asserted"],"human");assert_eq!(original["kind_verified"],true);assert_eq!(original["safety_kind_verified"],false);
         let second_seed=[0x43u8;32];
         call(&mut a,"alice","device.activate",json!({"device_id":"id01-alice-two","target_delivery_id":"id01-target-alice-two","device_seed":second_seed,"device_epoch":1})).await?;
         let added=call(&mut b,"bob","device.refresh",json!({"principal_commitment":alice["principal_commitment"]})).await?;

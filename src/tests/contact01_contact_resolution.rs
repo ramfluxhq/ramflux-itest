@@ -204,6 +204,8 @@ async fn identity(
     assert_eq!(row["kind"], "headless_ai");
     assert_eq!(row["kind_verified"], true);
     assert_eq!(row["display_name"], peer);
+    assert_eq!(row["mixed_script"], false);
+    assert!(row["display_name_confusable_with"].is_null());
     assert_eq!(row["reachable"], true);
     assert_eq!(row["verified"], false);
     assert_eq!(row["safety_number_available"], true);
