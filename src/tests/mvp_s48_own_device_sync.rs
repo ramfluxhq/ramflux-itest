@@ -307,10 +307,10 @@ async fn mvp_s48_assert_own_device_sync(
         }))
         .await
         .map_err(|_elapsed| "S48 own-device sync flow timed out")?;
-    alice_primary_result?;
-    alice_restored_result?;
-    bob_result?;
     flow_result?;
+    alice_primary_result.map_err(|error| format!("s48 alice primary daemon: {error}"))?;
+    alice_restored_result.map_err(|error| format!("s48 alice restored daemon: {error}"))?;
+    bob_result.map_err(|error| format!("s48 bob daemon: {error}"))?;
     std::fs::remove_dir_all(&temp_root)?;
     Ok(())
 }
