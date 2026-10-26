@@ -118,3 +118,46 @@ async fn assert_row(
     assert_eq!(rows[0]["sender_root_commitment"], root);
     Ok(())
 }
+
+pub(super) async fn assert_history_keeps_one_row(
+    primary: &mut LocalBusClient,
+    sibling: &mut LocalBusClient,
+    relay_endpoint: &str,
+) -> TestResult {
+    let exported = call(
+        primary,
+        "device.sync.export",
+        serde_json::to_value(ramflux_sdk::LocalBusDeviceSyncExportRequest {
+            target_device_id: "bob_device_s35_b".into(),
+            relay_endpoint: relay_endpoint.into(),
+            relay_service_key_base64: None,
+            chunk_size: Some(4096),
+        })?,
+    )
+    .await?;
+    assert_eq!(exported["transfer"]["state"], "complete");
+    let imported = call(
+        sibling,
+        "device.sync.import",
+        serde_json::to_value(ramflux_sdk::LocalBusDeviceSyncImportRequest {
+            envelope: exported["envelope"].clone(),
+            relay_service_key_base64: None,
+        })?,
+    )
+    .await?;
+    assert_eq!(imported["imported_dm_sessions"], 0);
+    for (conversation, text) in [
+        ("conv_s35_alice_bob", "s35 outgoing live DM"),
+        ("s35_own_group_thread", "s35 outgoing live group"),
+    ] {
+        let snapshot =
+            call(sibling, "message.list", json!({"conversation_id":conversation})).await?;
+        let rows = snapshot["messages"].as_array().ok_or("s35 history rows")?;
+        assert_eq!(
+            rows.iter().filter(|row| row["body_utf8"] == text).count(),
+            1,
+            "history must not duplicate the live outgoing body: {text}"
+        );
+    }
+    Ok(())
+}
