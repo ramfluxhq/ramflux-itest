@@ -3,6 +3,9 @@
 
 #![allow(unused_imports)]
 use super::*;
+#[cfg(feature = "realnet")]
+#[path = "s35_owncopy.rs"]
+mod owncopy;
 
 #[cfg(feature = "realnet")]
 #[test]
@@ -260,6 +263,14 @@ async fn mvp_s35_assert_multi_device_activation(
                 )
                 .await?;
             assert_s35_decrypted_body(&bob_primary_received, b"s35 hello both devices")?;
+
+            owncopy::assert_live_sent_messages(
+                &mut bob_primary,
+                &mut bob_restored,
+                &alice_commitment,
+                &bob_commitment,
+            )
+            .await?;
 
             mvp_s35_assert_encrypted_own_device_sync(
                 &mut bob_primary,

@@ -285,6 +285,7 @@ jobs:
             tests: tests::k5a_agent_host::k5a_realnet_agent_replies_in_dm_and_group
           - slice: k5a2
             tests: tests::k5a_agent_host::k5a2_realnet_agent_surface
+          # Includes live outgoing DM/group sibling rows before explicit history sync.
           - slice: s35
             tests: tests::mvp_s35_multi_device::mvp_s35_realnet_multi_device_activation_fanout
           - slice: s42
