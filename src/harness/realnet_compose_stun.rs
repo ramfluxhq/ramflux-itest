@@ -17,7 +17,7 @@ pub(crate) use failure_diagnostics::dump_service_container_logs;
 #[path = "compose_self_referencing_defaults.rs"]
 mod self_referencing_defaults;
 #[cfg(all(test, feature = "realnet"))]
-use self_referencing_defaults::COMPOSE_SELF_REFERENCING_DEFAULTS;
+use self_referencing_defaults::{COMPOSE_SELF_REFERENCING_DEFAULTS, outer_or_default};
 
 /// `compose down` shutdown-grace timeout (seconds). Default "2" (fast teardown for normal tests).
 /// CTRL-089 DIAGNOSTIC: a heap-profiler relay build dumps its dhat json on SIGTERM, and symbolizing
@@ -567,10 +567,13 @@ fn compose_env_with_required_defaults(env: &[(String, String)]) -> Vec<(String, 
         "RAMFLUX_RELAY_TRUST_SNAPSHOT_REFRESH_INTERVAL_SECONDS",
         "30",
     );
-    // Every other `KEY: "${KEY:-default}"` of the itest compose files, with its compose default;
-    // the lint in `self_referencing_defaults` keeps this table complete against the pinned tree.
-    for (key, value) in COMPOSE_SELF_REFERENCING_DEFAULTS {
-        ensure_compose_default_env(&mut compose_env, key, value);
+    // Every other `KEY: "${KEY:-default}"` of the itest compose files. Compose interpolates such
+    // an entry from the process environment the harness inherits, so an exported operator knob
+    // (RAMFLUX_ITEST_PERF=1, RAMFLUX_RELAY_REDB_CACHE_BYTES, ...) keeps its value; only a key
+    // absent from the process environment gets the compose default. The lint in
+    // `self_referencing_defaults` keeps the table complete against the pinned product tree.
+    for (key, default) in COMPOSE_SELF_REFERENCING_DEFAULTS {
+        ensure_compose_default_env(&mut compose_env, key, &outer_or_default(key, default));
     }
     if !compose_env.iter().any(|(key, _value)| key == "RAMFLUX_FEDERATION_NODE_SIGNING_SEED_B64URL")
     {

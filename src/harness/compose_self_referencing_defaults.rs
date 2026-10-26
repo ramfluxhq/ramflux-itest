@@ -7,14 +7,17 @@
 //! `${KEY:-default}` when the outer variable is unset (Docker Compose v2 expands it). A service
 //! that merely parses the value falls back to its own default; one that opens the value as a
 //! path (notify's provider credentials file) exits. The harness therefore passes each of these
-//! keys explicitly, with the value the compose file would have chosen, unless a fixture set it.
+//! keys explicitly: the fixture's value when it set one, else the caller's process environment
+//! (compose would have interpolated exactly that), else the compose default.
 use super::compose_env_with_required_defaults;
 use std::path::{Path, PathBuf};
 
 /// Self-referencing keys of `deploy/docker-compose.itest*.yml` and their compose defaults.
 /// `compose_env_with_required_defaults` applies them with `ensure_compose_default_env`, so a
-/// fixture's own value always wins. Keys the harness already derives elsewhere (node id, signing
-/// seed, federation and relay trust material) are not repeated here.
+/// fixture's own value always wins, and a value present in the process environment (operator
+/// knobs such as `RAMFLUX_ITEST_PERF=1` or `RAMFLUX_RELAY_REDB_CACHE_BYTES`) replaces the table
+/// default. Keys the harness already derives elsewhere (node id, signing seed, federation and
+/// relay trust material) are not repeated here.
 pub(super) const COMPOSE_SELF_REFERENCING_DEFAULTS: &[(&str, &str)] = &[
     // docker-compose.itest.yml: every service
     ("RAMFLUX_ITEST_PERF", "0"),
@@ -60,6 +63,14 @@ pub(super) const COMPOSE_SELF_REFERENCING_DEFAULTS: &[(&str, &str)] = &[
     ("RAMFLUX_RELAY_VOICE_PUBLIC_ENDPOINT", "127.0.0.1:19001"),
 ];
 
+/// The value compose would interpolate for `${key:-default}`: the process environment of the
+/// harness when the variable is present there (operator knobs must keep reaching the services),
+/// else the compose default.
+pub(super) fn outer_or_default(key: &str, default: &str) -> String {
+    std::env::var_os(key)
+        .map_or_else(|| default.to_owned(), |value| value.to_string_lossy().into_owned())
+}
+
 /// One `KEY: "${KEY:-default}"` occurrence in a compose file.
 #[derive(Debug, PartialEq, Eq)]
 pub(super) struct SelfReferencingDefault {
@@ -70,23 +81,14 @@ pub(super) struct SelfReferencingDefault {
 }
 
 /// Finds every environment entry whose default references the entry's own key.
-/// Only the `environment:` mapping form `KEY: "${KEY:-default}"` is affected: a `${VAR:-x}`
-/// inside a port mapping or a differently named outer variable expands correctly.
+/// Only `environment:` entries are affected: a `${VAR:-x}` inside a port mapping or a
+/// differently named outer variable expands correctly.
 pub(super) fn self_referencing_defaults(file: &str, text: &str) -> Vec<SelfReferencingDefault> {
     text.lines()
         .enumerate()
         .filter_map(|(index, line)| {
-            let (key, value) = line.trim_start().split_once(':')?;
-            if key.is_empty()
-                || !key
-                    .bytes()
-                    .all(|byte| byte.is_ascii_uppercase() || byte == b'_' || byte.is_ascii_digit())
-            {
-                return None;
-            }
-            let value = value.trim().trim_matches('"');
-            let rest = value.strip_prefix("${")?.strip_prefix(key)?.strip_prefix(":-")?;
-            let default = rest.strip_suffix('}')?;
+            let (key, value) = environment_entry(line)?;
+            let default = self_referencing_default(key, value)?;
             Some(SelfReferencingDefault {
                 file: file.to_owned(),
                 line: index + 1,
@@ -95,6 +97,33 @@ pub(super) fn self_referencing_defaults(file: &str, text: &str) -> Vec<SelfRefer
             })
         })
         .collect()
+}
+
+/// `KEY: value` (mapping form) or `- KEY=value` (list form) with an environment-variable key.
+fn environment_entry(line: &str) -> Option<(&str, &str)> {
+    let line = line.trim_start();
+    let (key, value) = match line.strip_prefix("- ") {
+        Some(item) => item.trim_start().split_once('=')?,
+        None => line.split_once(':')?,
+    };
+    let key = key.trim_end();
+    let is_env_key =
+        key.bytes().next().is_some_and(|byte| byte.is_ascii_uppercase() || byte == b'_')
+            && key
+                .bytes()
+                .all(|byte| byte.is_ascii_uppercase() || byte.is_ascii_digit() || byte == b'_');
+    is_env_key.then_some((key, value.trim()))
+}
+
+/// The default of `${KEY:-default}` or `${KEY-default}`, with optional `"`/`'` quoting and an
+/// optional trailing `# comment`.
+fn self_referencing_default<'a>(key: &str, value: &'a str) -> Option<&'a str> {
+    let unquoted = value.strip_prefix(['"', '\'']).unwrap_or(value);
+    let rest = unquoted.strip_prefix("${")?.strip_prefix(key)?;
+    let rest = rest.strip_prefix(":-").or_else(|| rest.strip_prefix('-'))?;
+    let (default, tail) = rest.split_once('}')?;
+    let tail = tail.trim_start_matches(['"', '\'']).trim_start();
+    (tail.is_empty() || tail.starts_with('#')).then_some(default)
 }
 
 /// The product SHA every `ramfluxhq/ramflux.git` dependency of this crate pins.
@@ -118,34 +147,58 @@ fn pinned_product_sha() -> Result<String, Box<dyn std::error::Error>> {
 }
 
 /// The `deploy/` directory of the pinned product tree: `RAMFLUX_ITEST_PRODUCT_DEPLOY_DIR` when
-/// set, else cargo's git checkout of the pinned SHA, else the sibling `../ramflux` checkout the
-/// realnet fixtures use.
-pub(super) fn pinned_product_deploy_dir() -> Result<PathBuf, Box<dyn std::error::Error>> {
-    if let Ok(dir) = std::env::var("RAMFLUX_ITEST_PRODUCT_DEPLOY_DIR") {
-        return Ok(PathBuf::from(dir));
+/// set (it must exist: CI sets it, and the gate stays hard there), else cargo's git checkout of
+/// the pinned SHA, else the sibling `../ramflux` checkout the realnet fixtures use (a warning
+/// names its revision when it is not the pin), else `None` so a local run can skip.
+pub(super) fn pinned_product_deploy_dir() -> Result<Option<PathBuf>, Box<dyn std::error::Error>> {
+    if let Some(dir) = std::env::var_os("RAMFLUX_ITEST_PRODUCT_DEPLOY_DIR") {
+        let dir = PathBuf::from(dir);
+        if !dir.join("docker-compose.itest.yml").is_file() {
+            return Err(format!(
+                "RAMFLUX_ITEST_PRODUCT_DEPLOY_DIR={} has no docker-compose.itest.yml",
+                dir.display()
+            )
+            .into());
+        }
+        return Ok(Some(dir));
     }
     let sha = pinned_product_sha()?;
     let cargo_home = std::env::var_os("CARGO_HOME")
         .map(PathBuf::from)
         .or_else(|| std::env::var_os("HOME").map(|home| PathBuf::from(home).join(".cargo")));
-    let mut candidates = Vec::new();
     if let Some(checkouts) = cargo_home.map(|home| home.join("git/checkouts"))
         && let Ok(entries) = std::fs::read_dir(&checkouts)
     {
         for entry in entries.flatten() {
             if entry.file_name().to_string_lossy().starts_with("ramflux-") {
                 let checkout = entry.path().join(&sha[..7]);
-                if checkout.join(".cargo-ok").is_file() {
-                    candidates.push(checkout.join("deploy"));
+                let deploy = checkout.join("deploy");
+                if checkout.join(".cargo-ok").is_file()
+                    && deploy.join("docker-compose.itest.yml").is_file()
+                {
+                    return Ok(Some(deploy));
                 }
             }
         }
     }
-    candidates.push(super::code_root().join("ramflux/deploy"));
-    candidates
-        .into_iter()
-        .find(|deploy| deploy.join("docker-compose.itest.yml").is_file())
-        .ok_or_else(|| format!("no checkout of pinned product {sha} with deploy/ found").into())
+    let sibling = super::code_root().join("ramflux");
+    if sibling.join("deploy/docker-compose.itest.yml").is_file() {
+        let head = std::process::Command::new("git")
+            .args(["-C", &sibling.to_string_lossy(), "rev-parse", "HEAD"])
+            .output()
+            .ok()
+            .map(|output| String::from_utf8_lossy(&output.stdout).trim().to_owned());
+        if let Some(head) = head
+            && head != sha
+        {
+            eprintln!(
+                "warning: linting sibling checkout {} at {head}, not the pinned product {sha}",
+                sibling.display()
+            );
+        }
+        return Ok(Some(sibling.join("deploy")));
+    }
+    Ok(None)
 }
 
 fn itest_compose_files(deploy: &Path) -> Result<Vec<PathBuf>, Box<dyn std::error::Error>> {
@@ -166,35 +219,45 @@ fn itest_compose_files(deploy: &Path) -> Result<Vec<PathBuf>, Box<dyn std::error
 mod tests {
     use super::*;
 
+    fn value_of<'a>(env: &'a [(String, String)], key: &str) -> Vec<&'a str> {
+        env.iter()
+            .filter(|(existing, _)| existing == key)
+            .map(|(_, value)| value.as_str())
+            .collect()
+    }
+
     #[test]
-    fn finds_only_environment_entries_that_reference_their_own_key() {
+    fn finds_every_environment_entry_shape_that_references_its_own_key() {
         let text = r#"services:
   ramflux-notify:
     environment:
       RAMFLUX_NOTIFY_WEBPUSH_ORIGINS: "${RAMFLUX_NOTIFY_WEBPUSH_ORIGINS:-}"
-      RAMFLUX_NODE_ID: "${RAMFLUX_NODE_ID:-localhost}"
+      RAMFLUX_NODE_ID: "${RAMFLUX_NODE_ID:-localhost}"  # trailing comment
+      RAMFLUX_SINGLE: '${RAMFLUX_SINGLE:-single}'
+      RAMFLUX_NO_COLON: ${RAMFLUX_NO_COLON-plain}
+      - RAMFLUX_LIST=${RAMFLUX_LIST:-list}
       RAMFLUX_GATEWAY_V3_ISSUER_SEED: "${RAMFLUX_GATEWAY_A_V3_ISSUER_SEED:-}"
       RAMFLUX_ITEST_HTTP: "1"
+      RAMFLUX_SUFFIX: "${RAMFLUX_SUFFIX:-x}:443"
       # RAMFLUX_COMMENTED: "${RAMFLUX_COMMENTED:-x}"
     ports:
       - "${RAMFLUX_ITEST_NOTIFY_HTTP_PORT:-18083}:18083"
+networks:
+  default:
+    name: "${RAMFLUX_ITEST_SHARED_NETWORK:-ramflux-itest-mesh}"
 "#;
-        let found = self_referencing_defaults("docker-compose.itest.yml", text);
+        let found = self_referencing_defaults("docker-compose.itest.yml", text)
+            .into_iter()
+            .map(|entry| (entry.line, entry.key, entry.default))
+            .collect::<Vec<_>>();
         assert_eq!(
             found,
             vec![
-                SelfReferencingDefault {
-                    file: "docker-compose.itest.yml".to_owned(),
-                    line: 4,
-                    key: "RAMFLUX_NOTIFY_WEBPUSH_ORIGINS".to_owned(),
-                    default: String::new(),
-                },
-                SelfReferencingDefault {
-                    file: "docker-compose.itest.yml".to_owned(),
-                    line: 5,
-                    key: "RAMFLUX_NODE_ID".to_owned(),
-                    default: "localhost".to_owned(),
-                },
+                (4, "RAMFLUX_NOTIFY_WEBPUSH_ORIGINS".to_owned(), String::new()),
+                (5, "RAMFLUX_NODE_ID".to_owned(), "localhost".to_owned()),
+                (6, "RAMFLUX_SINGLE".to_owned(), "single".to_owned()),
+                (7, "RAMFLUX_NO_COLON".to_owned(), "plain".to_owned()),
+                (8, "RAMFLUX_LIST".to_owned(), "list".to_owned()),
             ]
         );
     }
@@ -202,7 +265,13 @@ mod tests {
     #[test]
     fn pinned_itest_compose_self_referencing_defaults_are_supplied_by_the_harness()
     -> Result<(), Box<dyn std::error::Error>> {
-        let deploy = pinned_product_deploy_dir()?;
+        let Some(deploy) = pinned_product_deploy_dir()? else {
+            eprintln!(
+                "skipping compose self-referencing lint: no checkout of the pinned product \
+                 (cargo git checkout, ../ramflux, or RAMFLUX_ITEST_PRODUCT_DEPLOY_DIR)"
+            );
+            return Ok(());
+        };
         let files = itest_compose_files(&deploy)?;
         assert!(!files.is_empty(), "no docker-compose.itest*.yml under {}", deploy.display());
         let supplied = compose_env_with_required_defaults(&[]);
@@ -245,13 +314,9 @@ mod tests {
         keys.dedup();
         assert_eq!(keys.len(), count, "duplicate key in COMPOSE_SELF_REFERENCING_DEFAULTS");
         let supplied = compose_env_with_required_defaults(&[]);
-        for (key, value) in COMPOSE_SELF_REFERENCING_DEFAULTS {
-            let values = supplied
-                .iter()
-                .filter(|(supplied_key, _)| supplied_key == key)
-                .map(|(_, supplied_value)| supplied_value.as_str())
-                .collect::<Vec<_>>();
-            assert_eq!(values, vec![*value], "{key} must be supplied exactly once from the table");
+        for (key, default) in COMPOSE_SELF_REFERENCING_DEFAULTS {
+            let expected = outer_or_default(key, default);
+            assert_eq!(value_of(&supplied, key), vec![expected.as_str()], "{key} supplied once");
         }
     }
 
@@ -261,11 +326,66 @@ mod tests {
             "RAMFLUX_NOTIFY_WEBPUSH_ORIGINS".to_owned(),
             "http://127.0.0.1:9".to_owned(),
         )]);
-        let values = env
-            .iter()
-            .filter(|(key, _)| key == "RAMFLUX_NOTIFY_WEBPUSH_ORIGINS")
-            .map(|(_, value)| value.as_str())
-            .collect::<Vec<_>>();
-        assert_eq!(values, vec!["http://127.0.0.1:9"]);
+        assert_eq!(value_of(&env, "RAMFLUX_NOTIFY_WEBPUSH_ORIGINS"), vec!["http://127.0.0.1:9"]);
+    }
+
+    /// Mirrors what compose interpolates: a key present in the process environment reaches the
+    /// compose env with that value, an absent key gets the table default. Runs the same way under
+    /// an operator's `RAMFLUX_ITEST_PERF=1 cargo test ...` and reports what it saw, so it doubles
+    /// as the env pass-through smoke on a QA host.
+    #[test]
+    fn process_environment_values_pass_through_to_the_compose_env() {
+        let supplied = compose_env_with_required_defaults(&[]);
+        for key in ["RAMFLUX_ITEST_PERF", "RAMFLUX_RELAY_REDB_CACHE_BYTES"] {
+            let outer = std::env::var_os(key).map(|value| value.to_string_lossy().into_owned());
+            let (_, default) = COMPOSE_SELF_REFERENCING_DEFAULTS
+                .iter()
+                .find(|(table_key, _)| *table_key == key)
+                .unwrap_or(&("", ""));
+            let expected = outer.clone().unwrap_or_else(|| (*default).to_owned());
+            eprintln!(
+                "compose env {key}={:?} (process environment: {})",
+                expected,
+                outer.as_deref().map_or("absent".to_owned(), |value| format!("{value:?}"))
+            );
+            assert_eq!(value_of(&supplied, key), vec![expected.as_str()]);
+        }
+    }
+
+    /// Proves the pass-through with concrete values by re-running this test in a child process
+    /// whose environment carries `RAMFLUX_ITEST_PERF=1` and `RAMFLUX_RELAY_REDB_CACHE_BYTES`,
+    /// and that a fixture value still beats the process environment.
+    #[test]
+    fn exported_operator_knobs_reach_the_compose_env_unchanged()
+    -> Result<(), Box<dyn std::error::Error>> {
+        if std::env::var_os("RAMFLUX_ITEST_OUTER_ENV_CHILD").is_some() {
+            let supplied = compose_env_with_required_defaults(&[]);
+            assert_eq!(value_of(&supplied, "RAMFLUX_ITEST_PERF"), vec!["1"]);
+            assert_eq!(value_of(&supplied, "RAMFLUX_RELAY_REDB_CACHE_BYTES"), vec!["16777216"]);
+            assert_eq!(value_of(&supplied, "RAMFLUX_ROUTER_WAL_SHARDS"), vec![""]);
+            let fixture = compose_env_with_required_defaults(&[(
+                "RAMFLUX_ITEST_PERF".to_owned(),
+                "fixture".to_owned(),
+            )]);
+            assert_eq!(value_of(&fixture, "RAMFLUX_ITEST_PERF"), vec!["fixture"]);
+            return Ok(());
+        }
+        let test_name = concat!(
+            "harness::realnet_compose_stun::self_referencing_defaults::tests::",
+            "exported_operator_knobs_reach_the_compose_env_unchanged"
+        );
+        let output = std::process::Command::new(std::env::current_exe()?)
+            .args(["--exact", test_name, "--test-threads=1"])
+            .env("RAMFLUX_ITEST_OUTER_ENV_CHILD", "1")
+            .env("RAMFLUX_ITEST_PERF", "1")
+            .env("RAMFLUX_RELAY_REDB_CACHE_BYTES", "16777216")
+            .env_remove("RAMFLUX_ROUTER_WAL_SHARDS")
+            .output()?;
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(output.status.success(), "{stdout}\n{stderr}");
+        // An exact filter matching no tests also exits zero; require the child actually ran.
+        assert!(stdout.contains("1 passed"), "child did not run the check: {stdout}");
+        Ok(())
     }
 }
