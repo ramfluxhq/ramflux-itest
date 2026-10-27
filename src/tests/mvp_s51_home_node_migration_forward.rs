@@ -140,6 +140,7 @@ fn s51_identity_material(now: i64) -> Result<S51IdentityMaterial, Box<dyn std::e
         session_id: "session_s51_migration",
         push_alias_hash: Some("push_alias_s51_migration"),
         source_ip_hash: Some("source_s51_migration"),
+        principal_kind: ramflux_protocol::PrincipalKind::Human,
         proof_issued_at: now.saturating_sub(60),
         proof_expires_at: now.saturating_add(86_400),
         now,

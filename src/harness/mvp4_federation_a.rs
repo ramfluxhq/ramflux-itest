@@ -103,12 +103,9 @@ pub(crate) fn mvp4_bob_new_device_register()
         2,
         [0x85; 32],
     );
-    let bob_original_device =
-        ramflux_crypto::create_device_branch("bob_realnet", "bob_device_realnet", 1, [0x44; 32]);
-    mvp1_named_register_request_with_device_set(
+    mvp1_named_register_request(
         &bob_root,
         &bob_new_device,
-        RootedDeviceSetSpec { members: &[&bob_original_device, &bob_new_device], epoch: 2 },
         "bob_new_target_mvp4_realnet",
         "bob_new_session_mvp4_realnet",
         41,

@@ -183,18 +183,16 @@ pub(crate) fn mvp10_own_devices_fixture()
         "alice_phone_session_mvp10_own",
         310,
     )?;
-    let laptop_register = mvp1_named_register_request_with_device_set(
+    let laptop_register = mvp1_named_register_request(
         &root,
         &laptop,
-        RootedDeviceSetSpec { members: &[&phone, &laptop], epoch: 2 },
         "alice_laptop_target_mvp10_own",
         "alice_laptop_session_mvp10_own",
         311,
     )?;
-    let revoked_register = mvp1_named_register_request_with_device_set(
+    let revoked_register = mvp1_named_register_request(
         &root,
         &revoked,
-        RootedDeviceSetSpec { members: &[&phone, &laptop, &revoked], epoch: 3 },
         "alice_revoked_target_mvp10_own",
         "alice_revoked_session_mvp10_own",
         312,

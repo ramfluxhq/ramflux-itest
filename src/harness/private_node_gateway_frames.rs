@@ -447,7 +447,7 @@ pub(crate) async fn mvp_s1_expect_resume_entries(
 pub(crate) fn mvp_s1_register_identity(
     gateway_url: &str,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let request = mvp_s1_identity_register_request(GatewayFrameIdentitySpec {
+    let request = mvp_s1_identity_register_request::<1>(GatewayFrameIdentitySpec {
         principal_id: "principal_s1_realnet",
         device_id: "device_s1_realnet",
         target_delivery_id: "target_s1_gateway_session",
@@ -470,7 +470,7 @@ pub(crate) fn mvp_s1_register_identity(
 }
 
 #[cfg(all(test, feature = "realnet"))]
-pub(crate) fn mvp_s1_identity_register_request(
+pub(crate) fn mvp_s1_identity_register_request<const DEVICE_SET_EPOCH: u64>(
     spec: GatewayFrameIdentitySpec<'_>,
 ) -> Result<ramflux_node_core::IdentityRegisterRequest, Box<dyn std::error::Error>> {
     let root = ramflux_crypto::create_identity_root(spec.principal_id, spec.root_seed);
@@ -484,12 +484,13 @@ pub(crate) fn mvp_s1_identity_register_request(
     rooted_identity_register_request(&RootedRegistrationSpec {
         root: &root,
         device: &branch,
-        device_set: RootedDeviceSetSpec { members: &[&branch], epoch: 1 },
+        device_set: RootedDeviceSetSpec { members: &[&branch], epoch: DEVICE_SET_EPOCH },
         target_delivery_id: spec.target_delivery_id,
         gateway_id: spec.gateway_id,
         session_id: spec.session_id,
         push_alias_hash: spec.push_alias_hash,
         source_ip_hash: spec.source_ip_hash,
+        principal_kind: ramflux_protocol::PrincipalKind::Human,
         proof_issued_at: now,
         proof_expires_at: now.saturating_add(i64::from(ITEST_REPLAY_TTL_SECONDS)),
         now,

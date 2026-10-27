@@ -885,7 +885,7 @@ async fn mvp_s57_probe_session(
 
 #[cfg(feature = "realnet")]
 fn mvp_s57_register_probe(node: &S8RealnetNode) -> Result<(), Box<dyn std::error::Error>> {
-    let registration = mvp_s1_identity_register_request(GatewayFrameIdentitySpec {
+    let registration = mvp_s1_identity_register_request::<1>(GatewayFrameIdentitySpec {
         principal_id: "principal_s57_probe",
         device_id: "probe_device_s57",
         target_delivery_id: "target_s57_probe",
@@ -925,7 +925,7 @@ async fn mvp_s57_probe_session_as(
     // The probe device is fresh (register). Bob's device is already registered by his account, so
     // we only re-open + authenticate an existing device to issue a duplicate ACK as Bob himself.
     if register {
-        let registration = mvp_s1_identity_register_request(GatewayFrameIdentitySpec {
+        let registration = mvp_s1_identity_register_request::<1>(GatewayFrameIdentitySpec {
             principal_id,
             device_id,
             target_delivery_id,
@@ -1237,7 +1237,7 @@ async fn mvp_s56_grant_negatives(
         "ramflux.object_relay.recipient_device.v1",
         probe_device_id.as_bytes(),
     );
-    let registration = mvp_s1_identity_register_request(GatewayFrameIdentitySpec {
+    let registration = mvp_s1_identity_register_request::<1>(GatewayFrameIdentitySpec {
         principal_id: "principal_s56_probe",
         device_id: probe_device_id,
         target_delivery_id: "target_s56_probe",

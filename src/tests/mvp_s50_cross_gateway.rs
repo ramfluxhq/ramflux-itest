@@ -171,7 +171,7 @@ fn mvp_s50_register_gateway_device(
     gateway_url: &str,
     device: MvpS50FrameDevice<'_>,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let request = mvp_s1_identity_register_request(GatewayFrameIdentitySpec {
+    let request = mvp_s1_identity_register_request::<1>(GatewayFrameIdentitySpec {
         principal_id: device.principal_id,
         device_id: device.device_id,
         target_delivery_id: device.target_delivery_id,

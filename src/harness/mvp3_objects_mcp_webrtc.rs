@@ -26,10 +26,9 @@ pub(crate) fn mvp3_mcp_a2ui_fixture() -> Result<Mvp3McpA2uiFixture, Box<dyn std:
         "alice_app_session_mvp3_realnet",
         31,
     )?;
-    let cli_register = mvp1_named_register_request_with_device_set(
+    let cli_register = mvp1_named_register_request(
         &root,
         &cli_device,
-        RootedDeviceSetSpec { members: &[&app_device, &cli_device], epoch: 2 },
         "cli_headless_ai_target_mvp3_realnet",
         "cli_headless_ai_session_mvp3_realnet",
         32,

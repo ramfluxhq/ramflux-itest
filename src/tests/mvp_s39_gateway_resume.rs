@@ -245,7 +245,7 @@ async fn mvp_s39_register_producer_device(
     send: &mut quinn::SendStream,
     recv: &mut quinn::RecvStream,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let request = mvp_s1_identity_register_request(GatewayFrameIdentitySpec {
+    let request = mvp_s1_identity_register_request::<1>(GatewayFrameIdentitySpec {
         principal_id: "principal_s39_producer",
         device_id: "device_s39_producer",
         target_delivery_id: "target_s39_producer",

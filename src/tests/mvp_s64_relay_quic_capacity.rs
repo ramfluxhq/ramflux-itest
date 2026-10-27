@@ -1227,7 +1227,7 @@ async fn s64_d2bk4_restart_verify(
     let principal = "principal_s64_d2bk4_restart".to_owned();
     let device_seed = [0x73u8; 32];
     let root_seed = [0x72u8; 32];
-    let registration = mvp_s1_identity_register_request(GatewayFrameIdentitySpec {
+    let registration = mvp_s1_identity_register_request::<1>(GatewayFrameIdentitySpec {
         principal_id: &principal,
         device_id: &device_id,
         target_delivery_id: "target_s64_d2bk4_restart",
@@ -2188,7 +2188,7 @@ async fn s64_mem02_flow(
     let principal = "principal_s64_mem02".to_owned();
     let device_seed = [0x71u8; 32];
     let root_seed = [0x70u8; 32];
-    let registration = mvp_s1_identity_register_request(GatewayFrameIdentitySpec {
+    let registration = mvp_s1_identity_register_request::<1>(GatewayFrameIdentitySpec {
         principal_id: &principal,
         device_id: &device_id,
         target_delivery_id: "target_s64_mem02",
@@ -2689,7 +2689,7 @@ async fn s64_mem03a0_flow(
     let principal = "principal_s64_mem03a0".to_owned();
     let device_seed = [0x71u8; 32];
     let root_seed = [0x70u8; 32];
-    let registration = mvp_s1_identity_register_request(GatewayFrameIdentitySpec {
+    let registration = mvp_s1_identity_register_request::<1>(GatewayFrameIdentitySpec {
         principal_id: &principal,
         device_id: &device_id,
         target_delivery_id: "target_s64_mem03a0",
