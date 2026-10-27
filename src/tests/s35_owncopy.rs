@@ -34,7 +34,7 @@ pub(super) async fn assert_live_sent_messages(
     call(
         primary,
         "group.create",
-        json!({"group_id":"s35_own_group","creator_id":"bob_device_s35_a",
+        json!({"group_id":"s35_own_group","conversation_id":"s35_own_group_thread","creator_id":"bob_device_s35_a",
         "creator_target_delivery_id":"target_s35_bob_a"}),
     )
     .await?;
@@ -45,11 +45,18 @@ pub(super) async fn assert_live_sent_messages(
         "sender_id":"bob_device_s35_a","encrypted_body_base64":"",
         "plaintext_body_base64":ramflux_protocol::encode_base64url(b"s35 outgoing live group"),"ttl":300
     })).await?;
-    assert_eq!(submitted["message_id"], "s35_bob_sent_group");
+    let canonical_group_message = ramflux_protocol::group_message_id(
+        "s35_own_group",
+        own_commitment,
+        "bob_device_s35_a",
+        "s35_bob_sent_group",
+    )?;
+    assert_eq!(submitted["message_id"], canonical_group_message);
+    assert_eq!(submitted["client_message_id"], "s35_bob_sent_group");
     observe(
         sibling,
         "s35_own_group_thread",
-        "s35_bob_sent_group",
+        &canonical_group_message,
         "s35 outgoing live group",
         own_commitment,
     )
@@ -67,7 +74,7 @@ pub(super) async fn assert_live_sent_messages(
     assert_row(
         sibling,
         "s35_own_group_thread",
-        "s35_bob_sent_group",
+        &canonical_group_message,
         "s35 outgoing live group",
         own_commitment,
     )
