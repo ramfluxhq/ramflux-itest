@@ -64,60 +64,23 @@ pub(crate) fn s13_register_rooted_device(
         1,
         device.device_seed,
     );
-    let agreement = ramflux_crypto::X25519KeyPair::from_seed(device.device_seed);
     let now = itest_now_unix_seconds();
-    let proof = ramflux_crypto::authorize_device_branch_v2(
-        &root,
-        &branch,
-        ramflux_crypto::BranchAuthorization {
-            audience: ramflux_node_core::IDENTITY_BIND_AUDIENCE,
-            capability_scope: vec![ramflux_node_core::IDENTITY_BIND_CAPABILITY.into()],
-            issued_at: now,
-            expires_at: now.saturating_add(i64::from(ITEST_REPLAY_TTL_SECONDS)),
-            principal_kind: ramflux_protocol::PrincipalKind::Human,
-            agreement_identity_public_key: agreement.public,
-        },
-    )?;
-    let branch_public_key =
-        ramflux_protocol::encode_base64url(branch.signing_key.verifying_key().to_bytes());
-    let keys = ramflux_crypto::device_key_commitments(
-        &branch_public_key,
-        &ramflux_protocol::encode_base64url(agreement.public),
-    )?;
-    let device_set = ramflux_crypto::sign_device_set(
-        &root,
-        ramflux_crypto::DeviceSetSigningInput {
-            principal_kind: ramflux_protocol::PrincipalKind::Human,
-            device_set_epoch: 1,
-            devices: vec![ramflux_protocol::SignedDeviceSetEntry {
-                device_id: device.device_id.into(),
-                device_epoch: 1,
-                signing_key_commitment: keys.0,
-                agreement_key_commitment: keys.1,
-                status: ramflux_protocol::DeviceSetStatus::Active,
-                revoked_at: None,
-            }],
-        },
-    )?;
-    let root_public_key =
-        ramflux_protocol::encode_base64url(root.signing_key.verifying_key().to_bytes());
-    let request = ramflux_node_core::IdentityRegisterRequest {
-        device_set: Some(device_set),
-        principal_commitment: ramflux_crypto::blake3_256_base64url(
-            "ramflux.identity.root_public_key.commitment.v1",
-            &root.signing_key.verifying_key().to_bytes(),
-        ),
-        root_public_key,
-        branch_public_key,
-        proof,
-        target_delivery_id: device.target_delivery_id.to_owned(),
-        gateway_id: "ramflux-gateway".to_owned(),
-        session_id: format!("pre_session_{}", device.device_id),
-        push_alias_hash: Some(format!("push_alias_{}", device.device_id)),
+    let session_id = format!("pre_session_{}", device.device_id);
+    let push_alias_hash = format!("push_alias_{}", device.device_id);
+    let source_ip_hash = format!("s13_source_{}", device.device_id);
+    let request = rooted_identity_register_request(&RootedRegistrationSpec {
+        root: &root,
+        device: &branch,
+        device_set: RootedDeviceSetSpec { members: &[&branch], epoch: 1 },
+        target_delivery_id: device.target_delivery_id,
+        gateway_id: "ramflux-gateway",
+        session_id: &session_id,
+        push_alias_hash: Some(&push_alias_hash),
+        source_ip_hash: Some(&source_ip_hash),
+        proof_issued_at: now,
+        proof_expires_at: now.saturating_add(i64::from(ITEST_REPLAY_TTL_SECONDS)),
         now,
-        registration_pow: None,
-        source_ip_hash: Some(format!("s13_source_{}", device.device_id)),
-    };
+    })?;
     let response: serde_json::Value = ramflux_node_core::itest_http_post_json(
         &format!("{router_url}/mvp1/identity/register"),
         &request,

@@ -43,11 +43,17 @@ fn mvp_s51_realnet_home_node_migration_forwards_within_window()
     };
 
     realnet_step("S51 start node-a", "home-node migration old home");
-    let node_a =
-        start_s8_realnet_compose_project("ramflux-s51-home-migration-node-a", old_home_ports)?;
+    let node_a = start_s8_realnet_compose_project_with_env(
+        "ramflux-s51-home-migration-node-a",
+        old_home_ports,
+        &s51_cross_gateway_ports(57_408, 57_444),
+    )?;
     realnet_step("S51 start node-b", "home-node migration new home");
-    let node_b =
-        start_s8_realnet_compose_project("ramflux-s51-home-migration-node-b", new_home_ports)?;
+    let node_b = start_s8_realnet_compose_project_with_env(
+        "ramflux-s51-home-migration-node-b",
+        new_home_ports,
+        &s51_cross_gateway_ports(58_408, 58_444),
+    )?;
     mvp_s8_establish_trusted_links(&node_a, &node_b)?;
 
     let old_home_router_url = format!("http://127.0.0.1:{}", old_home_ports.router_http);
@@ -124,38 +130,30 @@ fn s51_identity_material(now: i64) -> Result<S51IdentityMaterial, Box<dyn std::e
         1,
         [0x52; 32],
     );
-    let proof = ramflux_crypto::authorize_device_branch(
-        &root,
-        &device,
-        ramflux_node_core::IDENTITY_BIND_AUDIENCE,
-        vec![ramflux_node_core::IDENTITY_BIND_CAPABILITY.to_owned()],
-        now.saturating_sub(60),
-        now.saturating_add(86_400),
-    )?;
-    let root_public_key =
-        ramflux_protocol::encode_base64url(root.signing_key.verifying_key().to_bytes());
-    let root_public_key_bytes = ramflux_protocol::decode_base64url(&root_public_key)?;
     let target_delivery_id = "target_s51_migration".to_owned();
-    let register = ramflux_node_core::IdentityRegisterRequest {
-        device_set: None,
-        principal_commitment: ramflux_crypto::blake3_256_base64url(
-            "ramflux.identity.root_public_key.commitment.v1",
-            &root_public_key_bytes,
-        ),
-        root_public_key,
-        branch_public_key: ramflux_protocol::encode_base64url(
-            device.signing_key.verifying_key().to_bytes(),
-        ),
-        proof,
-        target_delivery_id: target_delivery_id.clone(),
-        gateway_id: "ramflux-gateway".to_owned(),
-        session_id: "session_s51_migration".to_owned(),
-        push_alias_hash: Some("push_alias_s51_migration".to_owned()),
+    let register = rooted_identity_register_request(&RootedRegistrationSpec {
+        root: &root,
+        device: &device,
+        device_set: RootedDeviceSetSpec { members: &[&device], epoch: 1 },
+        target_delivery_id: &target_delivery_id,
+        gateway_id: "ramflux-gateway",
+        session_id: "session_s51_migration",
+        push_alias_hash: Some("push_alias_s51_migration"),
+        source_ip_hash: Some("source_s51_migration"),
+        proof_issued_at: now.saturating_sub(60),
+        proof_expires_at: now.saturating_add(86_400),
         now,
-        registration_pow: None,
-        source_ip_hash: Some("source_s51_migration".to_owned()),
-    };
+    })?;
     Ok(S51IdentityMaterial { register, device, target_delivery_id })
+}
+
+#[cfg(feature = "realnet")]
+fn s51_cross_gateway_ports(http: u16, quic: u16) -> Vec<(String, String)> {
+    vec![
+        ("RAMFLUX_ITEST_GATEWAY_B_HTTP_PORT".into(), http.to_string()),
+        ("RAMFLUX_ITEST_GATEWAY_B_QUIC_PORT".into(), quic.to_string()),
+        ("RAMFLUX_ITEST_GATEWAY_B_TCP_PORT".into(), quic.to_string()),
+    ]
 }
 
 #[cfg(feature = "realnet")]

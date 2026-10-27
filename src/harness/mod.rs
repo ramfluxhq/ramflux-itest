@@ -4,8 +4,11 @@
 #![allow(unused_imports)]
 mod device_identity_fixture;
 mod node_prebuild;
+#[path = "rooted_registration.rs"]
+pub(crate) mod rooted_registration;
 mod server_secrets;
 pub(crate) use device_identity_fixture::{bind_fixture_member, fixture_device};
+pub(crate) use rooted_registration::*;
 #[path = "a2i_a2ui.rs"]
 pub(crate) mod a2i_a2ui;
 pub(crate) use a2i_a2ui::*;

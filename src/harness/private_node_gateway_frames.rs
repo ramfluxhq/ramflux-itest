@@ -481,35 +481,18 @@ pub(crate) fn mvp_s1_identity_register_request(
         spec.device_seed,
     );
     let now = itest_now_unix_seconds();
-    let proof = ramflux_crypto::authorize_device_branch(
-        &root,
-        &branch,
-        ramflux_node_core::IDENTITY_BIND_AUDIENCE,
-        vec![ramflux_node_core::IDENTITY_BIND_CAPABILITY.to_owned()],
+    rooted_identity_register_request(&RootedRegistrationSpec {
+        root: &root,
+        device: &branch,
+        device_set: RootedDeviceSetSpec { members: &[&branch], epoch: 1 },
+        target_delivery_id: spec.target_delivery_id,
+        gateway_id: spec.gateway_id,
+        session_id: spec.session_id,
+        push_alias_hash: spec.push_alias_hash,
+        source_ip_hash: spec.source_ip_hash,
+        proof_issued_at: now,
+        proof_expires_at: now.saturating_add(i64::from(ITEST_REPLAY_TTL_SECONDS)),
         now,
-        now.saturating_add(i64::from(ITEST_REPLAY_TTL_SECONDS)),
-    )?;
-    let root_public_key =
-        ramflux_protocol::encode_base64url(root.signing_key.verifying_key().to_bytes());
-    let root_public_key_bytes = ramflux_protocol::decode_base64url(&root_public_key)?;
-    Ok(ramflux_node_core::IdentityRegisterRequest {
-        device_set: None,
-        principal_commitment: ramflux_crypto::blake3_256_base64url(
-            "ramflux.identity.root_public_key.commitment.v1",
-            &root_public_key_bytes,
-        ),
-        root_public_key,
-        branch_public_key: ramflux_protocol::encode_base64url(
-            branch.signing_key.verifying_key().to_bytes(),
-        ),
-        proof,
-        target_delivery_id: spec.target_delivery_id.to_owned(),
-        gateway_id: spec.gateway_id.to_owned(),
-        session_id: spec.session_id.to_owned(),
-        push_alias_hash: spec.push_alias_hash.map(str::to_owned),
-        now,
-        registration_pow: None,
-        source_ip_hash: spec.source_ip_hash.map(str::to_owned),
     })
 }
 

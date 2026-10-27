@@ -293,6 +293,8 @@ jobs:
             tests: tests::mvp_s47_restore_device_rejoin::mvp_s47_realnet_restore_device_rejoin_manifest_gate
           - slice: s48
             tests: tests::mvp_s48_own_device_sync::mvp_s48_realnet_own_device_history_group_key_sync
+          - slice: s51
+            tests: tests::mvp_s51_home_node_migration_forward::mvp_s51_realnet_home_node_migration_forwards_within_window
           - slice: s73
             tests: tests::mvp_s73_client_read_model::mvp_s73_realnet_client_read_model_actionable_ids
           - slice: s74
