@@ -16,9 +16,9 @@ pub(crate) struct ClientDirectoryStack {
 }
 
 struct MaterialDirectory(PathBuf);
-struct SignedGatewayMaterials {
+pub(crate) struct SignedGatewayMaterials {
     directory: MaterialDirectory,
-    environment: Vec<(String, String)>,
+    pub(crate) environment: Vec<(String, String)>,
 }
 impl Drop for MaterialDirectory {
     fn drop(&mut self) {
@@ -55,7 +55,7 @@ pub(crate) fn start_client_directory_stack_with_issuer(
     Ok(ClientDirectoryStack { node, _materials: materials })
 }
 
-fn signed_gateway_materials(
+pub(crate) fn signed_gateway_materials(
     issuer: &str,
     gateway: &str,
 ) -> Result<SignedGatewayMaterials, Box<dyn std::error::Error>> {

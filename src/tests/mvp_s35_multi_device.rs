@@ -52,7 +52,7 @@ fn mvp_s35_realnet_multi_device_activation_fanout() -> Result<(), Box<dyn std::e
             ),
         ],
         fixture::OWNER_HOME_NODE,
-        "gw-b",
+        fixture::ISSUER_GATEWAY,
     )?;
     let node = &stack.node;
     wait_for_itest_service(&format!("http://127.0.0.1:{}", ports.notify_http), "notify")?;
