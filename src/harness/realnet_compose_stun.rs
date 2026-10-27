@@ -1052,6 +1052,13 @@ pub(crate) fn start_s8_realnet_compose_project_with_env_and_federation_compio(
         ramflux_protocol::encode_base64url(node_signing_seed),
     ));
     ensure_itest_node_service_signing_seed_env(&mut env);
+    if extra_env.iter().any(|(key, value)| key == "RAMFLUX_CUSTODY_ITEST_ENABLE" && value == "1") {
+        env.extend(super::custody_node_fixture::provision(
+            &project_deploy_dir,
+            &node_id,
+            node_signing_seed,
+        )?);
+    }
     env.extend(extra_env.iter().cloned());
     realnet_step(
         "docker compose up",

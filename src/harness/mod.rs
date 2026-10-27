@@ -157,3 +157,6 @@ pub(crate) mod sdk_receive_diagnostics;
 mod voice_calls;
 #[cfg(all(test, feature = "realnet"))]
 pub(crate) use voice_calls::assert_realnet_voice_round_trip;
+
+#[cfg(all(test, feature = "realnet"))]
+pub(crate) mod custody_node_fixture;
