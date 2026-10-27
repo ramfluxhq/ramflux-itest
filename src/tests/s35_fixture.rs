@@ -3,7 +3,9 @@
 
 //! Isolated SDK owner configuration for the s35 history-export client process.
 use std::{net::SocketAddr, path::Path};
-pub(super) const OWNER_HOME_NODE: &str = "node_b.realnet";
+// Both Bob devices connect to gateway A; device labels do not select a gateway.
+pub(super) const OWNER_HOME_NODE: &str = "node_a.realnet";
+pub(super) const ISSUER_GATEWAY: &str = "gw-a";
 pub(super) fn child_command(
     executable: &Path,
     gateway: SocketAddr,
@@ -76,5 +78,26 @@ fn s35_history_sync_child_has_explicit_owner_authority_and_its_own_relay_endpoin
     }
     assert_eq!(env.get("RAMFLUX_SDK_OBJECT_RELAY_LOCAL_MINT"), Some(&None));
     assert_eq!(env.get("RAMFLUX_SDK_OBJECT_RELAY_SERVICE_KEY_BASE64"), Some(&None));
+    Ok(())
+}
+
+#[test]
+fn s35_primary_gateway_has_a_32_byte_issuer_seed_matching_owner_lineage()
+-> Result<(), Box<dyn std::error::Error>> {
+    use std::collections::BTreeMap;
+    let materials = crate::signed_gateway_materials(OWNER_HOME_NODE, ISSUER_GATEWAY)?;
+    let env = materials
+        .environment
+        .iter()
+        .map(|(key, value)| (key.as_str(), value.as_str()))
+        .collect::<BTreeMap<_, _>>();
+    // Every s35 client connects to the primary (A) gateway, including history export.
+    let encoded = env.get("RAMFLUX_GATEWAY_A_V3_ISSUER_SEED").copied().unwrap_or("");
+    let seed: [u8; 32] = ramflux_protocol::decode_base64url(encoded)?
+        .try_into()
+        .map_err(|_| "s35 primary issuer seed must decode to 32 bytes")?;
+    assert_ne!(seed, [0; 32]);
+    assert_eq!(env["RAMFLUX_V3_FEDERATION_TRUST_ISSUER_NODE_ID"], OWNER_HOME_NODE);
+    assert_eq!(OWNER_HOME_NODE, "node_a.realnet");
     Ok(())
 }
