@@ -4,7 +4,7 @@
 //! Opt-in service logs on fixture failure, collected before compose teardown.
 use super::{
     ItestComposeOverrides, add_compose_env_file_arg, add_itest_compose_files,
-    compose_env_with_required_defaults, container_runtime,
+    compose_env_with_required_defaults, container_runtime, run_compose_preflight,
 };
 use crate::realnet_step;
 use std::path::Path;
@@ -58,6 +58,7 @@ fn collect_service_logs(
     let _env_file = add_compose_env_file_arg(&mut command, project_name, env)?;
     command.arg("-p").arg(project_name);
     add_itest_compose_files(&mut command, overrides);
+    run_compose_preflight(&command, deploy_root, env)?;
     Ok(command
         .args(["logs", "--timestamps", service])
         .envs(env.iter().map(|(key, value)| (key, value)))

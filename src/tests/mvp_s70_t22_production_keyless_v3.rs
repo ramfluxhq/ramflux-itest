@@ -36,7 +36,6 @@ fn t22_production_keyless_v3_compose_smoke() -> Result<(), Box<dyn std::error::E
         );
     }
 
-    let runtime = container_runtime();
     let mut env = compose_env_with_required_defaults(&[(
         "RAMFLUX_GATEWAY_V3_ISSUER_SEED".into(),
         itest_node_service_signing_seed_b64url(),
@@ -49,29 +48,21 @@ fn t22_production_keyless_v3_compose_smoke() -> Result<(), Box<dyn std::error::E
         ]
         .contains(&key.as_str())
     });
-    let mut command = std::process::Command::new(runtime);
+    let mut command = std::process::Command::new(container_runtime());
     command.arg("compose");
     let _env_file = add_compose_env_file_arg(&mut command, "s70-negative-trust", &env)?;
-    let output = command
+    command
         .envs(env.iter().map(|(key, value)| (key, value)))
         .arg("-f")
         .arg("docker-compose.yml")
-        .arg("config")
         .env_remove("RAMFLUX_FEDERATION_TRUST_ENDPOINT")
         .env_remove("RAMFLUX_FEDERATION_PROVIDER_OFFLINE_ROOT_PUBLIC_KEY")
         .env_remove("RAMFLUX_FEDERATION_TRUST_ISSUER_NODE_ID")
-        .current_dir(&deploy_root)
-        .output()?;
+        .current_dir(&deploy_root);
+    let refusal = run_compose_preflight(&command, &deploy_root, &env);
     assert!(
-        !output.status.success(),
-        "production compose config must fail closed when v3 keyring material is absent"
-    );
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(
-        stderr.contains("RAMFLUX_FEDERATION_TRUST_ENDPOINT")
-            || stderr.contains("RAMFLUX_FEDERATION_PROVIDER_OFFLINE_ROOT_PUBLIC_KEY")
-            || stderr.contains("RAMFLUX_FEDERATION_TRUST_ISSUER_NODE_ID"),
-        "compose config failure must identify missing v3 material; stderr={stderr}"
+        refusal.is_err(),
+        "Compose preflight must fail closed when v3 keyring material is absent"
     );
 
     Ok(())
