@@ -636,7 +636,7 @@ pub(crate) struct ComposeEnvFile {
 
 #[cfg(all(test, feature = "realnet"))]
 impl ComposeEnvFile {
-    fn path(&self) -> &Path {
+    pub(crate) fn path(&self) -> &Path {
         &self.path
     }
 }
@@ -684,7 +684,7 @@ pub(crate) fn checked_itest_compose_command(
 }
 
 #[cfg(all(test, feature = "realnet"))]
-fn write_compose_env_file(
+pub(crate) fn write_compose_env_file(
     label: &str,
     env: &[(String, String)],
 ) -> Result<ComposeEnvFile, Box<dyn std::error::Error>> {

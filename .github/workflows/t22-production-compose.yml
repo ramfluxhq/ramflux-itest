@@ -1,10 +1,10 @@
-name: T22 production compose (manual)
+name: T22 production compose
 
-# Manual-only smoke for the T22/RQ-04 production compose keyless/fail-closed
-# scaffold. This does not run the full realnet mesh or production SLO; it only
-# executes the focused itest that verifies production docker-compose.yml uses
-# no legacy relay HMAC key and fails closed when v3 keyring material is absent.
+# Required-input preflight and independent real service startup refusal on both
+# providers. Resolve the product from Cargo.toml, never a second hard-coded pin.
 on:
+  push:
+    branches: ["**"]
   workflow_dispatch:
 
 concurrency:
@@ -16,26 +16,44 @@ permissions:
 
 jobs:
   t22-compose-smoke:
-    name: t22 production compose smoke
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
+    name: t22 production compose (${{ matrix.provider }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        provider: [docker, podman-compose]
     steps:
-      # The test resolves the product deploy dir as <parent>/ramflux/deploy,
-      # so checkout the product and itest repos as siblings.
-      - name: Checkout ramflux (product, pinned)
+      - name: Checkout ramflux-itest
+        uses: actions/checkout@b9e0990d219a03df7633c93f6f005a8fecbcab22
+        with:
+          path: ramflux-itest
+          persist-credentials: false
+
+      - name: Resolve pinned product
+        id: product
+        run: |
+          pin=$(grep -oE 'ramfluxhq/ramflux\.git", rev = "[0-9a-f]{40}"' ramflux-itest/Cargo.toml | grep -oE '[0-9a-f]{40}' | sort -u)
+          test "$(printf '%s\n' "$pin" | wc -l)" -eq 1
+          printf '%s' "$pin" | grep -qxE '[0-9a-f]{40}'
+          echo "sha=$pin" >> "$GITHUB_OUTPUT"
+
+      - name: Checkout pinned product
         uses: actions/checkout@b9e0990d219a03df7633c93f6f005a8fecbcab22
         with:
           repository: ramfluxhq/ramflux
-          ref: 629e6ec6c0cca1973c4e23e119f87a789eebe8e9
+          ref: ${{ steps.product.outputs.sha }}
           path: ramflux
           persist-credentials: false
 
-      - name: Checkout ramflux-itest (this repo)
-        uses: actions/checkout@b9e0990d219a03df7633c93f6f005a8fecbcab22
-        with:
-          ref: ${{ github.sha }}
-          path: ramflux-itest
-          persist-credentials: false
+      - name: Install Podman Compose 1.3.0
+        if: matrix.provider == 'podman-compose'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y podman
+          python3 -m venv "$RUNNER_TEMP/podman-compose"
+          "$RUNNER_TEMP/podman-compose/bin/pip" install podman-compose==1.3.0
+          echo "$RUNNER_TEMP/podman-compose/bin" >> "$GITHUB_PATH"
 
       - name: Cache
         uses: Swatinem/rust-cache@baf1a810e98b6a3001d0d7234864ed75a17c42fb
@@ -43,10 +61,26 @@ jobs:
           workspaces: |
             ramflux-itest
 
-      - name: Run T22 production compose smoke
+      - name: Build real relay image
+        env:
+          PROVIDER: ${{ matrix.provider }}
+        run: |
+          engine=docker
+          if [ "$PROVIDER" = podman-compose ]; then engine=podman; fi
+          timeout 3600 "$engine" build --target source-runtime \
+            --build-arg BIN=ramflux-relay -f ramflux/deploy/Dockerfile \
+            -t ramflux-s70-relay:itest ramflux
+
+      - name: Run fail-closed checks (no skip allowed)
         working-directory: ramflux-itest
         env:
           RAMFLUX_T22_PRODUCTION_SMOKE: "1"
+          RAMFLUX_S70_COMPOSE_PROVIDER: ${{ matrix.provider }}
+          RAMFLUX_S70_RELAY_IMAGE: ramflux-s70-relay:itest
         run: |
-          cargo test --features realnet --no-default-features \
-            t22_production_keyless_v3_compose_smoke -- --nocapture
+          set -o pipefail
+          timeout 1200 cargo test --locked --features realnet --no-default-features \
+            tests::mvp_s70_t22_production_keyless_v3::t22_production_keyless_v3_compose_smoke \
+            -- --exact --nocapture 2>&1 | tee "$RUNNER_TEMP/s70.log"
+          grep -q '1 passed; 0 failed' "$RUNNER_TEMP/s70.log"
+          ! grep -q 'skipping T22' "$RUNNER_TEMP/s70.log"
