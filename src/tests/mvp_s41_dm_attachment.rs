@@ -529,12 +529,9 @@ fn mvp_s41_service_file(
     service: &str,
     path: &str,
 ) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
-    let (mut command, _env_file) = checked_itest_compose_command("s41-read-service-file")?;
+    let (mut command, _env_file) =
+        checked_itest_compose_command("s41-read-service-file", Some(compose_project))?;
     let output = command
-        .arg("-p")
-        .arg(compose_project)
-        .arg("-f")
-        .arg("docker-compose.itest.yml")
         .arg("exec")
         .arg("-T")
         .arg(service)

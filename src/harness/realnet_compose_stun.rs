@@ -146,6 +146,7 @@ pub(crate) fn run_docker_compose_with_env_and_overrides(
             ..ItestComposeOverrides::default()
         },
     );
+    run_compose_preflight(&command, deploy_root, &compose_env)?;
     command
         .args(args)
         .envs(compose_env.iter().map(|(key, value)| (key, value)))
@@ -202,6 +203,9 @@ impl Drop for ComposeDownGuard {
                 ..ItestComposeOverrides::default()
             },
         );
+        if run_compose_preflight(&command, &self.deploy_root, &compose_env).is_err() {
+            return;
+        }
         let _status = command
             .arg("down")
             .arg("--timeout")
@@ -307,6 +311,9 @@ impl Drop for ComposeProjectDownGuard {
                 ..ItestComposeOverrides::default()
             },
         );
+        if run_compose_preflight(&command, &self.deploy_root, &compose_env).is_err() {
+            return;
+        }
         let _status = command
             .arg("down")
             .arg("--timeout")
@@ -360,6 +367,9 @@ fn dump_compose_logs(
             ..ItestComposeOverrides::default()
         },
     );
+    if run_compose_preflight(&command, deploy_root, env).is_err() {
+        return;
+    }
     let _status = command
         .arg("logs")
         .arg("--timestamps")
@@ -411,11 +421,11 @@ impl Drop for ProductionComposeDownGuard {
         else {
             return;
         };
+        command.arg("-p").arg(&self.project_name).arg("-f").arg("docker-compose.yml");
+        if run_compose_preflight(&command, &self.deploy_root, &compose_env).is_err() {
+            return;
+        }
         let _status = command
-            .arg("-p")
-            .arg(&self.project_name)
-            .arg("-f")
-            .arg("docker-compose.yml")
             .arg("down")
             .arg("--timeout")
             .arg(compose_down_timeout())
@@ -469,6 +479,7 @@ pub(crate) fn run_docker_compose_project_with_overrides(
     let _env_file = add_compose_env_file_arg(&mut command, project_name, &compose_env)?;
     command.arg("-p").arg(project_name);
     add_itest_compose_files(&mut command, overrides);
+    run_compose_preflight(&command, deploy_root, &compose_env)?;
     command
         .args(args)
         .envs(compose_env.iter().map(|(key, value)| (key, value)))
@@ -655,31 +666,54 @@ pub(crate) fn add_compose_env_file_arg(
     env: &[(String, String)],
 ) -> Result<ComposeEnvFile, Box<dyn std::error::Error>> {
     let env_file = write_compose_env_file(label, env)?;
+    command.arg("--env-file").arg(env_file.path());
+    Ok(env_file)
+}
+
+#[cfg(all(test, feature = "realnet"))]
+fn run_compose_preflight(
+    command: &std::process::Command,
+    deploy_root: &Path,
+    env: &[(String, String)],
+) -> Result<(), Box<dyn std::error::Error>> {
     let deploy = self_referencing_defaults::pinned_product_deploy_dir()?
         .ok_or("pinned product checkout required for Compose preflight")?;
-    let status = std::process::Command::new("python3")
+    let provider = match container_runtime() {
+        "docker" => "docker",
+        "podman" => "podman",
+        runtime => return Err(format!("unsupported Compose runtime {runtime}").into()),
+    };
+    let mut preflight = std::process::Command::new("python3");
+    preflight
         .arg(deploy.join("scripts/compose-preflight.py"))
-        .arg("--env-file")
-        .arg(env_file.path())
+        .arg("--provider")
+        .arg(provider)
+        .args(command.get_args().skip(1))
         .envs(env.iter().map(|(key, value)| (key, value)))
-        .status()?;
+        .current_dir(deploy_root);
+    let status = preflight.status()?;
     if !status.success() {
         return Err("Compose input preflight refused the environment".into());
     }
-    command.arg("--env-file").arg(env_file.path());
-    Ok(env_file)
+    Ok(())
 }
 
 /// Prepare diagnostics/exec commands through the same generated inputs and preflight as startup.
 #[cfg(all(test, feature = "realnet"))]
 pub(crate) fn checked_itest_compose_command(
     label: &str,
+    project_name: Option<&str>,
 ) -> Result<(std::process::Command, ComposeEnvFile), Box<dyn std::error::Error>> {
     let env = compose_env_with_required_defaults(&[]);
     let mut command = std::process::Command::new(container_runtime());
     command.arg("compose");
     let file = add_compose_env_file_arg(&mut command, label, &env)?;
-    command.envs(env);
+    if let Some(project_name) = project_name {
+        command.arg("-p").arg(project_name);
+    }
+    command.arg("-f").arg("docker-compose.itest.yml");
+    command.envs(env.iter().map(|(key, value)| (key, value)));
+    run_compose_preflight(&command, &code_root().join("ramflux/deploy"), &env)?;
     Ok((command, file))
 }
 
@@ -810,6 +844,7 @@ pub(crate) fn run_production_compose_project(
             Path::new(env!("CARGO_MANIFEST_DIR")).join("fixtures/custody-production.compose.yml"),
         );
     }
+    run_compose_preflight(&command, deploy_root, &compose_env)?;
     command
         .args(args)
         .envs(compose_env.iter().map(|(key, value)| (key, value)))
