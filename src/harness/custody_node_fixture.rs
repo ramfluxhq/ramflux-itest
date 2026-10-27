@@ -34,6 +34,7 @@ fn provision(
             node_signing_public_key: ramflux_protocol::encode_base64url(
                 root.verifying_key().to_bytes(),
             ),
+            client_tls_certificate_sha256: None,
             epoch: 1,
             previous_record_hash: None,
             issued_at: now,
@@ -47,7 +48,7 @@ fn provision(
                 overlap_until: now + 605_500,
                 status: ReceiptKeyStatus::Active,
                 proxy_id: "ramflux-gateway".into(),
-                audiences: vec!["ramflux-router".into()],
+                audiences: vec![node_id.into()],
             }],
             revoked_proxy_key_ids: vec![],
             channel_binding_modes: vec![BindingMode::HomeRelayReceipt],

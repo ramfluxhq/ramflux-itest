@@ -1,0 +1,3 @@
+# This repository is the integration harness, never a production SDK consumer.
+[env]
+RAMFLUX_ITEST_BUILD = "1"

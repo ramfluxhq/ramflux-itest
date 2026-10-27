@@ -136,9 +136,10 @@ fn network_config(
         ca_certificate: std::env::var_os("RAMFLUX_ID02_CA").ok_or("CA missing")?.into(),
         node_id: std::env::var("RAMFLUX_ID02_NODE_ID")?,
         node_public_key: std::env::var("RAMFLUX_ID02_NODE_PUBLIC_KEY")?,
-        audience: "ramflux-router".into(),
+        audience: std::env::var("RAMFLUX_ID02_NODE_ID")?,
         binding_mode: BindingMode::HomeRelayReceipt,
         allow_no_channel_binding: false,
+        allow_experimental_native_dm: true,
         timeout: Duration::from_secs(20),
     })
 }
