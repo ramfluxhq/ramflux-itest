@@ -491,6 +491,65 @@ mod outcome_retention_tests {
         .await;
     }
 
+    #[tokio::test(flavor = "current_thread")]
+    async fn cleanup_timeout_is_labelled_bounded_and_blocks_writable_verifier() {
+        let (primary_tx, primary_rx) = tokio::sync::watch::channel(false);
+        let (restored_tx, _restored_rx) = tokio::sync::watch::channel(false);
+        let (bob_tx, bob_rx) = tokio::sync::watch::channel(false);
+        let hung_daemon_alive = std::rc::Rc::new(std::cell::Cell::new(false));
+        let hung_daemon_state = std::rc::Rc::clone(&hung_daemon_alive);
+        let hung_daemon = async move {
+            hung_daemon_state.set(true);
+            std::future::pending::<Result<(), &'static str>>().await
+        };
+        let writable_verifier_opened = std::cell::Cell::new(false);
+        let started = std::time::Instant::now();
+
+        let result = s48_run_bounded_flow_and_daemons(
+            s48_capture_flow("regression flow", async { Err::<(), _>("flow sentinel") }),
+            [
+                s48_capture_outcome(
+                    "regression primary daemon",
+                    daemon_error_after_shutdown(primary_rx, "primary sentinel"),
+                ),
+                s48_capture_outcome("regression hung daemon", hung_daemon),
+                s48_capture_outcome(
+                    "regression bob daemon",
+                    daemon_error_after_shutdown(bob_rx, "bob sentinel"),
+                ),
+            ],
+            [&primary_tx, &restored_tx, &bob_tx],
+            ["regression primary daemon", "regression hung daemon", "regression bob daemon"],
+            FLOW_TIMEOUT,
+            CLEANUP_TIMEOUT,
+        )
+        .await;
+        if result.is_ok() {
+            writable_verifier_opened.set(true);
+        }
+        let error = result.err().unwrap_or_default();
+
+        assert!(
+            started.elapsed() < REGRESSION_BOUND,
+            "cleanup exceeded bound plus margin: {error}"
+        );
+        assert!(hung_daemon_alive.get(), "hung daemon unexpectedly exited");
+        assert!(
+            !writable_verifier_opened.get(),
+            "writable verifier opened while the hung daemon was alive"
+        );
+        for expected in [
+            "regression flow: flow sentinel",
+            "regression primary daemon: primary sentinel",
+            "regression hung daemon cleanup timeout after 200ms",
+            "regression bob daemon: bob sentinel",
+        ] {
+            assert!(error.contains(expected), "missing {expected:?} from {error:?}");
+        }
+
+        hung_daemon_alive.set(false);
+    }
+
     async fn panic_flow() -> Result<(), String> {
         tokio::task::yield_now().await;
         std::panic::resume_unwind(Box::new(String::from("panic sentinel")))
