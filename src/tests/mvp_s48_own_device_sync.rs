@@ -4,6 +4,20 @@
 #![allow(unused_imports)]
 use super::*;
 
+#[cfg(all(test, feature = "realnet"))]
+type S48OutcomeFuture<'a> =
+    std::pin::Pin<Box<dyn std::future::Future<Output = Option<String>> + 'a>>;
+
+#[cfg(all(test, feature = "realnet"))]
+type S48FlowFuture<'a, T> =
+    std::pin::Pin<Box<dyn std::future::Future<Output = Result<T, String>> + 'a>>;
+
+#[cfg(all(test, feature = "realnet"))]
+const S48_FLOW_DEADLINE: Duration = Duration::from_mins(5);
+
+#[cfg(all(test, feature = "realnet"))]
+const S48_CLEANUP_DEADLINE: Duration = Duration::from_secs(30);
+
 #[cfg(feature = "realnet")]
 #[test]
 fn mvp_s48_realnet_own_device_history_group_key_sync() -> Result<(), Box<dyn std::error::Error>> {
@@ -115,210 +129,425 @@ async fn mvp_s48_assert_own_device_sync(
     );
 
     let flow = async {
-        let result = async {
-            mvp_s4_wait_for_socket(&alice_primary_socket).await?;
-            mvp_s4_wait_for_socket(&alice_restored_socket).await?;
-            mvp_s4_wait_for_socket(&bob_socket).await?;
-            let mut alice_primary =
-                ramflux_sdk::LocalBusClient::connect(&alice_primary_socket).await?;
-            let mut alice_restored =
-                ramflux_sdk::LocalBusClient::connect(&alice_restored_socket).await?;
-            let mut bob = ramflux_sdk::LocalBusClient::connect(&bob_socket).await?;
+        mvp_s4_wait_for_socket(&alice_primary_socket).await?;
+        mvp_s4_wait_for_socket(&alice_restored_socket).await?;
+        mvp_s4_wait_for_socket(&bob_socket).await?;
+        let mut alice_primary = ramflux_sdk::LocalBusClient::connect(&alice_primary_socket).await?;
+        let mut alice_restored =
+            ramflux_sdk::LocalBusClient::connect(&alice_restored_socket).await?;
+        let mut bob = ramflux_sdk::LocalBusClient::connect(&bob_socket).await?;
 
-            let alice_commitment = mvp_s48_create_account(
-                &mut alice_primary,
-                node,
-                MvpS48AccountSpec {
-                    local_account_id: "alice_s48_account",
-                    principal_id: "principal_s48_alice",
-                    device_id: "alice_device_s48_a",
-                    target_delivery_id: "target_s48_alice_a",
-                    root_seed: [0x48; 32],
-                    device_seed: [0x49; 32],
-                },
-            )
-            .await?;
-            let bob_commitment = mvp_s48_create_account(
-                &mut bob,
-                node,
-                MvpS48AccountSpec {
-                    local_account_id: "bob_s48_account",
-                    principal_id: "principal_s48_bob",
-                    device_id: "bob_device_s48",
-                    target_delivery_id: "target_s48_bob",
-                    root_seed: [0x58; 32],
-                    device_seed: [0x59; 32],
-                },
-            )
-            .await?;
+        let alice_commitment = mvp_s48_create_account(
+            &mut alice_primary,
+            node,
+            MvpS48AccountSpec {
+                local_account_id: "alice_s48_account",
+                principal_id: "principal_s48_alice",
+                device_id: "alice_device_s48_a",
+                target_delivery_id: "target_s48_alice_a",
+                root_seed: [0x48; 32],
+                device_seed: [0x49; 32],
+            },
+        )
+        .await?;
+        let bob_commitment = mvp_s48_create_account(
+            &mut bob,
+            node,
+            MvpS48AccountSpec {
+                local_account_id: "bob_s48_account",
+                principal_id: "principal_s48_bob",
+                device_id: "bob_device_s48",
+                target_delivery_id: "target_s48_bob",
+                root_seed: [0x58; 32],
+                device_seed: [0x59; 32],
+            },
+        )
+        .await?;
 
-            mvp_s48_add_contact(&mut bob, "bob_s48_account", &bob_commitment, &alice_commitment)
+        mvp_s48_add_contact(&mut bob, "bob_s48_account", &bob_commitment, &alice_commitment)
+            .await?;
+        mvp_s48_add_contact(
+            &mut alice_primary,
+            "alice_s48_account",
+            &alice_commitment,
+            &bob_commitment,
+        )
+        .await?;
+
+        let dm_submit_created_at = itest_now_unix_seconds();
+        mvp_s48_send_dm(
+            &mut bob,
+            &bob_commitment,
+            &alice_commitment,
+            "bob_device_s48",
+            "alice_device_s48_a",
+            "target_s48_alice_a",
+            "conv_s48_bob_alice",
+            "msg_s48_history_dm",
+            dm_submit_created_at,
+            b"s48 historical dm",
+        )
+        .await?;
+        let received =
+            mvp_s48_receive_dm(&mut alice_primary, "alice_s48_account", "conv_s48_bob_alice")
                 .await?;
-            mvp_s48_add_contact(
-                &mut alice_primary,
-                "alice_s48_account",
-                &alice_commitment,
-                &bob_commitment,
+        assert!(
+            mvp_s48_decrypted_contains(&received, "s48 historical dm"),
+            "s48 dm receive payload: {}",
+            serde_json::to_string_pretty(&received)
+                .unwrap_or_else(|error| format!("failed to format received JSON: {error}"))
+        );
+        let primary_dm_list =
+            mvp_s48_message_list(&mut alice_primary, "alice_s48_account", "conv_s48_bob_alice")
+                .await?;
+        let dm_created_at = mvp_s48_message_created_at(&primary_dm_list, "msg_s48_history_dm")?;
+
+        mvp_s48_seed_group(&mut alice_primary, &bob_commitment).await?;
+        let group_sent = mvp_s48_send_group(
+            &mut alice_primary,
+            "alice_s48_account",
+            "group_s48",
+            "msg_s48_group_history",
+            b"s48 group history",
+        )
+        .await?;
+        let group_message_id = ramflux_protocol::group_message_id(
+            "group_s48",
+            &alice_commitment,
+            "alice_device_s48_a",
+            "msg_s48_group_history",
+        )?;
+        assert_eq!(
+            group_sent["message_id"],
+            group_message_id.as_str(),
+            "s48 group send payload: {}",
+            serde_json::to_string_pretty(&group_sent)
+                .unwrap_or_else(|error| format!("failed to format group send JSON: {error}"))
+        );
+        let primary_group_list =
+            mvp_s48_message_list(&mut alice_primary, "alice_s48_account", "group_s48").await?;
+        let group_created_at = mvp_s48_message_created_at(&primary_group_list, &group_message_id)?;
+
+        mvp_s48_backup_and_activate_restored_device(
+            &mut alice_primary,
+            &mut alice_restored,
+            &backup_path,
+        )
+        .await?;
+
+        let exported = alice_primary
+            .request(
+                Some("alice_s48_account".to_owned()),
+                "device",
+                "device.sync.export",
+                serde_json::to_value(ramflux_sdk::LocalBusDeviceSyncExportRequest {
+                    target_device_id: "alice_device_s48_b".to_owned(),
+                    relay_endpoint: relay_url.to_owned(),
+                    relay_service_key_base64: None,
+                    chunk_size: Some(4096),
+                })?,
             )
-            .await?;
+            .await
+            .map_err(|error| format!("s48 device.sync.export: {error}"))?;
+        assert_eq!(exported["envelope"]["target_device_id"], "alice_device_s48_b");
+        assert_eq!(exported["transfer"]["state"], "complete");
 
-            let dm_submit_created_at = itest_now_unix_seconds();
-            mvp_s48_send_dm(
-                &mut bob,
-                &bob_commitment,
-                &alice_commitment,
-                "bob_device_s48",
-                "alice_device_s48_a",
-                "target_s48_alice_a",
-                "conv_s48_bob_alice",
-                "msg_s48_history_dm",
-                dm_submit_created_at,
-                b"s48 historical dm",
+        let imported = alice_restored
+            .request(
+                Some("alice_s48_account".to_owned()),
+                "device",
+                "device.sync.import",
+                serde_json::to_value(ramflux_sdk::LocalBusDeviceSyncImportRequest {
+                    envelope: exported["envelope"].clone(),
+                    relay_service_key_base64: None,
+                })?,
             )
-            .await?;
-            let received =
-                mvp_s48_receive_dm(&mut alice_primary, "alice_s48_account", "conv_s48_bob_alice")
-                    .await?;
-            assert!(
-                mvp_s48_decrypted_contains(&received, "s48 historical dm"),
-                "s48 dm receive payload: {}",
-                serde_json::to_string_pretty(&received)
-                    .unwrap_or_else(|error| format!("failed to format received JSON: {error}"))
-            );
-            let primary_dm_list =
-                mvp_s48_message_list(&mut alice_primary, "alice_s48_account", "conv_s48_bob_alice")
-                    .await?;
-            let dm_created_at = mvp_s48_message_created_at(&primary_dm_list, "msg_s48_history_dm")?;
+            .await
+            .map_err(|error| format!("s48 device.sync.import: {error}"))?;
+        assert!(imported["imported_messages"].as_u64().unwrap_or(0) >= 2);
+        // Historical plaintext is transferred, but live device-pair ratchets stay on their owning device.
+        assert_eq!(imported["imported_dm_sessions"], 0);
+        assert!(imported["imported_groups"].as_u64().unwrap_or(0) > 0);
+        assert!(imported["imported_sender_keys"].as_u64().unwrap_or(0) > 0);
 
-            mvp_s48_seed_group(&mut alice_primary, &bob_commitment).await?;
-            let group_sent = mvp_s48_send_group(
-                &mut alice_primary,
-                "alice_s48_account",
-                "group_s48",
-                "msg_s48_group_history",
-                b"s48 group history",
+        let restored_dm_list =
+            mvp_s48_message_list(&mut alice_restored, "alice_s48_account", "conv_s48_bob_alice")
+                .await?;
+        assert_eq!(
+            mvp_s48_message_created_at(&restored_dm_list, "msg_s48_history_dm")?,
+            dm_created_at
+        );
+        let restored_group_list =
+            mvp_s48_message_list(&mut alice_restored, "alice_s48_account", "group_s48").await?;
+        assert_eq!(
+            mvp_s48_message_created_at(&restored_group_list, &group_message_id)?,
+            group_created_at
+        );
+        let members = alice_restored
+            .request(
+                Some("alice_s48_account".to_owned()),
+                "group",
+                "group.members",
+                serde_json::to_value(ramflux_sdk::LocalBusGroupRequest {
+                    group_id: "group_s48".to_owned(),
+                })?,
             )
-            .await?;
-            let group_message_id = ramflux_protocol::group_message_id(
-                "group_s48",
-                &alice_commitment,
-                "alice_device_s48_a",
-                "msg_s48_group_history",
-            )?;
-            assert_eq!(
-                group_sent["message_id"],
-                group_message_id.as_str(),
-                "s48 group send payload: {}",
-                serde_json::to_string_pretty(&group_sent)
-                    .unwrap_or_else(|error| format!("failed to format group send JSON: {error}"))
-            );
-            let primary_group_list =
-                mvp_s48_message_list(&mut alice_primary, "alice_s48_account", "group_s48").await?;
-            let group_created_at =
-                mvp_s48_message_created_at(&primary_group_list, &group_message_id)?;
+            .await
+            .map_err(|error| format!("s48 group.members: {error}"))?;
+        assert_eq!(members["roles"]["alice_device_s48_b"], "owner");
+        assert_eq!(members["roles"]["bob_device_s48"], "member");
 
-            mvp_s48_backup_and_activate_restored_device(
-                &mut alice_primary,
-                &mut alice_restored,
-                &backup_path,
-            )
-            .await?;
-
-            let exported = alice_primary
-                .request(
-                    Some("alice_s48_account".to_owned()),
-                    "device",
-                    "device.sync.export",
-                    serde_json::to_value(ramflux_sdk::LocalBusDeviceSyncExportRequest {
-                        target_device_id: "alice_device_s48_b".to_owned(),
-                        relay_endpoint: relay_url.to_owned(),
-                        relay_service_key_base64: None,
-                        chunk_size: Some(4096),
-                    })?,
-                )
-                .await
-                .map_err(|error| format!("s48 device.sync.export: {error}"))?;
-            assert_eq!(exported["envelope"]["target_device_id"], "alice_device_s48_b");
-            assert_eq!(exported["transfer"]["state"], "complete");
-
-            let imported = alice_restored
-                .request(
-                    Some("alice_s48_account".to_owned()),
-                    "device",
-                    "device.sync.import",
-                    serde_json::to_value(ramflux_sdk::LocalBusDeviceSyncImportRequest {
-                        envelope: exported["envelope"].clone(),
-                        relay_service_key_base64: None,
-                    })?,
-                )
-                .await
-                .map_err(|error| format!("s48 device.sync.import: {error}"))?;
-            assert!(imported["imported_messages"].as_u64().unwrap_or(0) >= 2);
-            // Historical plaintext is transferred, but live device-pair ratchets stay on their owning device.
-            assert_eq!(imported["imported_dm_sessions"], 0);
-            assert!(imported["imported_groups"].as_u64().unwrap_or(0) > 0);
-            assert!(imported["imported_sender_keys"].as_u64().unwrap_or(0) > 0);
-
-            let restored_dm_list = mvp_s48_message_list(
-                &mut alice_restored,
-                "alice_s48_account",
-                "conv_s48_bob_alice",
-            )
-            .await?;
-            assert_eq!(
-                mvp_s48_message_created_at(&restored_dm_list, "msg_s48_history_dm")?,
-                dm_created_at
-            );
-            let restored_group_list =
-                mvp_s48_message_list(&mut alice_restored, "alice_s48_account", "group_s48").await?;
-            assert_eq!(
-                mvp_s48_message_created_at(&restored_group_list, &group_message_id)?,
-                group_created_at
-            );
-            let members = alice_restored
-                .request(
-                    Some("alice_s48_account".to_owned()),
-                    "group",
-                    "group.members",
-                    serde_json::to_value(ramflux_sdk::LocalBusGroupRequest {
-                        group_id: "group_s48".to_owned(),
-                    })?,
-                )
-                .await
-                .map_err(|error| format!("s48 group.members: {error}"))?;
-            assert_eq!(members["roles"]["alice_device_s48_b"], "owner");
-            assert_eq!(members["roles"]["bob_device_s48"], "member");
-
-            let mut restored_reader = ramflux_sdk::RamfluxClient::new();
-            restored_reader.open_account_index(&alice_restored_data)?;
-            restored_reader.unlock_account("alice_s48_account", b"s48-bus-secret")?;
-            let plaintext =
-                restored_reader.decrypt_group_message("group_s48", &group_message_id)?;
-            assert_eq!(plaintext, b"s48 group history");
-
-            drop(alice_primary);
-            drop(alice_restored);
-            drop(bob);
-            Ok::<(), Box<dyn std::error::Error>>(())
-        }
-        .await;
-        let _ = alice_primary_tx.send(true);
-        let _ = alice_restored_tx.send(true);
-        let _ = bob_tx.send(true);
-        result
+        drop(alice_primary);
+        drop(alice_restored);
+        drop(bob);
+        Ok::<String, Box<dyn std::error::Error>>(group_message_id)
     };
-    let (alice_primary_result, alice_restored_result, bob_result, flow_result) =
-        Box::pin(tokio::time::timeout(Duration::from_mins(5), async {
-            tokio::join!(alice_primary_server, alice_restored_server, bob_server, flow)
-        }))
-        .await
-        .map_err(|_elapsed| "S48 own-device sync flow timed out")?;
-    flow_result?;
-    alice_primary_result.map_err(|error| format!("s48 alice primary daemon: {error}"))?;
-    alice_restored_result.map_err(|error| format!("s48 alice restored daemon: {error}"))?;
-    bob_result.map_err(|error| format!("s48 bob daemon: {error}"))?;
+    let group_message_id = s48_run_bounded_flow_and_daemons(
+        s48_capture_flow("s48 flow", flow),
+        [
+            s48_capture_outcome("s48 alice primary daemon", alice_primary_server),
+            s48_capture_outcome("s48 alice restored daemon", alice_restored_server),
+            s48_capture_outcome("s48 bob daemon", bob_server),
+        ],
+        [&alice_primary_tx, &alice_restored_tx, &bob_tx],
+        ["s48 alice primary daemon", "s48 alice restored daemon", "s48 bob daemon"],
+        S48_FLOW_DEADLINE,
+        S48_CLEANUP_DEADLINE,
+    )
+    .await
+    .map_err(|error| -> Box<dyn std::error::Error> { error.into() })?;
+
+    // Open the writable SDK verifier only after all daemon writers have stopped.
+    let mut restored_reader = ramflux_sdk::RamfluxClient::new();
+    restored_reader
+        .open_account_index(&alice_restored_data)
+        .map_err(|error| format!("s48 restored_reader open_account_index: {error}"))?;
+    restored_reader
+        .unlock_account("alice_s48_account", b"s48-bus-secret")
+        .map_err(|error| format!("s48 restored_reader unlock_account: {error}"))?;
+    let plaintext = restored_reader
+        .decrypt_group_message("group_s48", &group_message_id)
+        .map_err(|error| format!("s48 restored_reader decrypt_group_message: {error}"))?;
+    assert_eq!(plaintext, b"s48 group history");
+
     std::fs::remove_dir_all(&temp_root)?;
     Ok(())
+}
+
+#[cfg(all(test, feature = "realnet"))]
+fn s48_capture_outcome<'a, F, E>(label: &'static str, future: F) -> S48OutcomeFuture<'a>
+where
+    F: std::future::Future<Output = Result<(), E>> + 'a,
+    E: std::fmt::Display + 'a,
+{
+    Box::pin(async move {
+        match s48_catch_unwind(future).await {
+            Ok(Ok(())) => None,
+            Ok(Err(error)) => Some(format!("{label}: {error}")),
+            Err(panic) => Some(format!("{label} panic: {}", s48_panic_message(&panic))),
+        }
+    })
+}
+
+#[cfg(all(test, feature = "realnet"))]
+fn s48_capture_flow<'a, F, T, E>(label: &'static str, future: F) -> S48FlowFuture<'a, T>
+where
+    F: std::future::Future<Output = Result<T, E>> + 'a,
+    T: 'a,
+    E: std::fmt::Display + 'a,
+{
+    Box::pin(async move {
+        match s48_catch_unwind(future).await {
+            Ok(Ok(value)) => Ok(value),
+            Ok(Err(error)) => Err(format!("{label}: {error}")),
+            Err(panic) => Err(format!("{label} panic: {}", s48_panic_message(&panic))),
+        }
+    })
+}
+
+#[cfg(all(test, feature = "realnet"))]
+async fn s48_catch_unwind<F>(future: F) -> Result<F::Output, Box<dyn std::any::Any + Send>>
+where
+    F: std::future::Future,
+{
+    tokio::pin!(future);
+    std::future::poll_fn(|context| {
+        match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            future.as_mut().poll(context)
+        })) {
+            Ok(std::task::Poll::Ready(output)) => std::task::Poll::Ready(Ok(output)),
+            Ok(std::task::Poll::Pending) => std::task::Poll::Pending,
+            Err(panic) => std::task::Poll::Ready(Err(panic)),
+        }
+    })
+    .await
+}
+
+#[cfg(all(test, feature = "realnet"))]
+fn s48_panic_message(panic: &Box<dyn std::any::Any + Send>) -> &str {
+    panic.downcast_ref::<String>().map_or_else(
+        || panic.downcast_ref::<&str>().copied().unwrap_or("non-string panic"),
+        String::as_str,
+    )
+}
+
+#[cfg(all(test, feature = "realnet"))]
+async fn s48_run_bounded_flow_and_daemons<T>(
+    flow: S48FlowFuture<'_, T>,
+    daemons: [S48OutcomeFuture<'_>; 3],
+    shutdowns: [&tokio::sync::watch::Sender<bool>; 3],
+    daemon_labels: [&'static str; 3],
+    flow_deadline: Duration,
+    cleanup_deadline: Duration,
+) -> Result<T, String> {
+    let [mut primary, mut restored, mut bob] = daemons;
+    let mut daemon_outcomes: [Option<Option<String>>; 3] = [None, None, None];
+    let (flow_value, flow_failure) = {
+        let flow_timeout = tokio::time::timeout(flow_deadline, flow);
+        tokio::pin!(flow_timeout);
+        loop {
+            tokio::select! {
+                result = &mut flow_timeout => {
+                    break match result {
+                        Ok(Ok(value)) => (Some(value), None),
+                        Ok(Err(failure)) => (None, Some(failure)),
+                        Err(_) => (None, Some(format!("s48 flow timeout after {flow_deadline:?}"))),
+                    };
+                }
+                outcome = &mut primary, if daemon_outcomes[0].is_none() => {
+                    daemon_outcomes[0] = Some(outcome);
+                }
+                outcome = &mut restored, if daemon_outcomes[1].is_none() => {
+                    daemon_outcomes[1] = Some(outcome);
+                }
+                outcome = &mut bob, if daemon_outcomes[2].is_none() => {
+                    daemon_outcomes[2] = Some(outcome);
+                }
+            }
+        }
+    };
+
+    for shutdown in shutdowns {
+        let _ = shutdown.send(true);
+    }
+
+    let cleanup = tokio::time::timeout(cleanup_deadline, async {
+        while daemon_outcomes.iter().any(Option::is_none) {
+            tokio::select! {
+                outcome = &mut primary, if daemon_outcomes[0].is_none() => {
+                    daemon_outcomes[0] = Some(outcome);
+                }
+                outcome = &mut restored, if daemon_outcomes[1].is_none() => {
+                    daemon_outcomes[1] = Some(outcome);
+                }
+                outcome = &mut bob, if daemon_outcomes[2].is_none() => {
+                    daemon_outcomes[2] = Some(outcome);
+                }
+            }
+        }
+    })
+    .await;
+
+    let mut failures = flow_failure.into_iter().collect::<Vec<_>>();
+    if cleanup.is_err() {
+        for (label, outcome) in daemon_labels.into_iter().zip(&daemon_outcomes) {
+            if outcome.is_none() {
+                failures.push(format!("{label} cleanup timeout after {cleanup_deadline:?}"));
+            }
+        }
+    }
+    failures.extend(daemon_outcomes.into_iter().flatten().flatten());
+    if failures.is_empty() {
+        flow_value.ok_or_else(|| "s48 flow completed without a value".to_owned())
+    } else {
+        Err(failures.join("; "))
+    }
+}
+
+#[cfg(all(test, feature = "realnet"))]
+mod outcome_retention_tests {
+    use super::*;
+
+    const REGRESSION_BOUND: Duration = Duration::from_secs(1);
+    const FLOW_TIMEOUT: Duration = Duration::from_millis(20);
+    const CLEANUP_TIMEOUT: Duration = Duration::from_millis(200);
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn flow_panic_retains_all_daemon_errors_and_bounded_shutdown() {
+        assert_retained_outcomes(
+            s48_capture_flow("regression flow", panic_flow()),
+            "regression flow panic: panic sentinel",
+        )
+        .await;
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn flow_timeout_retains_all_daemon_errors_and_bounded_shutdown() {
+        let flow = std::future::pending::<Result<(), String>>();
+        assert_retained_outcomes(
+            s48_capture_flow("regression flow", flow),
+            "s48 flow timeout after 20ms",
+        )
+        .await;
+    }
+
+    async fn panic_flow() -> Result<(), String> {
+        tokio::task::yield_now().await;
+        std::panic::resume_unwind(Box::new(String::from("panic sentinel")))
+    }
+
+    async fn assert_retained_outcomes(flow: S48FlowFuture<'_, ()>, expected_flow: &str) {
+        let (primary_tx, primary_rx) = tokio::sync::watch::channel(false);
+        let (restored_tx, restored_rx) = tokio::sync::watch::channel(false);
+        let (bob_tx, bob_rx) = tokio::sync::watch::channel(false);
+        let started = std::time::Instant::now();
+        let result = s48_run_bounded_flow_and_daemons(
+            flow,
+            [
+                s48_capture_outcome(
+                    "regression primary daemon",
+                    daemon_error_after_shutdown(primary_rx, "primary sentinel"),
+                ),
+                s48_capture_outcome(
+                    "regression restored daemon",
+                    daemon_error_after_shutdown(restored_rx, "restored sentinel"),
+                ),
+                s48_capture_outcome(
+                    "regression bob daemon",
+                    daemon_error_after_shutdown(bob_rx, "bob sentinel"),
+                ),
+            ],
+            [&primary_tx, &restored_tx, &bob_tx],
+            ["regression primary daemon", "regression restored daemon", "regression bob daemon"],
+            FLOW_TIMEOUT,
+            CLEANUP_TIMEOUT,
+        )
+        .await;
+        let error = result.err().unwrap_or_default();
+
+        assert!(started.elapsed() < REGRESSION_BOUND, "outcome drain exceeded bound: {error}");
+        assert!(*primary_tx.borrow(), "primary shutdown was not signalled: {error}");
+        assert!(*restored_tx.borrow(), "restored shutdown was not signalled: {error}");
+        assert!(*bob_tx.borrow(), "bob shutdown was not signalled: {error}");
+        for expected in [
+            expected_flow,
+            "regression primary daemon: primary sentinel",
+            "regression restored daemon: restored sentinel",
+            "regression bob daemon: bob sentinel",
+        ] {
+            assert!(error.contains(expected), "missing {expected:?} from {error:?}");
+        }
+    }
+
+    async fn daemon_error_after_shutdown(
+        mut shutdown: tokio::sync::watch::Receiver<bool>,
+        error: &'static str,
+    ) -> Result<(), &'static str> {
+        while !*shutdown.borrow() {
+            shutdown.changed().await.map_err(|_| "shutdown sender dropped")?;
+        }
+        Err(error)
+    }
 }
 
 #[cfg(all(test, feature = "realnet"))]
