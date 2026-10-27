@@ -52,6 +52,12 @@ pub(super) const COMPOSE_FIXTURE_DEFAULTS: &[(&str, &str)] = &[
     // docker-compose.itest.yml: federation
     ("RAMFLUX_FEDERATION_DISABLE_QUIC_LISTENER", "0"),
     ("RAMFLUX_FEDERATION_PUBLIC_MAX_CONNECTIONS", "64"),
+    ("RAMFLUX_FEDERATION_PUBLIC_MAX_HEADER_BYTES", "8192"),
+    ("RAMFLUX_FEDERATION_PUBLIC_MAX_BODY_BYTES", "65536"),
+    ("RAMFLUX_FEDERATION_PUBLIC_REQUEST_TIMEOUT_SECONDS", "10"),
+    ("RAMFLUX_FEDERATION_ADMIN_MAX_HEADER_BYTES", "65536"),
+    ("RAMFLUX_FEDERATION_ADMIN_MAX_BODY_BYTES", "1048576"),
+    ("RAMFLUX_FEDERATION_ADMIN_REQUEST_TIMEOUT_SECONDS", "30"),
     // docker-compose.itest.yml: relay
     ("RAMFLUX_RELAY_ITEST_CAPTURE_JSON", "/tmp/ramflux-relay-itest-capture.jsonl"),
     // docker-compose.itest.object-v3.yml: relay fault injection and profiling hooks (all off)
