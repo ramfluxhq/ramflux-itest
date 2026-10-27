@@ -27,6 +27,7 @@ pub(super) async fn assert_live_sent_messages(
         sibling,
         "conv_s35_alice_bob",
         "s35_bob_sent_dm",
+        "original_message_id",
         "s35 outgoing live DM",
         own_commitment,
     )
@@ -57,6 +58,7 @@ pub(super) async fn assert_live_sent_messages(
         sibling,
         "s35_own_group_thread",
         &canonical_group_message,
+        "message_id",
         "s35 outgoing live group",
         own_commitment,
     )
@@ -67,6 +69,7 @@ pub(super) async fn assert_live_sent_messages(
         sibling,
         "conv_s35_alice_bob",
         "s35_bob_sent_dm",
+        "original_message_id",
         "s35 outgoing live DM",
         own_commitment,
     )
@@ -75,6 +78,7 @@ pub(super) async fn assert_live_sent_messages(
         sibling,
         "s35_own_group_thread",
         &canonical_group_message,
+        "message_id",
         "s35 outgoing live group",
         own_commitment,
     )
@@ -88,6 +92,7 @@ async fn observe(
     bus: &mut LocalBusClient,
     conversation: &str,
     message: &str,
+    message_field: &str,
     text: &str,
     root: &str,
 ) -> TestResult {
@@ -95,7 +100,7 @@ async fn observe(
         loop {
             let event = bus.next_event().await?;
             let row = &event.body["message"];
-            if row["original_message_id"] == message {
+            if row[message_field] == message {
                 assert_eq!(row["direction"], "outgoing");
                 assert_eq!(row["sender_device_id"], "bob_device_s35_a");
                 assert_eq!(row["sender_root_commitment"], root);
@@ -106,18 +111,24 @@ async fn observe(
     })
     .await
     .map_err(|_| format!("s35 live outgoing subscription timed out for {message}"))??;
-    assert_row(bus, conversation, message, text, root).await
+    assert_row(bus, conversation, message, message_field, text, root).await
 }
 async fn assert_row(
     bus: &mut LocalBusClient,
     conversation: &str,
     message: &str,
+    message_field: &str,
     text: &str,
     root: &str,
 ) -> TestResult {
     let snapshot = call(bus, "message.list", json!({"conversation_id":conversation})).await?;
     let rows = snapshot["messages"].as_array().ok_or("s35 missing messages")?;
-    let rows = rows.iter().filter(|r| r["original_message_id"] == message).collect::<Vec<_>>();
+    assert_eq!(
+        rows.iter().filter(|row| row["body_utf8"] == text).count(),
+        1,
+        "one outgoing body across original and own-copy projections"
+    );
+    let rows = rows.iter().filter(|r| r[message_field] == message).collect::<Vec<_>>();
     assert_eq!(rows.len(), 1, "one live outgoing row per original envelope/source");
     assert_eq!(rows[0]["body_utf8"], text);
     assert_eq!(rows[0]["direction"], "outgoing");
