@@ -275,6 +275,8 @@ jobs:
             tests: tests::contact01_contact_resolution::contact01_realnet_add_then_dm
           - slice: id01
             tests: tests::id01_root_bound_devices::id01_realnet_root_bound_device_add_revoke
+          - slice: id02
+            tests: tests::id02_custody::id02_born_v3_realnet_register_session_and_dm
           - slice: proof01
             tests: tests::proof01_durable_identity::proof01_realnet_durable_identity_after_session_proof_expiry
           - slice: k2b
