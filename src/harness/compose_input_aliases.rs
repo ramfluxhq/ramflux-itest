@@ -80,8 +80,9 @@ fn forward_with_process(
     fixture: &[(String, String)],
     process: &std::collections::BTreeMap<String, String>,
 ) {
-    let get =
-        |key: &str| fixture.iter().find(|(name, _)| name == key).map(|(_, value)| value.clone());
+    let get = |key: &str| {
+        fixture.iter().rev().find(|(name, _)| name == key).map(|(_, value)| value.clone())
+    };
     for &old in MIGRATED_KEYS {
         let Some(new) = alias(old) else {
             continue;
@@ -199,5 +200,28 @@ mod precedence_tests {
         forward_with_process(&mut generated, &fixture, &process);
         assert!(generated.contains(&(old.to_owned(), "new-only-fixture".to_owned())));
         assert!(generated.contains(&(new.to_owned(), "new-only-fixture".to_owned())));
+    }
+}
+
+#[cfg(test)]
+mod duplicate_input_tests {
+    use super::*;
+
+    #[test]
+    fn duplicate_fixture_inputs_keep_compose_last_assignment_semantics() {
+        let old = "RAMFLUX_FEDERATION_ADMIN_TOKEN";
+        let new = "RF_COMPOSE_FEDERATION_ADMIN_TOKEN";
+        let fixture =
+            vec![(old.to_owned(), "first".to_owned()), (old.to_owned(), "last".to_owned())];
+        let mut env = fixture.clone();
+        forward_with_process(&mut env, &fixture, &std::collections::BTreeMap::new());
+        assert_eq!(
+            env.iter().rev().find(|(key, _)| key == new).map(|(_, value)| value.as_str()),
+            Some("last")
+        );
+        assert_eq!(
+            env.iter().rev().find(|(key, _)| key == old).map(|(_, value)| value.as_str()),
+            Some("last")
+        );
     }
 }
