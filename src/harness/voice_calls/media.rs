@@ -166,7 +166,7 @@ async fn rebind(account: &mut Engine, peer: &mut Engine) -> VoiceResult {
     );
     let socket = std::sync::Arc::new(tokio::net::UdpSocket::bind("0.0.0.0:0").await?);
     socket.connect(account.socket.peer_addr()?).await?;
-    socket.send(&ramflux_node_core::encode_voice_datagram(&account.token, &[])?).await?;
+    socket.send(&ramflux_node_core::encode_voice_datagram(&account.token, &[0; 24])?).await?;
     let mut buffer = [0; 2048];
     let len = tokio::time::timeout(Duration::from_secs(3), socket.recv(&mut buffer)).await??;
     let challenge = &buffer[..len];
