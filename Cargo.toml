@@ -9,7 +9,7 @@ repository = "https://github.com/ramfluxhq/ramflux-itest"
 [features]
 default = []
 loadgen = ["dep:http-body-util", "dep:hyper", "dep:hyper-util"]
-realnet = ["dep:ramflux-cli-pro", "ramflux-sdk/itest-fingerprint", "ramflux-sdk/itest-local-mint"]
+realnet = ["dep:ramflux-cli-pro", "ramflux-sdk/itest-fingerprint", "ramflux-sdk/itest-local-mint", "ramflux-sdk/itest-memory-vault"]
 
 [dependencies]
 ramflux-core = { git = "https://github.com/ramfluxhq/ramflux.git", rev = "c18ce82964abf051d2aa517a0bc055de2c1cc973", package = "ramflux-core" }
@@ -48,6 +48,7 @@ testcontainers = "0.27.3"
 tokio = { version = "1.42", features = ["io-util", "macros", "net", "rt-multi-thread", "time"] }
 tokio-rustls = "0.26"
 tracing = "0.1"
+zeroize = "1.8"
 
 [[bin]]
 name = "notify_loadgen"
