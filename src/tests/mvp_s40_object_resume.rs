@@ -421,12 +421,9 @@ fn mvp_s40_relay_file(
     compose_project: &str,
     path: &str,
 ) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
-    let (mut command, _env_file) = checked_itest_compose_command("s40-read-relay-file")?;
+    let (mut command, _env_file) =
+        checked_itest_compose_command("s40-read-relay-file", Some(compose_project))?;
     let output = command
-        .arg("-p")
-        .arg(compose_project)
-        .arg("-f")
-        .arg("docker-compose.itest.yml")
         .arg("exec")
         .arg("-T")
         .arg("ramflux-relay")
