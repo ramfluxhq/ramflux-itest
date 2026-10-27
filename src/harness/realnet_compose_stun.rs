@@ -671,7 +671,7 @@ pub(crate) fn add_compose_env_file_arg(
 }
 
 #[cfg(all(test, feature = "realnet"))]
-fn run_compose_preflight(
+pub(crate) fn run_compose_preflight(
     command: &std::process::Command,
     deploy_root: &Path,
     env: &[(String, String)],
@@ -691,6 +691,13 @@ fn run_compose_preflight(
         .args(command.get_args().skip(1))
         .envs(env.iter().map(|(key, value)| (key, value)))
         .current_dir(deploy_root);
+    for (key, value) in command.get_envs() {
+        if let Some(value) = value {
+            preflight.env(key, value);
+        } else {
+            preflight.env_remove(key);
+        }
+    }
     let status = preflight.status()?;
     if !status.success() {
         return Err("Compose input preflight refused the environment".into());
