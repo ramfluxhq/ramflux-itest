@@ -51,6 +51,7 @@ pub(super) const COMPOSE_FIXTURE_DEFAULTS: &[(&str, &str)] = &[
     ("RAMFLUX_NOTIFY_WEBPUSH_ORIGINS", ""),
     // docker-compose.itest.yml: federation
     ("RAMFLUX_FEDERATION_DISABLE_QUIC_LISTENER", "0"),
+    ("RAMFLUX_FEDERATION_PUBLIC_MAX_CONNECTIONS", "64"),
     // docker-compose.itest.yml: relay
     ("RAMFLUX_RELAY_ITEST_CAPTURE_JSON", "/tmp/ramflux-relay-itest-capture.jsonl"),
     // docker-compose.itest.object-v3.yml: relay fault injection and profiling hooks (all off)
