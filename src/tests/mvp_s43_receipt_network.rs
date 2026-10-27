@@ -588,9 +588,9 @@ fn mvp_s43_service_file(
     compose_project: &str,
     remote_path: &str,
 ) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
-    let output = std::process::Command::new("docker")
+    let (mut command, _env_file) = checked_itest_compose_command("s43-read-service-file")?;
+    let output = command
         .args([
-            "compose",
             "-p",
             compose_project,
             "-f",
