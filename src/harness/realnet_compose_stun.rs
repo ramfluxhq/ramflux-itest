@@ -800,11 +800,11 @@ pub(crate) fn run_production_compose_project(
     let mut command = std::process::Command::new(container_runtime());
     command.arg("compose");
     let _env_file = add_compose_env_file_arg(&mut command, project_name, &compose_env)?;
+    command.arg("-p").arg(project_name).arg("-f").arg("docker-compose.yml");
+    if env.iter().any(|(key, _)| key == "RAMFLUX_ITEST_FEDERATION_ADMIN_PORT") {
+        command.arg("-f").arg("docker-compose.itest.admin.yml");
+    }
     command
-        .arg("-p")
-        .arg(project_name)
-        .arg("-f")
-        .arg("docker-compose.yml")
         .args(args)
         .envs(compose_env.iter().map(|(key, value)| (key, value)))
         .current_dir(deploy_root);

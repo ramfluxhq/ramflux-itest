@@ -176,7 +176,7 @@ fn t22_production_positive_public_sdk_object_four_ops() -> Result<(), Box<dyn st
         ("RAMFLUX_GATEWAY_QUIC_PORT".to_owned(), "57443".to_owned()),
         ("RAMFLUX_SIGNALING_TURN_UDP_PORT".to_owned(), "57478".to_owned()),
         ("RAMFLUX_SIGNALING_TURN_TCP_PORT".to_owned(), "57479".to_owned()),
-        ("RAMFLUX_FEDERATION_ADMIN_PORT".to_owned(), "57482".to_owned()),
+        ("RAMFLUX_FEDERATION_PUBLIC_PORT".to_owned(), "57482".to_owned()),
         ("RAMFLUX_FEDERATION_MESH_PORT".to_owned(), "57453".to_owned()),
     ];
 
@@ -329,7 +329,7 @@ fn t22_production_measure_public_sdk_object() -> Result<(), Box<dyn std::error::
         ("RAMFLUX_GATEWAY_QUIC_PORT".to_owned(), "57463".to_owned()),
         ("RAMFLUX_SIGNALING_TURN_UDP_PORT".to_owned(), "57488".to_owned()),
         ("RAMFLUX_SIGNALING_TURN_TCP_PORT".to_owned(), "57489".to_owned()),
-        ("RAMFLUX_FEDERATION_ADMIN_PORT".to_owned(), "57492".to_owned()),
+        ("RAMFLUX_FEDERATION_PUBLIC_PORT".to_owned(), "57492".to_owned()),
         ("RAMFLUX_FEDERATION_MESH_PORT".to_owned(), "57473".to_owned()),
     ];
 

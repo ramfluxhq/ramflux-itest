@@ -73,7 +73,7 @@ pub(crate) fn start_client_discovery_topology_named(
             ("RAMFLUX_RELAY_CLIENT_QUIC_PORT", "58447"),
             ("RAMFLUX_SIGNALING_TURN_UDP_PORT", "58478"),
             ("RAMFLUX_SIGNALING_TURN_TCP_PORT", "58479"),
-            ("RAMFLUX_FEDERATION_ADMIN_PORT", "58482"),
+            ("RAMFLUX_FEDERATION_PUBLIC_PORT", "58482"),
             ("RAMFLUX_FEDERATION_MESH_PORT", "58453"),
             ("RAMFLUX_CLIENT_GATEWAY_QUIC_ADDR", "127.0.0.1:58443"),
             ("RAMFLUX_CLIENT_GATEWAY_TCP_ADDR", "127.0.0.1:58443"),

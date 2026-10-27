@@ -9,6 +9,7 @@ use crate::*;
 pub(crate) struct S22ProductionPorts {
     pub(crate) gateway: u16,
     pub(crate) federation_admin: u16,
+    pub(crate) federation_public: u16,
     pub(crate) federation_mesh: u16,
     pub(crate) signaling_turn_udp: u16,
     pub(crate) signaling_turn_tcp: u16,
@@ -18,6 +19,7 @@ pub(crate) struct S22ProductionPorts {
 pub(crate) struct S22ProductionNode {
     pub(crate) node_id: String,
     pub(crate) admin_url: String,
+    pub(crate) public_url: String,
     pub(crate) well_known_url: String,
     pub(crate) gateway_quic_addr: std::net::SocketAddr,
     pub(crate) ca_cert: PathBuf,

@@ -18,6 +18,7 @@ fn mvp_s24_realnet_group_out_of_order_key() -> Result<(), Box<dyn std::error::Er
         S22ProductionPorts {
             gateway: 52_143,
             federation_admin: 52_182,
+            federation_public: 52183,
             federation_mesh: 52_452,
             signaling_turn_udp: 52_478,
             signaling_turn_tcp: 52_479,
@@ -29,6 +30,7 @@ fn mvp_s24_realnet_group_out_of_order_key() -> Result<(), Box<dyn std::error::Er
         S22ProductionPorts {
             gateway: 53_143,
             federation_admin: 53_182,
+            federation_public: 53183,
             federation_mesh: 53_452,
             signaling_turn_udp: 53_478,
             signaling_turn_tcp: 53_479,

@@ -18,6 +18,7 @@ fn mvp_s22_realnet_prod_federation_peer_cross_node_dm() -> Result<(), Box<dyn st
         S22ProductionPorts {
             gateway: 64_143,
             federation_admin: 64_182,
+            federation_public: 64183,
             federation_mesh: 64_452,
             signaling_turn_udp: 65_478,
             signaling_turn_tcp: 65_479,
@@ -29,6 +30,7 @@ fn mvp_s22_realnet_prod_federation_peer_cross_node_dm() -> Result<(), Box<dyn st
         S22ProductionPorts {
             gateway: 65_143,
             federation_admin: 65_182,
+            federation_public: 65183,
             federation_mesh: 65_452,
             signaling_turn_udp: 62_478,
             signaling_turn_tcp: 62_479,
@@ -59,6 +61,7 @@ fn mvp_s22_realnet_federation_node_restart_keeps_peer_pin() -> Result<(), Box<dy
         S22ProductionPorts {
             gateway: 60_143,
             federation_admin: 60_182,
+            federation_public: 60183,
             federation_mesh: 60_452,
             signaling_turn_udp: 60_478,
             signaling_turn_tcp: 60_479,
@@ -70,6 +73,7 @@ fn mvp_s22_realnet_federation_node_restart_keeps_peer_pin() -> Result<(), Box<dy
         S22ProductionPorts {
             gateway: 61_143,
             federation_admin: 61_182,
+            federation_public: 61183,
             federation_mesh: 61_452,
             signaling_turn_udp: 61_478,
             signaling_turn_tcp: 61_479,

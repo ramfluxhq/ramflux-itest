@@ -51,7 +51,8 @@ pub(crate) fn start_s22_production_node(
         ("RAMFLUX_GATEWAY_QUIC_PORT".to_owned(), ports.gateway.to_string()),
         ("RAMFLUX_SIGNALING_TURN_UDP_PORT".to_owned(), ports.signaling_turn_udp.to_string()),
         ("RAMFLUX_SIGNALING_TURN_TCP_PORT".to_owned(), ports.signaling_turn_tcp.to_string()),
-        ("RAMFLUX_FEDERATION_ADMIN_PORT".to_owned(), ports.federation_admin.to_string()),
+        ("RAMFLUX_ITEST_FEDERATION_ADMIN_PORT".to_owned(), ports.federation_admin.to_string()),
+        ("RAMFLUX_FEDERATION_PUBLIC_PORT".to_owned(), ports.federation_public.to_string()),
         ("RAMFLUX_FEDERATION_MESH_PORT".to_owned(), ports.federation_mesh.to_string()),
         ("RAMFLUX_FEDERATION_ADMIN_TOKEN".to_owned(), admin_token.clone()),
         ("RAMFLUX_FEDERATION_NODE_ID".to_owned(), node_id.to_owned()),
@@ -71,11 +72,11 @@ pub(crate) fn start_s22_production_node(
     Ok(S22ProductionNode {
         node_id: node_id.to_owned(),
         admin_url: admin_url.clone(),
-        // admin_url (127.0.0.1) is reached by rf on the host; well_known_url is fetched by the
-        // *peer node's container*, so it must resolve host->container via host.docker.internal.
+        public_url: format!("http://127.0.0.1:{}", ports.federation_public),
+        // Peer containers discover through the public listener, separately from host admin access.
         well_known_url: format!(
             "http://host.docker.internal:{}/.well-known/ramflux/server",
-            ports.federation_admin
+            ports.federation_public
         ),
         gateway_quic_addr: std::net::SocketAddr::from(([127, 0, 0, 1], ports.gateway)),
         ca_cert: code_root.join("ramflux/deploy/certs/ca.pem"),

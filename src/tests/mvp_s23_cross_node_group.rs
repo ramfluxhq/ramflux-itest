@@ -18,6 +18,7 @@ fn mvp_s23_realnet_cross_node_group() -> Result<(), Box<dyn std::error::Error>> 
         S22ProductionPorts {
             gateway: 60_143,
             federation_admin: 60_182,
+            federation_public: 60183,
             federation_mesh: 60_452,
             signaling_turn_udp: 60_478,
             signaling_turn_tcp: 60_479,
@@ -29,6 +30,7 @@ fn mvp_s23_realnet_cross_node_group() -> Result<(), Box<dyn std::error::Error>> 
         S22ProductionPorts {
             gateway: 61_143,
             federation_admin: 61_182,
+            federation_public: 61183,
             federation_mesh: 61_452,
             signaling_turn_udp: 61_478,
             signaling_turn_tcp: 61_479,
