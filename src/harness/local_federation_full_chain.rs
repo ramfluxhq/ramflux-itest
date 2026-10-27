@@ -726,11 +726,8 @@ async fn handle_local_gateway_stream(
                         .ok_or_else(|| "missing submit frame".to_owned())?,
                 )
                 .map_err(|source| source.to_string())?;
-                let entry = ramflux_sdk::GatewayInboxEntry {
-                    inbox_seq: 1,
-                    target_delivery_id: submit.envelope.target_delivery_id.clone(),
-                    envelope: submit.envelope,
-                };
+                let entry = local_gateway_inbox_entry(1, &submit.envelope)
+                    .map_err(|source| source.to_string())?;
                 ramflux_transport::write_quic_json_message(
                     &mut send,
                     &ramflux_sdk::GatewayServerFrame::Deliver { entry },
@@ -1080,11 +1077,7 @@ fn handle_local_router_inbox_request(
     let inbound: LocalFederationEnvelopeRequest = serde_json::from_slice(&request.body)?;
     let mut inbox = lock_inbox(state)?;
     let inbox_seq = u64::try_from(inbox.len())?.saturating_add(1);
-    inbox.push(ramflux_sdk::GatewayInboxEntry {
-        inbox_seq,
-        target_delivery_id: inbound.envelope.target_delivery_id.clone(),
-        envelope: inbound.envelope.clone(),
-    });
+    inbox.push(local_gateway_inbox_entry(inbox_seq, &inbound.envelope)?);
     ramflux_node_core::write_itest_json_response(
         stream,
         "200 OK",
@@ -1096,6 +1089,20 @@ fn handle_local_router_inbox_request(
         },
     )?;
     Ok(())
+}
+
+#[cfg(all(test, feature = "realnet"))]
+fn local_gateway_inbox_entry(
+    inbox_seq: u64,
+    envelope: &ramflux_protocol::Envelope,
+) -> Result<ramflux_sdk::GatewayInboxEntry, serde_json::Error> {
+    let target_delivery_id = envelope.target_delivery_id.clone();
+    serde_json::from_value(serde_json::json!({
+        "forwarded": false,
+        "inbox_seq": inbox_seq,
+        "target_delivery_id": target_delivery_id,
+        "envelope": envelope,
+    }))
 }
 
 #[cfg(all(test, feature = "realnet"))]
