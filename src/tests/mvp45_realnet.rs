@@ -3272,8 +3272,13 @@ impl Mvp5ContainerStatsSampler {
 #[cfg(feature = "realnet")]
 fn mvp5_container_stats_sample(deploy_root: &std::path::Path) -> serde_json::Value {
     let timestamp = mvp5_perf_now_unix_seconds().unwrap_or_default();
-    let ids = match std::process::Command::new("docker")
-        .arg("compose")
+    let Ok((mut command, _env_file)) = checked_itest_compose_command("mvp5-container-stats") else {
+        return serde_json::json!({
+            "timestamp_unix": timestamp,
+            "error": "Compose input preflight refused container statistics",
+        });
+    };
+    let ids = match command
         .arg("-f")
         .arg("docker-compose.itest.yml")
         .arg("ps")

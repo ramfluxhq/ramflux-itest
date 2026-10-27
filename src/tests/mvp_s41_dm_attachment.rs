@@ -529,8 +529,8 @@ fn mvp_s41_service_file(
     service: &str,
     path: &str,
 ) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
-    let output = std::process::Command::new(container_runtime())
-        .arg("compose")
+    let (mut command, _env_file) = checked_itest_compose_command("s41-read-service-file")?;
+    let output = command
         .arg("-p")
         .arg(compose_project)
         .arg("-f")

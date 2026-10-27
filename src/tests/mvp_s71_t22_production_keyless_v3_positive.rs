@@ -113,8 +113,8 @@ fn t22_production_positive_public_sdk_object_four_ops() -> Result<(), Box<dyn st
         "production compose must not configure the legacy relay object HMAC key"
     );
 
-    // Single-node private deployment: the federation node id / trust issuer defaults to "localhost"
-    // (see docker-compose.yml `RAMFLUX_FEDERATION_NODE_ID:-localhost` and provision-node.sh node_id).
+    // Single-node private fixture: the harness explicitly supplies the localhost node id
+    // and client endpoints; production Compose requires operators to provide them.
     let issuer_node = "localhost";
     let gateway_instance_id = "gw-localhost";
 

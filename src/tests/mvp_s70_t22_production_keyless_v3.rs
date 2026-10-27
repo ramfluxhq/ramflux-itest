@@ -37,8 +37,23 @@ fn t22_production_keyless_v3_compose_smoke() -> Result<(), Box<dyn std::error::E
     }
 
     let runtime = container_runtime();
-    let output = std::process::Command::new(runtime)
-        .arg("compose")
+    let mut env = compose_env_with_required_defaults(&[(
+        "RAMFLUX_GATEWAY_V3_ISSUER_SEED".into(),
+        itest_node_service_signing_seed_b64url(),
+    )]);
+    env.retain(|(key, _)| {
+        ![
+            "RAMFLUX_FEDERATION_TRUST_ENDPOINT",
+            "RAMFLUX_FEDERATION_PROVIDER_OFFLINE_ROOT_PUBLIC_KEY",
+            "RAMFLUX_FEDERATION_TRUST_ISSUER_NODE_ID",
+        ]
+        .contains(&key.as_str())
+    });
+    let mut command = std::process::Command::new(runtime);
+    command.arg("compose");
+    let _env_file = add_compose_env_file_arg(&mut command, "s70-negative-trust", &env)?;
+    let output = command
+        .envs(env.iter().map(|(key, value)| (key, value)))
         .arg("-f")
         .arg("docker-compose.yml")
         .arg("config")

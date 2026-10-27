@@ -421,8 +421,8 @@ fn mvp_s40_relay_file(
     compose_project: &str,
     path: &str,
 ) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
-    let output = std::process::Command::new(container_runtime())
-        .arg("compose")
+    let (mut command, _env_file) = checked_itest_compose_command("s40-read-relay-file")?;
+    let output = command
         .arg("-p")
         .arg(compose_project)
         .arg("-f")

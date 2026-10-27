@@ -17,7 +17,13 @@ pub(crate) use failure_diagnostics::dump_service_container_logs;
 #[path = "compose_self_referencing_defaults.rs"]
 mod self_referencing_defaults;
 #[cfg(all(test, feature = "realnet"))]
-use self_referencing_defaults::{COMPOSE_SELF_REFERENCING_DEFAULTS, outer_or_default};
+use self_referencing_defaults::{COMPOSE_FIXTURE_DEFAULTS, outer_or_default};
+
+#[cfg(all(test, feature = "realnet"))]
+#[path = "compose_input_aliases.rs"]
+mod compose_input_aliases;
+#[cfg(all(test, feature = "realnet"))]
+pub(crate) use compose_input_aliases::itest_admin_token;
 
 /// `compose down` shutdown-grace timeout (seconds). Default "2" (fast teardown for normal tests).
 /// CTRL-089 DIAGNOSTIC: a heap-profiler relay build dumps its dhat json on SIGTERM, and symbolizing
@@ -181,7 +187,10 @@ impl Drop for ComposeDownGuard {
         let compose_env = compose_env_with_required_defaults(&[]);
         let mut command = std::process::Command::new(container_runtime());
         command.arg("compose");
-        let _env_file = add_compose_env_file_arg(&mut command, "itest-down", &compose_env).ok();
+        let Ok(_env_file) = add_compose_env_file_arg(&mut command, "itest-down", &compose_env)
+        else {
+            return;
+        };
         add_itest_compose_files(
             &mut command,
             ItestComposeOverrides {
@@ -279,8 +288,11 @@ impl Drop for ComposeProjectDownGuard {
         );
         let mut command = std::process::Command::new(container_runtime());
         command.arg("compose");
-        let _env_file =
-            add_compose_env_file_arg(&mut command, &self.project_name, &compose_env).ok();
+        let Ok(_env_file) =
+            add_compose_env_file_arg(&mut command, &self.project_name, &compose_env)
+        else {
+            return;
+        };
         command.arg("-p").arg(&self.project_name);
         add_itest_compose_files(
             &mut command,
@@ -331,7 +343,9 @@ fn dump_compose_logs(
     };
     let mut command = std::process::Command::new(container_runtime());
     command.arg("compose");
-    let _env_file = add_compose_env_file_arg(&mut command, project_name, env).ok();
+    let Ok(_env_file) = add_compose_env_file_arg(&mut command, project_name, env) else {
+        return;
+    };
     command.arg("-p").arg(project_name);
     add_itest_compose_files(
         &mut command,
@@ -392,8 +406,11 @@ impl Drop for ProductionComposeDownGuard {
         let compose_env = compose_env_with_required_defaults(&self.env);
         let mut command = std::process::Command::new(container_runtime());
         command.arg("compose");
-        let _env_file =
-            add_compose_env_file_arg(&mut command, &self.project_name, &compose_env).ok();
+        let Ok(_env_file) =
+            add_compose_env_file_arg(&mut command, &self.project_name, &compose_env)
+        else {
+            return;
+        };
         let _status = command
             .arg("-p")
             .arg(&self.project_name)
@@ -513,7 +530,9 @@ fn operator_gid() -> Option<String> {
 }
 
 #[cfg(all(test, feature = "realnet"))]
-fn compose_env_with_required_defaults(env: &[(String, String)]) -> Vec<(String, String)> {
+pub(crate) fn compose_env_with_required_defaults(
+    env: &[(String, String)],
+) -> Vec<(String, String)> {
     let mut compose_env = env.to_vec();
     ensure_itest_node_service_signing_seed_env(&mut compose_env);
     ensure_compose_default_env(&mut compose_env, "RAMFLUX_VERSION", "dev");
@@ -537,8 +556,9 @@ fn compose_env_with_required_defaults(env: &[(String, String)]) -> Vec<(String, 
     ensure_compose_default_env(
         &mut compose_env,
         "RAMFLUX_FEDERATION_ADMIN_TOKEN",
-        "ramflux-local-admin-token",
+        itest_admin_token(),
     );
+    ensure_compose_default_env(&mut compose_env, "RAMFLUX_ROUTER_ADMIN_TOKEN", itest_admin_token());
     ensure_compose_default_env(&mut compose_env, "RAMFLUX_FEDERATION_NODE_ID", "localhost");
     ensure_compose_default_env(
         &mut compose_env,
@@ -567,12 +587,25 @@ fn compose_env_with_required_defaults(env: &[(String, String)]) -> Vec<(String, 
         "RAMFLUX_RELAY_TRUST_SNAPSHOT_REFRESH_INTERVAL_SECONDS",
         "30",
     );
+    // Explicit fixture inputs replace the former production endpoint defaults. Tests that
+    // advertise distinct ports supply their concrete values before this generator runs.
+    for (key, default) in [
+        ("RAMFLUX_CLIENT_GATEWAY_QUIC_ADDR", "localhost:443"),
+        ("RAMFLUX_CLIENT_GATEWAY_TCP_ADDR", "localhost:443"),
+        ("RAMFLUX_CLIENT_GATEWAY_SERVER_NAME", "ramflux-gateway"),
+        ("RAMFLUX_CLIENT_RELAY_QUIC_ADDR", "localhost:17447"),
+        ("RAMFLUX_CLIENT_RELAY_SERVER_NAME", "ramflux-relay"),
+        ("RAMFLUX_CLIENT_PREKEY_HTTP_URL", "http://localhost:18082"),
+        ("RAMFLUX_CLIENT_SIGNALING_TURN_ADDR", "localhost:3478"),
+    ] {
+        ensure_compose_default_env(&mut compose_env, key, default);
+    }
     // Every other `KEY: "${KEY:-default}"` of the itest compose files. Compose interpolates such
     // an entry from the process environment the harness inherits, so an exported operator knob
     // (RAMFLUX_ITEST_PERF=1, RAMFLUX_RELAY_REDB_CACHE_BYTES, ...) keeps its value; only a key
     // absent from the process environment gets the compose default. The lint in
     // `self_referencing_defaults` keeps the table complete against the pinned product tree.
-    for (key, default) in COMPOSE_SELF_REFERENCING_DEFAULTS {
+    for (key, default) in COMPOSE_FIXTURE_DEFAULTS {
         ensure_compose_default_env(&mut compose_env, key, &outer_or_default(key, default));
     }
     if !compose_env.iter().any(|(key, _value)| key == "RAMFLUX_FEDERATION_NODE_SIGNING_SEED_B64URL")
@@ -585,18 +618,19 @@ fn compose_env_with_required_defaults(env: &[(String, String)]) -> Vec<(String, 
     if !compose_env.iter().any(|(key, _value)| key == "RAMFLUX_NODE_ID") {
         compose_env.push(("RAMFLUX_NODE_ID".to_owned(), "localhost".to_owned()));
     }
+    compose_input_aliases::forward_aliases(&mut compose_env, env);
     compose_env
 }
 
 #[cfg(all(test, feature = "realnet"))]
 fn ensure_compose_default_env(compose_env: &mut Vec<(String, String)>, key: &str, value: &str) {
     if !compose_env.iter().any(|(existing_key, _value)| existing_key == key) {
-        compose_env.push((key.to_owned(), value.to_owned()));
+        compose_env.push((key.to_owned(), outer_or_default(key, value)));
     }
 }
 
 #[cfg(all(test, feature = "realnet"))]
-struct ComposeEnvFile {
+pub(crate) struct ComposeEnvFile {
     path: PathBuf,
 }
 
@@ -615,14 +649,38 @@ impl Drop for ComposeEnvFile {
 }
 
 #[cfg(all(test, feature = "realnet"))]
-fn add_compose_env_file_arg(
+pub(crate) fn add_compose_env_file_arg(
     command: &mut std::process::Command,
     label: &str,
     env: &[(String, String)],
 ) -> Result<ComposeEnvFile, Box<dyn std::error::Error>> {
     let env_file = write_compose_env_file(label, env)?;
+    let deploy = self_referencing_defaults::pinned_product_deploy_dir()?
+        .ok_or("pinned product checkout required for Compose preflight")?;
+    let status = std::process::Command::new("python3")
+        .arg(deploy.join("scripts/compose-preflight.py"))
+        .arg("--env-file")
+        .arg(env_file.path())
+        .envs(env.iter().map(|(key, value)| (key, value)))
+        .status()?;
+    if !status.success() {
+        return Err("Compose input preflight refused the environment".into());
+    }
     command.arg("--env-file").arg(env_file.path());
     Ok(env_file)
+}
+
+/// Prepare diagnostics/exec commands through the same generated inputs and preflight as startup.
+#[cfg(all(test, feature = "realnet"))]
+pub(crate) fn checked_itest_compose_command(
+    label: &str,
+) -> Result<(std::process::Command, ComposeEnvFile), Box<dyn std::error::Error>> {
+    let env = compose_env_with_required_defaults(&[]);
+    let mut command = std::process::Command::new(container_runtime());
+    command.arg("compose");
+    let file = add_compose_env_file_arg(&mut command, label, &env)?;
+    command.envs(env);
+    Ok((command, file))
 }
 
 #[cfg(all(test, feature = "realnet"))]
@@ -637,7 +695,14 @@ fn write_compose_env_file(
     let safe_label = sanitize_compose_env_label(label);
     let path = std::env::temp_dir()
         .join(format!("ramflux-itest-compose-{safe_label}-{}-{sequence}.env", std::process::id()));
-    let mut file = std::fs::File::create(&path)?;
+    let mut options = std::fs::OpenOptions::new();
+    options.write(true).create_new(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.mode(0o600);
+    }
+    let mut file = options.open(&path)?;
     for (key, value) in env {
         use std::io::Write;
         writeln!(file, "{key}={value}")?;

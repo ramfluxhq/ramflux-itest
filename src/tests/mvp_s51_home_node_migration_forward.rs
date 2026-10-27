@@ -5,9 +5,6 @@
 use super::*;
 
 #[cfg(feature = "realnet")]
-const S51_ROUTER_ADMIN_TOKEN: &str = "ramflux-local-admin-token";
-
-#[cfg(feature = "realnet")]
 #[test]
 fn mvp_s51_realnet_home_node_migration_forwards_within_window()
 -> Result<(), Box<dyn std::error::Error>> {
@@ -249,7 +246,7 @@ fn s51_apply_migration(
     Ok(ramflux_node_core::itest_http_post_json(
         &format!("{router_url}/admin/home-node-migration/apply"),
         &serde_json::json!({
-            "admin_token": S51_ROUTER_ADMIN_TOKEN,
+            "admin_token": itest_admin_token(),
             "proof": fixture.migration_proof,
             "branch_proof": fixture.register.proof,
             "now": realnet_now_i64(),
@@ -265,7 +262,7 @@ fn s51_apply_route_update(
     Ok(ramflux_node_core::itest_http_post_json(
         &format!("{router_url}/admin/home-node-route/update/apply"),
         &serde_json::json!({
-            "admin_token": S51_ROUTER_ADMIN_TOKEN,
+            "admin_token": itest_admin_token(),
             "proof": fixture.route_update,
             "now": realnet_now_i64(),
         }),

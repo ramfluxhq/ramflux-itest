@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (c) 2026 Span Brain
 
-//! Concrete outer values for every `KEY: "${KEY:-default}"` in the itest compose files.
+//! Explicit fixture defaults and lint for migrated Compose interpolation inputs.
 //!
 //! podman-compose 1.3.0 keeps such a self-referencing default as the literal string
 //! `${KEY:-default}` when the outer variable is unset (Docker Compose v2 expands it). A service
@@ -12,13 +12,13 @@
 use super::compose_env_with_required_defaults;
 use std::path::{Path, PathBuf};
 
-/// Self-referencing keys of `deploy/docker-compose.itest*.yml` and their compose defaults.
+/// Former self-referencing Compose inputs, now supplied explicitly by the fixture generator.
 /// `compose_env_with_required_defaults` applies them with `ensure_compose_default_env`, so a
 /// fixture's own value always wins, and a value present in the process environment (operator
 /// knobs such as `RAMFLUX_ITEST_PERF=1` or `RAMFLUX_RELAY_REDB_CACHE_BYTES`) replaces the table
 /// default. Keys the harness already derives elsewhere (node id, signing seed, federation and
 /// relay trust material) are not repeated here.
-pub(super) const COMPOSE_SELF_REFERENCING_DEFAULTS: &[(&str, &str)] = &[
+pub(super) const COMPOSE_FIXTURE_DEFAULTS: &[(&str, &str)] = &[
     // docker-compose.itest.yml: every service
     ("RAMFLUX_ITEST_PERF", "0"),
     // docker-compose.itest.yml + docker-compose.itest.cross-gateway.yml: gateway
@@ -68,6 +68,7 @@ pub(super) const COMPOSE_SELF_REFERENCING_DEFAULTS: &[(&str, &str)] = &[
 /// else the compose default.
 pub(super) fn outer_or_default(key: &str, default: &str) -> String {
     std::env::var_os(key)
+        .or_else(|| super::compose_input_aliases::alias(key).and_then(std::env::var_os))
         .map_or_else(|| default.to_owned(), |value| value.to_string_lossy().into_owned())
 }
 
@@ -263,7 +264,7 @@ networks:
     }
 
     #[test]
-    fn pinned_itest_compose_self_referencing_defaults_are_supplied_by_the_harness()
+    fn pinned_itest_compose_inputs_have_aliases_and_no_self_referencing_defaults()
     -> Result<(), Box<dyn std::error::Error>> {
         let Some(deploy) = pinned_product_deploy_dir()? else {
             eprintln!(
@@ -294,27 +295,38 @@ networks:
             files.len(),
             deploy.display()
         );
-        assert!(seen > 0, "no self-referencing defaults found under {}", deploy.display());
+        assert_eq!(seen, 0, "never reintroduce self-referencing Compose defaults");
         assert!(
             uncovered.is_empty(),
             "self-referencing compose defaults the harness does not supply (podman-compose 1.3.0 \
-             keeps them literal); add each key to COMPOSE_SELF_REFERENCING_DEFAULTS in {}:\n{}",
+             keeps them literal); add each key to COMPOSE_FIXTURE_DEFAULTS in {}:\n{}",
             file!(),
             uncovered.join("\n")
         );
+        let mapping: std::collections::BTreeMap<String, String> =
+            serde_json::from_str(&std::fs::read_to_string(deploy.join("compose-inputs.json"))?)?;
+        assert_eq!(mapping.len(), super::super::compose_input_aliases::MIGRATED_KEYS.len());
+        for (old, new) in &mapping {
+            assert_eq!(super::super::compose_input_aliases::alias(old).as_ref(), Some(new));
+        }
+        for path in &files {
+            let text = std::fs::read_to_string(path)?;
+            for new in mapping.values().filter(|new| text.contains(&format!("${{{new}"))) {
+                assert!(supplied.iter().any(|(key, _)| key == new), "missing Compose alias: {new}");
+            }
+        }
         Ok(())
     }
 
     #[test]
     fn default_table_has_unique_keys_without_duplicating_explicit_defaults() {
-        let mut keys =
-            COMPOSE_SELF_REFERENCING_DEFAULTS.iter().map(|(key, _)| *key).collect::<Vec<_>>();
+        let mut keys = COMPOSE_FIXTURE_DEFAULTS.iter().map(|(key, _)| *key).collect::<Vec<_>>();
         let count = keys.len();
         keys.sort_unstable();
         keys.dedup();
-        assert_eq!(keys.len(), count, "duplicate key in COMPOSE_SELF_REFERENCING_DEFAULTS");
+        assert_eq!(keys.len(), count, "duplicate key in COMPOSE_FIXTURE_DEFAULTS");
         let supplied = compose_env_with_required_defaults(&[]);
-        for (key, default) in COMPOSE_SELF_REFERENCING_DEFAULTS {
+        for (key, default) in COMPOSE_FIXTURE_DEFAULTS {
             let expected = outer_or_default(key, default);
             assert_eq!(value_of(&supplied, key), vec![expected.as_str()], "{key} supplied once");
         }
@@ -338,7 +350,7 @@ networks:
         let supplied = compose_env_with_required_defaults(&[]);
         for key in ["RAMFLUX_ITEST_PERF", "RAMFLUX_RELAY_REDB_CACHE_BYTES"] {
             let outer = std::env::var_os(key).map(|value| value.to_string_lossy().into_owned());
-            let (_, default) = COMPOSE_SELF_REFERENCING_DEFAULTS
+            let (_, default) = COMPOSE_FIXTURE_DEFAULTS
                 .iter()
                 .find(|(table_key, _)| *table_key == key)
                 .unwrap_or(&("", ""));
