@@ -75,7 +75,12 @@ fn mvp_s51_realnet_home_node_migration_forwards_within_window()
     s51_apply_route_update(&new_home_router_url, &fixture)?;
 
     let envelope_id = "env_s51_home_node_migration_forward";
-    let envelope = itest_envelope(envelope_id, &fixture.target_delivery_id);
+    let envelope = s51_signed_envelope(
+        envelope_id,
+        &fixture.target_delivery_id,
+        &fixture.register,
+        &fixture.source_device,
+    )?;
     realnet_step(
         "S51 submit to old home node-a",
         format!(
@@ -109,6 +114,7 @@ fn mvp_s51_realnet_home_node_migration_forwards_within_window()
 #[cfg(feature = "realnet")]
 struct S51MigrationFixture {
     register: ramflux_node_core::IdentityRegisterRequest,
+    source_device: ramflux_crypto::DeviceBranch,
     target_delivery_id: String,
     migration_proof: ramflux_protocol::HomeNodeMigrationProof,
     route_update: ramflux_node_core::HomeNodeRouteUpdateProof,
@@ -231,10 +237,59 @@ fn s51_migration_fixture(
     route_signer.sign_home_node_route_update_proof(&mut route_update)?;
     Ok(S51MigrationFixture {
         register: identity.register,
+        source_device: identity.device,
         target_delivery_id: identity.target_delivery_id,
         migration_proof,
         route_update,
     })
+}
+
+#[cfg(feature = "realnet")]
+fn s51_signed_envelope(
+    envelope_id: &str,
+    target_delivery_id: &str,
+    register: &ramflux_node_core::IdentityRegisterRequest,
+    source_device: &ramflux_crypto::DeviceBranch,
+) -> Result<ramflux_protocol::Envelope, Box<dyn std::error::Error>> {
+    let mut envelope = itest_envelope(envelope_id, target_delivery_id);
+    envelope.source_principal_id = register.proof.principal_id.clone();
+    envelope.source_device_id = source_device.device_id.clone();
+    envelope
+        .ext
+        .ext
+        .insert("source_root_commitment".into(), serde_json::json!(register.principal_commitment));
+    envelope.signed.signing_key_id = format!("device:{}", source_device.device_id);
+    envelope.signed.signature = ramflux_crypto::sign_canonical_bytes_with_seed(
+        &ramflux_protocol::envelope_sender_signed_bytes(&envelope)?,
+        source_device.signing_key.to_bytes(),
+    );
+    Ok(envelope)
+}
+
+#[cfg(all(test, feature = "realnet"))]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn s51_envelope_matches_root_bound_registration() -> Result<(), Box<dyn std::error::Error>> {
+        let identity = s51_identity_material(itest_now_unix_seconds())?;
+        let old_home = ramflux_node_core::RouterCore::new();
+        let new_home = ramflux_node_core::RouterCore::new();
+        old_home.mvp1_register_identity(&identity.register)?;
+        new_home.mvp1_register_identity(&identity.register)?;
+        let mut envelope = s51_signed_envelope(
+            "s51_root_bound_envelope",
+            &identity.target_delivery_id,
+            &identity.register,
+            &identity.device,
+        )?;
+
+        old_home.refresh_registered_envelope_authority(&mut envelope)?;
+        let source = new_home.authenticated_envelope_source(&envelope)?;
+        assert_eq!(source.root_commitment(), identity.register.principal_commitment);
+        assert_eq!(source.device_id(), identity.device.device_id);
+        Ok(())
+    }
 }
 
 #[cfg(feature = "realnet")]
