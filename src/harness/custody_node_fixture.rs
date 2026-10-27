@@ -4,7 +4,19 @@
 //! Explicit realnet fixture; signed discovery uses the harness's receiving-node identity.
 use ramflux_protocol::custody::*;
 use std::path::Path;
-pub(crate) fn provision(
+pub(crate) fn provision_if_enabled(
+    extra_env: &[(String, String)],
+    directory: &Path,
+    node_id: &str,
+    root_seed: [u8; 32],
+) -> Result<Vec<(String, String)>, Box<dyn std::error::Error>> {
+    if extra_env.iter().any(|(key, value)| key == "RAMFLUX_CUSTODY_ITEST_ENABLE" && value == "1") {
+        provision(directory, node_id, root_seed)
+    } else {
+        Ok(Vec::new())
+    }
+}
+fn provision(
     directory: &Path,
     node_id: &str,
     root_seed: [u8; 32],

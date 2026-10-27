@@ -149,7 +149,7 @@ async fn client() -> Result<(), Box<dyn std::error::Error>> {
     let mut bus = ramflux_sdk::LocalBusConfig::new(&socket, &root.0);
     bus.enable_born_v3_creation = true;
     bus.custody_vault = Some(vault.clone());
-    let (stop, receiver) = tokio::sync::watch::channel(false);
+    let (stop, shutdown_rx) = tokio::sync::watch::channel(false);
     let flow = async {
         let _shutdown = Shutdown(stop);
         let alice_anchor = create(&socket, "alice", "alice").await?;
@@ -203,11 +203,14 @@ async fn client() -> Result<(), Box<dyn std::error::Error>> {
         assert_eq!(alice.account().state(), CreationState::Live);
         Ok::<_, Box<dyn std::error::Error>>(())
     };
-    tokio::time::timeout(Duration::from_mins(2), async {
-        let (daemon, result) =
-            tokio::join!(ramflux_sdk::serve_local_bus_until(bus, receiver), flow);
-        daemon?;
-        result
-    })
+    tokio::time::timeout(
+        Duration::from_mins(2),
+        Box::pin(async {
+            let (daemon, result) =
+                tokio::join!(ramflux_sdk::serve_local_bus_until(bus, shutdown_rx), flow);
+            daemon?;
+            result
+        }),
+    )
     .await?
 }

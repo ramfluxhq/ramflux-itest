@@ -1052,13 +1052,12 @@ pub(crate) fn start_s8_realnet_compose_project_with_env_and_federation_compio(
         ramflux_protocol::encode_base64url(node_signing_seed),
     ));
     ensure_itest_node_service_signing_seed_env(&mut env);
-    if extra_env.iter().any(|(key, value)| key == "RAMFLUX_CUSTODY_ITEST_ENABLE" && value == "1") {
-        env.extend(super::custody_node_fixture::provision(
-            &project_deploy_dir,
-            &node_id,
-            node_signing_seed,
-        )?);
-    }
+    env.extend(super::custody_node_fixture::provision_if_enabled(
+        extra_env,
+        &project_deploy_dir,
+        &node_id,
+        node_signing_seed,
+    )?);
     env.extend(extra_env.iter().cloned());
     realnet_step(
         "docker compose up",
@@ -1076,12 +1075,7 @@ pub(crate) fn start_s8_realnet_compose_project_with_env_and_federation_compio(
     )?;
     let guard =
         ComposeProjectDownGuard::new(deploy_root, project_name.to_owned(), env, federation_compio);
-    let ca_snapshot = std::env::temp_dir().join(format!(
-        "{project_name}_ca_{}_{}.pem",
-        std::process::id(),
-        std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)?.as_nanos()
-    ));
-    std::fs::copy(project_deploy_dir.join("certs/ca.pem"), &ca_snapshot)?;
+    let ca_snapshot = snapshot_node_ca(project_name, &project_deploy_dir)?;
     let gateway_url = format!("http://127.0.0.1:{}", ports.gateway_http);
     let federation_url = format!("http://127.0.0.1:{}", ports.federation_http);
     realnet_step("wait for node gateway", format!("node={node_id} url={gateway_url}"));
@@ -1106,6 +1100,20 @@ pub(crate) fn start_s8_realnet_compose_project_with_env_and_federation_compio(
         federation_mesh_endpoint: format!("{federation_dns_alias}:7443"),
         guard,
     })
+}
+
+#[cfg(all(test, feature = "realnet"))]
+fn snapshot_node_ca(
+    project_name: &str,
+    project_deploy_dir: &std::path::Path,
+) -> Result<std::path::PathBuf, Box<dyn std::error::Error>> {
+    let ca_snapshot = std::env::temp_dir().join(format!(
+        "{project_name}_ca_{}_{}.pem",
+        std::process::id(),
+        std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)?.as_nanos()
+    ));
+    std::fs::copy(project_deploy_dir.join("certs/ca.pem"), &ca_snapshot)?;
+    Ok(ca_snapshot)
 }
 
 #[cfg(all(test, feature = "realnet"))]
