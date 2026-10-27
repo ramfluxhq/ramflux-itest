@@ -98,7 +98,7 @@ fn mvp_s54_realnet_object_v3_runtime_starts_with_trust_material()
 
         let device_id = "device_s54_b";
         let device_seed = [0x5b; 32];
-        let registration = mvp_s1_identity_register_request(GatewayFrameIdentitySpec {
+        let registration = mvp_s1_identity_register_request::<1>(GatewayFrameIdentitySpec {
             principal_id: "principal_s54_b",
             device_id,
             target_delivery_id: "target_s54_b",

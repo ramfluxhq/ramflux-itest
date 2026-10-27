@@ -77,6 +77,7 @@ pub(crate) fn s13_register_rooted_device(
         session_id: &session_id,
         push_alias_hash: Some(&push_alias_hash),
         source_ip_hash: Some(&source_ip_hash),
+        principal_kind: ramflux_protocol::PrincipalKind::Human,
         proof_issued_at: now,
         proof_expires_at: now.saturating_add(i64::from(ITEST_REPLAY_TTL_SECONDS)),
         now,

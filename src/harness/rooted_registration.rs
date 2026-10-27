@@ -23,6 +23,7 @@ pub(crate) struct RootedRegistrationSpec<'a> {
     pub(crate) session_id: &'a str,
     pub(crate) push_alias_hash: Option<&'a str>,
     pub(crate) source_ip_hash: Option<&'a str>,
+    pub(crate) principal_kind: ramflux_protocol::PrincipalKind,
     pub(crate) proof_issued_at: i64,
     pub(crate) proof_expires_at: i64,
     pub(crate) now: i64,
@@ -33,7 +34,7 @@ pub(crate) fn rooted_identity_register_request(
     spec: &RootedRegistrationSpec<'_>,
 ) -> Result<ramflux_node_core::IdentityRegisterRequest, Box<dyn std::error::Error>> {
     let agreement = agreement_key(spec.device);
-    let proof = ramflux_crypto::authorize_device_branch_v2(
+    let mut proof = ramflux_crypto::authorize_device_branch_v2(
         spec.root,
         spec.device,
         ramflux_crypto::BranchAuthorization {
@@ -41,10 +42,15 @@ pub(crate) fn rooted_identity_register_request(
             capability_scope: vec![ramflux_node_core::IDENTITY_BIND_CAPABILITY.into()],
             issued_at: spec.proof_issued_at,
             expires_at: spec.proof_expires_at,
-            principal_kind: ramflux_protocol::PrincipalKind::Human,
+            principal_kind: spec.principal_kind,
             agreement_identity_public_key: agreement.public,
         },
     )?;
+    proof.proof_id = ramflux_protocol::encode_base64url(ramflux_crypto::random_32()?);
+    proof.signature = ramflux_crypto::sign_canonical_bytes_with_seed(
+        &ramflux_crypto::branch_proof_signing_bytes(&proof)?,
+        spec.root.signing_key.to_bytes(),
+    );
     let devices = spec
         .device_set
         .members
@@ -54,7 +60,7 @@ pub(crate) fn rooted_identity_register_request(
     let device_set = ramflux_crypto::sign_device_set(
         spec.root,
         ramflux_crypto::DeviceSetSigningInput {
-            principal_kind: ramflux_protocol::PrincipalKind::Human,
+            principal_kind: spec.principal_kind,
             device_set_epoch: spec.device_set.epoch,
             devices,
         },
@@ -117,10 +123,13 @@ mod tests {
             ramflux_crypto::create_device_branch("rooted-fixture", "rooted-first", 1, [0x12; 32]);
         let second =
             ramflux_crypto::create_device_branch("rooted-fixture", "rooted-second", 1, [0x13; 32]);
-        let first_request = request(&root, &first, &[&first], 1, 1_100)?;
-        let second_request = request(&root, &second, &[&first, &second], 2, 1_200)?;
+        let now = itest_now_unix_seconds();
+        let first_request = request(&root, &first, &[&first], 1, now)?;
+        let repeated_request = request(&root, &first, &[&first], 1, now)?;
+        let second_request = request(&root, &second, &[&first, &second], 2, now)?;
         let router = ramflux_node_core::RouterCore::new();
 
+        assert_ne!(first_request.proof.proof_id, repeated_request.proof.proof_id);
         router.mvp1_register_identity(&first_request)?;
         router.mvp1_register_identity(&second_request)?;
 
@@ -149,6 +158,7 @@ mod tests {
             session_id: device.device_id.as_str(),
             push_alias_hash: None,
             source_ip_hash: None,
+            principal_kind: ramflux_protocol::PrincipalKind::Human,
             proof_issued_at: now.saturating_sub(10),
             proof_expires_at: now.saturating_add(100),
             now,

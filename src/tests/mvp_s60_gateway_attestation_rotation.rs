@@ -255,7 +255,7 @@ async fn s60_flow(
     // the authoritative reachable-but-absent GET checks after recovery).
     register_mvp1_identity(
         &node.gateway_url,
-        &mvp_s1_identity_register_request(GatewayFrameIdentitySpec {
+        &mvp_s1_identity_register_request::<1>(GatewayFrameIdentitySpec {
             principal_id: S60_RAW_PRINCIPAL,
             device_id: S60_RAW_DEVICE,
             target_delivery_id: "target_s60_b",

@@ -32,24 +32,36 @@ pub(crate) fn mvp1_realnet_fixture() -> Result<Mvp1RealnetFixture, Box<dyn std::
 pub(crate) fn mvp1_register_request(
     root: &ramflux_crypto::IdentityRoot,
     device: &ramflux_crypto::DeviceBranch,
-    _root_public_key: String,
+    root_public_key: String,
     session_suffix: u64,
 ) -> Result<ramflux_node_core::IdentityRegisterRequest, Box<dyn std::error::Error>> {
-    let target = format!("target_mvp1_realnet_{session_suffix}");
-    let session = format!("session_mvp1_realnet_{session_suffix}");
-    let nonce = i64::try_from(session_suffix)?;
-    rooted_identity_register_request(&RootedRegistrationSpec {
+    let proof = ramflux_crypto::authorize_device_branch(
         root,
         device,
-        device_set: RootedDeviceSetSpec { members: &[device], epoch: device.device_epoch },
-        target_delivery_id: &target,
-        gateway_id: "ramflux-gateway",
-        session_id: &session,
-        push_alias_hash: Some("push_alias_mvp1"),
+        ramflux_node_core::IDENTITY_BIND_AUDIENCE,
+        vec![ramflux_node_core::IDENTITY_BIND_CAPABILITY.to_owned()],
+        1_760_000_000 + i64::try_from(session_suffix)?,
+        1_760_003_600 + i64::try_from(session_suffix)?,
+    )?;
+    let root_public_key_bytes = ramflux_protocol::decode_base64url(&root_public_key)?;
+    Ok(ramflux_node_core::IdentityRegisterRequest {
+        device_set: None,
+        principal_commitment: ramflux_crypto::blake3_256_base64url(
+            "ramflux.identity.root_public_key.commitment.v1",
+            &root_public_key_bytes,
+        ),
+        root_public_key,
+        branch_public_key: ramflux_protocol::encode_base64url(
+            device.signing_key.verifying_key().to_bytes(),
+        ),
+        proof,
+        target_delivery_id: format!("target_mvp1_realnet_{session_suffix}"),
+        gateway_id: "ramflux-gateway".to_owned(),
+        session_id: format!("session_mvp1_realnet_{session_suffix}"),
+        push_alias_hash: Some("push_alias_mvp1".to_owned()),
+        now: 1_760_000_010 + i64::try_from(session_suffix)?,
+        registration_pow: None,
         source_ip_hash: None,
-        proof_issued_at: 1_760_000_000 + nonce,
-        proof_expires_at: 1_760_003_600 + nonce,
-        now: 1_760_000_010 + nonce,
     })
 }
 
@@ -144,38 +156,35 @@ pub(crate) fn mvp1_named_register_request(
     session_id: &str,
     nonce: i64,
 ) -> Result<ramflux_node_core::IdentityRegisterRequest, Box<dyn std::error::Error>> {
-    mvp1_named_register_request_with_device_set(
+    let proof = ramflux_crypto::authorize_device_branch(
         root,
         device,
-        RootedDeviceSetSpec { members: &[device], epoch: device.device_epoch },
-        target_delivery_id,
-        session_id,
-        nonce,
-    )
-}
-
-#[cfg(all(test, feature = "realnet"))]
-pub(crate) fn mvp1_named_register_request_with_device_set(
-    root: &ramflux_crypto::IdentityRoot,
-    device: &ramflux_crypto::DeviceBranch,
-    device_set: RootedDeviceSetSpec<'_>,
-    target_delivery_id: &str,
-    session_id: &str,
-    nonce: i64,
-) -> Result<ramflux_node_core::IdentityRegisterRequest, Box<dyn std::error::Error>> {
-    let push_alias_hash = format!("push_alias_{session_id}");
-    rooted_identity_register_request(&RootedRegistrationSpec {
-        root,
-        device,
-        device_set,
-        target_delivery_id,
-        gateway_id: "ramflux-gateway",
-        session_id,
-        push_alias_hash: Some(&push_alias_hash),
-        source_ip_hash: None,
-        proof_issued_at: 1_760_000_000 + nonce,
-        proof_expires_at: 1_760_003_600 + nonce,
+        ramflux_node_core::IDENTITY_BIND_AUDIENCE,
+        vec![ramflux_node_core::IDENTITY_BIND_CAPABILITY.to_owned()],
+        1_760_000_000 + nonce,
+        1_760_003_600 + nonce,
+    )?;
+    let root_public_key =
+        ramflux_protocol::encode_base64url(root.signing_key.verifying_key().to_bytes());
+    let root_public_key_bytes = ramflux_protocol::decode_base64url(&root_public_key)?;
+    Ok(ramflux_node_core::IdentityRegisterRequest {
+        device_set: None,
+        principal_commitment: ramflux_crypto::blake3_256_base64url(
+            "ramflux.identity.root_public_key.commitment.v1",
+            &root_public_key_bytes,
+        ),
+        root_public_key,
+        branch_public_key: ramflux_protocol::encode_base64url(
+            device.signing_key.verifying_key().to_bytes(),
+        ),
+        proof,
+        target_delivery_id: target_delivery_id.to_owned(),
+        gateway_id: "ramflux-gateway".to_owned(),
+        session_id: session_id.to_owned(),
+        push_alias_hash: Some(format!("push_alias_{session_id}")),
         now: 1_760_000_010 + nonce,
+        registration_pow: None,
+        source_ip_hash: None,
     })
 }
 
