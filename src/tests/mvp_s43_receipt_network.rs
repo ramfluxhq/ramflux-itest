@@ -588,19 +588,10 @@ fn mvp_s43_service_file(
     compose_project: &str,
     remote_path: &str,
 ) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
-    let (mut command, _env_file) = checked_itest_compose_command("s43-read-service-file")?;
+    let (mut command, _env_file) =
+        checked_itest_compose_command("s43-read-service-file", Some(compose_project))?;
     let output = command
-        .args([
-            "-p",
-            compose_project,
-            "-f",
-            "docker-compose.itest.yml",
-            "exec",
-            "-T",
-            "ramflux-gateway",
-            "cat",
-            remote_path,
-        ])
+        .args(["exec", "-T", "ramflux-gateway", "cat", remote_path])
         .current_dir(code_root().join("ramflux/deploy"))
         .output()?;
     if !output.status.success() {
