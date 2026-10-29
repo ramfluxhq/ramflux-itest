@@ -83,15 +83,15 @@ async fn mvp_s43_assert_e2ee_receipts(
     let (bob_tx, bob_rx) = tokio::sync::watch::channel(false);
     let (charlie_tx, charlie_rx) = tokio::sync::watch::channel(false);
     let alice_server = ramflux_sdk::serve_local_bus_until(
-        ramflux_sdk::LocalBusConfig::new(&alice_socket, &alice_data),
+        crate::harness::legacy_accounts::config(&alice_socket, &alice_data),
         alice_rx,
     );
     let bob_server = ramflux_sdk::serve_local_bus_until(
-        ramflux_sdk::LocalBusConfig::new(&bob_socket, &bob_data),
+        crate::harness::legacy_accounts::config(&bob_socket, &bob_data),
         bob_rx,
     );
     let charlie_server = ramflux_sdk::serve_local_bus_until(
-        ramflux_sdk::LocalBusConfig::new(&charlie_socket, &charlie_data),
+        crate::harness::legacy_accounts::config(&charlie_socket, &charlie_data),
         charlie_rx,
     );
 

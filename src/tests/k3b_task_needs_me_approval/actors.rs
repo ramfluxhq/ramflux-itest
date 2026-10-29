@@ -49,7 +49,7 @@ pub(super) async fn create(
             prekey_http_url: None,
         },
     };
-    traced_call(bus, None, "account.create", serde_json::to_value(request)?).await
+    traced_call(bus, None, "account.itest_legacy.create", serde_json::to_value(request)?).await
 }
 pub(super) async fn wait_task(
     bus: &mut ramflux_sdk::LocalBusClient,
@@ -180,7 +180,7 @@ async fn traced_call(
     let frame = ramflux_sdk::LocalBusFrame::request(
         format!("k3b-step-{}", NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed)),
         account.map(str::to_owned),
-        if method == "account.create" { "account" } else { "task" },
+        if method == "account.itest_legacy.create" { "account" } else { "task" },
         method,
         body,
     );

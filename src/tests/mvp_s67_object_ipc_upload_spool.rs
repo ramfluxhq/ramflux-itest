@@ -366,11 +366,12 @@ async fn s67_build_rf_binary() -> Result<PathBuf, Box<dyn std::error::Error>> {
     let manifest = code_root().join("ramflux/apps/rf/Cargo.toml");
     let status = tokio::task::spawn_blocking(move || {
         std::process::Command::new("cargo")
+            .env("RAMFLUX_ITEST_BUILD", "1")
             .args([
                 "build",
                 "--quiet",
                 "--features",
-                "itest-local-mint,itest-bus-fault",
+                "itest-local-mint,itest-bus-fault,itest-memory-vault,itest-legacy-accounts",
                 "--manifest-path",
             ])
             .arg(manifest)
@@ -380,7 +381,7 @@ async fn s67_build_rf_binary() -> Result<PathBuf, Box<dyn std::error::Error>> {
     if !status.success() {
         return Err("failed to build rf binary with itest-bus-fault".into());
     }
-    Ok(code_root().join("ramflux/target/debug/rf"))
+    Ok(crate::harness::legacy_accounts::target_dir().join("debug/rf"))
 }
 
 #[cfg(feature = "realnet")]
@@ -393,7 +394,15 @@ fn s67_spawn_rf_daemon_with_env(
     let log_path = format!("{}.daemon.log", socket.trim_end_matches(".sock"));
     let stderr = std::fs::OpenOptions::new().create(true).append(true).open(&log_path)?;
     let child = tokio::process::Command::new(rf_binary)
-        .args(["--socket", socket, "daemon", "start", "--data-root", data_root])
+        .args([
+            "--socket",
+            socket,
+            "daemon",
+            "start",
+            "--itest-legacy-accounts",
+            "--data-root",
+            data_root,
+        ])
         .envs(env.iter().map(|(key, value)| (key.clone(), value.clone())))
         .env_remove("RAMFLUX_SDK_OBJECT_RELAY_LOCAL_MINT")
         .stdout(std::process::Stdio::null())

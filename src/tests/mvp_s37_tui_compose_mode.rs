@@ -41,11 +41,11 @@ async fn mvp_s37_assert_tui_compose_mode(
     let (alice_shutdown_tx, alice_shutdown_rx) = tokio::sync::watch::channel(false);
     let (bob_shutdown_tx, bob_shutdown_rx) = tokio::sync::watch::channel(false);
     let alice_server = ramflux_sdk::serve_local_bus_until(
-        ramflux_sdk::LocalBusConfig::new(&alice_socket, temp_root.join("alice/data")),
+        crate::harness::legacy_accounts::config(&alice_socket, temp_root.join("alice/data")),
         alice_shutdown_rx,
     );
     let bob_server = ramflux_sdk::serve_local_bus_until(
-        ramflux_sdk::LocalBusConfig::new(&bob_socket, temp_root.join("bob/data")),
+        crate::harness::legacy_accounts::config(&bob_socket, temp_root.join("bob/data")),
         bob_shutdown_rx,
     );
 
@@ -201,7 +201,8 @@ async fn mvp_s37_create_account(
         },
     };
     let response: ramflux_sdk::LocalBusAccountCreateResponse = serde_json::from_value(
-        bus.request(None, "account", "account.create", serde_json::to_value(request)?).await?,
+        bus.request(None, "account", "account.itest_legacy.create", serde_json::to_value(request)?)
+            .await?,
     )?;
     assert_eq!(response.local_account_id, spec.local_account_id);
     let transport = response.active_transport_kind.as_str();

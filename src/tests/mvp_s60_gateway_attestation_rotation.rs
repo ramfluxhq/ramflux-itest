@@ -1169,7 +1169,15 @@ fn s60_spawn_rf_daemon_with_env(
     env: &[(String, String)],
 ) -> Result<tokio::process::Child, Box<dyn std::error::Error>> {
     let child = tokio::process::Command::new(rf_binary)
-        .args(["--socket", socket, "daemon", "start", "--data-root", data_root])
+        .args([
+            "--socket",
+            socket,
+            "daemon",
+            "start",
+            "--itest-legacy-accounts",
+            "--data-root",
+            data_root,
+        ])
         .envs(env.iter().map(|(key, value)| (key.clone(), value.clone())))
         .env_remove("RAMFLUX_SDK_OBJECT_RELAY_LOCAL_MINT")
         .stdout(std::process::Stdio::null())

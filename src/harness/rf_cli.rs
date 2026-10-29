@@ -261,7 +261,7 @@ pub(crate) async fn mvp_s8_create_rf_account(
             "--socket",
             socket,
             "account",
-            "create",
+            "itest-legacy-create",
             "--account",
             account,
             "--principal",
@@ -307,7 +307,7 @@ pub(crate) async fn mvp_s4_build_rf_binary() -> Result<PathBuf, Box<dyn std::err
                 "build",
                 "--quiet",
                 "--features",
-                "itest-local-mint,itest-identity-proof,itest-memory-vault",
+                "itest-local-mint,itest-identity-proof,itest-memory-vault,itest-legacy-accounts",
                 "--manifest-path",
             ])
             .arg(manifest)

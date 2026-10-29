@@ -89,7 +89,7 @@ async fn mvp_s40_assert_object_resume_status(
 
     let (shutdown_tx, shutdown_rx) = tokio::sync::watch::channel(false);
     let server = ramflux_sdk::serve_local_bus_until(
-        ramflux_sdk::LocalBusConfig::new(&socket, &data_root),
+        crate::harness::legacy_accounts::config(&socket, &data_root),
         shutdown_rx,
     );
     let first_run = async {
@@ -167,7 +167,7 @@ async fn mvp_s40_assert_object_resume_status(
 
     let (restart_tx, restart_rx) = tokio::sync::watch::channel(false);
     let restarted = ramflux_sdk::serve_local_bus_until(
-        ramflux_sdk::LocalBusConfig::new(&socket, &data_root),
+        crate::harness::legacy_accounts::config(&socket, &data_root),
         restart_rx,
     );
     let resumed_flow = async {

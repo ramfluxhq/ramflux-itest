@@ -19,8 +19,8 @@ pub(crate) async fn mvp_s4_assert_rf_cli_second_x3dh_bootstrap(
     let bob_data = temp_root.join("bob/data");
     let (alice_shutdown_tx, alice_shutdown_rx) = tokio::sync::watch::channel(false);
     let (bob_shutdown_tx, bob_shutdown_rx) = tokio::sync::watch::channel(false);
-    let alice_config = ramflux_sdk::LocalBusConfig::new(&alice_socket, alice_data.clone());
-    let bob_config = ramflux_sdk::LocalBusConfig::new(&bob_socket, bob_data.clone());
+    let alice_config = crate::harness::legacy_accounts::config(&alice_socket, alice_data.clone());
+    let bob_config = crate::harness::legacy_accounts::config(&bob_socket, bob_data.clone());
 
     let alice_server = ramflux_sdk::serve_local_bus_until(alice_config, alice_shutdown_rx);
     let bob_server = ramflux_sdk::serve_local_bus_until(bob_config, bob_shutdown_rx);

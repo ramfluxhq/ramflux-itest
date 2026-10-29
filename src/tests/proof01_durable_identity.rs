@@ -176,7 +176,7 @@ async fn create(
 ) -> TestResult<String> {
     let principal = format!("proof01-{id}");
     let target = format!("proof01-target-{id}");
-    let value=bus.request(None,"account","account.create",json!({"node_id":null,"local_account_id":id,"principal_id":principal,"principal_commitment":"","device_id":principal,"target_delivery_id":target,"account_secret":"proof01-test-secret","root_seed":root_seed,"device_seed":device_seed,"client_mode":"attended_cli","kind":"human","gateway":{"bind_addr":"0.0.0.0:0","gateway_addr":node.gateway_quic_addr.to_string(),"server_name":"localhost","ca_cert":node.ca_cert,"principal_id":principal,"device_id":principal,"target_delivery_id":target,"prekey_http_url":null}})).await?;
+    let value=bus.request(None,"account","account.itest_legacy.create",json!({"node_id":null,"local_account_id":id,"principal_id":principal,"principal_commitment":"","device_id":principal,"target_delivery_id":target,"account_secret":"proof01-test-secret","root_seed":root_seed,"device_seed":device_seed,"client_mode":"attended_cli","kind":"human","gateway":{"bind_addr":"0.0.0.0:0","gateway_addr":node.gateway_quic_addr.to_string(),"server_name":"localhost","ca_cert":node.ca_cert,"principal_id":principal,"device_id":principal,"target_delivery_id":target,"prekey_http_url":null}})).await?;
     Ok(value["principal_commitment"].as_str().ok_or("root commitment")?.into())
 }
 async fn call(

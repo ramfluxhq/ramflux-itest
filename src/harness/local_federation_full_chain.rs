@@ -71,8 +71,9 @@ pub(crate) async fn mvp_s8_assert_local_rf_federation_full_chain_no_hang()
     let (alice_shutdown_tx, alice_shutdown_rx) = tokio::sync::watch::channel(false);
     let (bob_shutdown_tx, bob_shutdown_rx) = tokio::sync::watch::channel(false);
     let alice_config =
-        ramflux_sdk::LocalBusConfig::new(&alice_socket, temp_root.join("alice/data"));
-    let bob_config = ramflux_sdk::LocalBusConfig::new(&bob_socket, temp_root.join("bob/data"));
+        crate::harness::legacy_accounts::config(&alice_socket, temp_root.join("alice/data"));
+    let bob_config =
+        crate::harness::legacy_accounts::config(&bob_socket, temp_root.join("bob/data"));
     let alice_server = ramflux_sdk::serve_local_bus_until(alice_config, alice_shutdown_rx);
     let bob_server = ramflux_sdk::serve_local_bus_until(bob_config, bob_shutdown_rx);
     let flow = async {

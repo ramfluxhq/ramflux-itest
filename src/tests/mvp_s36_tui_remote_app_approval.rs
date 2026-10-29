@@ -34,7 +34,7 @@ async fn mvp_s36_assert_tui_remote_app_approval(
     let alice_socket = temp_root.join("alice/rfd.sock");
     let (alice_shutdown_tx, alice_shutdown_rx) = tokio::sync::watch::channel(false);
     let alice_server = ramflux_sdk::serve_local_bus_until(
-        ramflux_sdk::LocalBusConfig::new(&alice_socket, temp_root.join("alice/data")),
+        crate::harness::legacy_accounts::config(&alice_socket, temp_root.join("alice/data")),
         alice_shutdown_rx,
     );
 
@@ -144,7 +144,8 @@ async fn mvp_s36_create_account(
         },
     };
     let response: ramflux_sdk::LocalBusAccountCreateResponse = serde_json::from_value(
-        bus.request(None, "account", "account.create", serde_json::to_value(request)?).await?,
+        bus.request(None, "account", "account.itest_legacy.create", serde_json::to_value(request)?)
+            .await?,
     )?;
     assert_eq!(response.local_account_id, "alice_s4_account");
     Ok(())

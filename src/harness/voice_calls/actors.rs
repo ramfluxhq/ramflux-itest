@@ -5,13 +5,22 @@
 use super::*;
 pub(super) async fn binary() -> VoiceResult<PathBuf> {
     let manifest = code_root().join("ramflux/apps/rf/Cargo.toml");
-    let target = code_root().join("ramflux/target");
+    let target = std::env::var_os("CARGO_TARGET_DIR")
+        .map_or_else(|| code_root().join("ramflux/target"), PathBuf::from);
     let status = tokio::process::Command::new("cargo")
-        .args(["build", "--bin", "rf", "--features", "itest-local-mint", "--manifest-path"])
+        .args([
+            "build",
+            "--bin",
+            "rf",
+            "--features",
+            "itest-local-mint,itest-identity-proof,itest-memory-vault,itest-legacy-accounts",
+            "--manifest-path",
+        ])
         .arg(manifest)
         .arg("--target-dir")
         .arg(&target)
         .env_remove("CARGO_TARGET_DIR")
+        .env("RAMFLUX_ITEST_BUILD", "1")
         .status()
         .await?;
     if !status.success() {
@@ -53,7 +62,9 @@ pub(super) async fn create(
             prekey_http_url: None,
         },
     };
-    Ok(bus.request(None, "account", "account.create", serde_json::to_value(request)?).await?)
+    Ok(bus
+        .request(None, "account", "account.itest_legacy.create", serde_json::to_value(request)?)
+        .await?)
 }
 pub(super) async fn call(
     bus: &mut ramflux_sdk::LocalBusClient,

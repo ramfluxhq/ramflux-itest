@@ -121,6 +121,16 @@ pub(crate) fn client_directory_relay_environment(
     ]
 }
 
+pub(crate) fn native_client_directory_daemon_command(
+    rf_binary: &Path,
+    socket: &Path,
+    data_root: &Path,
+    ca_cert: &Path,
+    owner_principal: Option<&str>,
+) -> tokio::process::Command {
+    directory_daemon_command(rf_binary, socket, data_root, ca_cert, owner_principal, false)
+}
+
 pub(crate) fn client_directory_daemon_command(
     rf_binary: &Path,
     socket: &Path,
@@ -128,12 +138,26 @@ pub(crate) fn client_directory_daemon_command(
     ca_cert: &Path,
     owner_principal: Option<&str>,
 ) -> tokio::process::Command {
+    directory_daemon_command(rf_binary, socket, data_root, ca_cert, owner_principal, true)
+}
+
+fn directory_daemon_command(
+    rf_binary: &Path,
+    socket: &Path,
+    data_root: &Path,
+    ca_cert: &Path,
+    owner_principal: Option<&str>,
+    legacy: bool,
+) -> tokio::process::Command {
     let mut command = tokio::process::Command::new(rf_binary);
     command
         .arg("--socket")
         .arg(socket)
         .args(["daemon", "start", "--itest-memory-vault", "--data-root"])
         .arg(data_root);
+    if legacy {
+        command.arg("--itest-legacy-accounts");
+    }
     // Bob's owner lineage must come from Alice's signed attachment, never the parent's environment.
     for key in [
         "RAMFLUX_SDK_OBJECT_RELAY_LOCAL_MINT",
@@ -161,6 +185,19 @@ pub(crate) fn client_directory_daemon_command(
 #[cfg(test)]
 mod issuer_tests {
     use super::*;
+
+    #[test]
+    fn native_daemons_keep_legacy_fixture_creation_disabled() {
+        let binary = Path::new("fixture-rf");
+        let socket = Path::new("fixture.sock");
+        let data = Path::new("fixture-data");
+        let ca = Path::new("fixture-ca.pem");
+        let native = native_client_directory_daemon_command(binary, socket, data, ca, None);
+        let legacy = client_directory_daemon_command(binary, socket, data, ca, None);
+        assert!(!native.as_std().get_args().any(|arg| arg == "--itest-legacy-accounts"));
+        assert!(legacy.as_std().get_args().any(|arg| arg == "--itest-legacy-accounts"));
+        assert!(native.as_std().get_args().any(|arg| arg == "--itest-memory-vault"));
+    }
 
     #[test]
     fn relay_environment_sets_address_server_name_and_ca_before_daemon_start() {

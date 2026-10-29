@@ -126,8 +126,9 @@ pub(super) async fn create(
     let mut request = serde_json::to_value(request)?;
     request["label"] = json!(format!("Profile {id}"));
     request["kind"] = json!("human");
-    let response =
-        bus.request(None, "account", "account.create", serde_json::to_value(request)?).await?;
+    let response = bus
+        .request(None, "account", "account.itest_legacy.create", serde_json::to_value(request)?)
+        .await?;
     assert_eq!(response["local_account_id"], id);
     Ok(response)
 }

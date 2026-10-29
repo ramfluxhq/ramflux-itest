@@ -55,12 +55,13 @@ async fn mvp_s30_assert_account_backup_restore(
     let (alice_restore_shutdown_tx, alice_restore_shutdown_rx) = tokio::sync::watch::channel(false);
     let (bob_shutdown_tx, bob_shutdown_rx) = tokio::sync::watch::channel(false);
     let alice_config =
-        ramflux_sdk::LocalBusConfig::new(&alice_socket, temp_root.join("alice/data"));
-    let alice_restore_config = ramflux_sdk::LocalBusConfig::new(
+        crate::harness::legacy_accounts::config(&alice_socket, temp_root.join("alice/data"));
+    let alice_restore_config = crate::harness::legacy_accounts::config(
         &alice_restore_socket,
         temp_root.join("alice_restore/data"),
     );
-    let bob_config = ramflux_sdk::LocalBusConfig::new(&bob_socket, temp_root.join("bob/data"));
+    let bob_config =
+        crate::harness::legacy_accounts::config(&bob_socket, temp_root.join("bob/data"));
 
     let alice_server = ramflux_sdk::serve_local_bus_until(alice_config, alice_shutdown_rx);
     let alice_restore_server =

@@ -349,8 +349,9 @@ pub(crate) async fn mvp_s3_assert_daemon_bus_account_create_dm(
     let (alice_shutdown_tx, alice_shutdown_rx) = tokio::sync::watch::channel(false);
     let (bob_shutdown_tx, bob_shutdown_rx) = tokio::sync::watch::channel(false);
     let alice_config =
-        ramflux_sdk::LocalBusConfig::new(&alice_socket, temp_root.join("alice/data"));
-    let bob_config = ramflux_sdk::LocalBusConfig::new(&bob_socket, temp_root.join("bob/data"));
+        crate::harness::legacy_accounts::config(&alice_socket, temp_root.join("alice/data"));
+    let bob_config =
+        crate::harness::legacy_accounts::config(&bob_socket, temp_root.join("bob/data"));
 
     let alice_server = ramflux_sdk::serve_local_bus_until(alice_config, alice_shutdown_rx);
     let bob_server = ramflux_sdk::serve_local_bus_until(bob_config, bob_shutdown_rx);
@@ -494,7 +495,12 @@ pub(crate) async fn mvp_s3_create_alice_account(
     let alice_create = mvp_s3_account_create_request(config, MvpS3AccountSpec::alice());
     let alice_created: ramflux_sdk::LocalBusAccountCreateResponse = serde_json::from_value(
         alice_bus
-            .request(None, "account", "account.create", serde_json::to_value(alice_create)?)
+            .request(
+                None,
+                "account",
+                "account.itest_legacy.create",
+                serde_json::to_value(alice_create)?,
+            )
             .await?,
     )?;
     assert_eq!(alice_created.client_mode, ramflux_sdk::LocalBusClientMode::AttendedCli);
@@ -514,7 +520,12 @@ pub(crate) async fn mvp_s3_create_bob_account(
     let bob_create = mvp_s3_account_create_request(config, MvpS3AccountSpec::bob());
     let bob_created: ramflux_sdk::LocalBusAccountCreateResponse = serde_json::from_value(
         bob_bus
-            .request(None, "account", "account.create", serde_json::to_value(bob_create)?)
+            .request(
+                None,
+                "account",
+                "account.itest_legacy.create",
+                serde_json::to_value(bob_create)?,
+            )
             .await?,
     )?;
     assert_eq!(bob_created.target_delivery_id, "target_s3_bob");
@@ -556,7 +567,12 @@ pub(crate) async fn mvp_s3_assert_offline_resume_catchup(
     let carol_create = mvp_s3_account_create_request(config, MvpS3AccountSpec::carol_offline());
     let carol_created: ramflux_sdk::LocalBusAccountCreateResponse = serde_json::from_value(
         bob_bus
-            .request(None, "account", "account.create", serde_json::to_value(carol_create)?)
+            .request(
+                None,
+                "account",
+                "account.itest_legacy.create",
+                serde_json::to_value(carol_create)?,
+            )
             .await?,
     )?;
     assert_eq!(carol_created.target_delivery_id, "target_s3_carol_offline");
