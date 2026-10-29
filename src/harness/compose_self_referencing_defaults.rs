@@ -19,9 +19,14 @@ use std::path::{Path, PathBuf};
 /// default. Keys the harness already derives elsewhere (node id, signing seed, federation and
 /// relay trust material) are not repeated here.
 pub(super) const COMPOSE_FIXTURE_DEFAULTS: &[(&str, &str)] = &[
+    ("RAMFLUX_CUSTODY_AUTHENTICATED_POOL", ""),
+    ("RAMFLUX_CUSTODY_AUTH_TIMEOUT_MS", ""),
+    ("RAMFLUX_CUSTODY_GATEWAY_A_SIGNING_SEED", ""),
+    ("RAMFLUX_CUSTODY_GATEWAY_B_SIGNING_SEED", ""),
+    ("RAMFLUX_CUSTODY_HANDSHAKE_POOL", ""),
     ("RAMFLUX_CUSTODY_NODE_PUBLIC_KEY", ""),
-    ("RAMFLUX_CUSTODY_PROXY_SIGNING_SEED", ""),
     ("RAMFLUX_CUSTODY_NODE_RECORD_FILE", ""),
+    ("RAMFLUX_CUSTODY_PROXY_SIGNING_SEED", ""),
     // docker-compose.itest.yml: every service
     ("RAMFLUX_ITEST_PERF", "0"),
     // docker-compose.itest.yml + docker-compose.itest.cross-gateway.yml: gateway
