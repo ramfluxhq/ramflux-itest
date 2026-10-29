@@ -1,0 +1,10 @@
+# Native identity authority supplied by the test node's independently signed discovery identity.
+services:
+  ramflux-gateway:
+    environment:
+      RAMFLUX_CUSTODY_NODE_PUBLIC_KEY: "${RAMFLUX_CUSTODY_NODE_PUBLIC_KEY}"
+      RAMFLUX_CUSTODY_PROXY_SIGNING_SEED: "${RAMFLUX_CUSTODY_PROXY_SIGNING_SEED}"
+  ramflux-router:
+    environment:
+      RAMFLUX_CUSTODY_NODE_PUBLIC_KEY: "${RAMFLUX_CUSTODY_NODE_PUBLIC_KEY}"
+      RAMFLUX_CUSTODY_NODE_RECORD_FILE: "${RAMFLUX_CUSTODY_NODE_RECORD_FILE}"

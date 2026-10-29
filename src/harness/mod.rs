@@ -3,6 +3,14 @@
 
 #![allow(unused_imports)]
 mod device_identity_fixture;
+#[cfg(all(test, feature = "realnet"))]
+mod native_accounts;
+#[cfg(all(test, feature = "realnet"))]
+mod native_backup;
+#[cfg(all(test, feature = "realnet"))]
+pub(crate) use native_accounts::*;
+#[cfg(all(test, feature = "realnet"))]
+pub(crate) use native_backup::*;
 mod node_prebuild;
 #[path = "rooted_registration.rs"]
 pub(crate) mod rooted_registration;

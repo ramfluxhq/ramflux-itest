@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (c) 2026 Span Brain
 
-//! Production daemon registration, complete-set device addition and peer-side signed revocation.
+//! Native daemon registration, explicit phrase promotion and peer-side signed revocation.
 #![cfg(feature = "realnet")]
 use super::*;
 use serde_json::{Value, json};
@@ -46,11 +46,17 @@ fn id01_realnet_root_bound_device_add_revoke() -> TestResult {
     )?;
     tokio::runtime::Builder::new_current_thread().enable_all().build()?.block_on(run(&stack.node))
 }
+
 async fn run(node: &S8RealnetNode) -> TestResult {
     wait_relay_quic_healthy("127.0.0.1:65475", "ramflux-relay", &node.ca_cert).await?;
     wait_for_private_gateway_quic(node.gateway_quic_addr, &node.ca_cert).await?;
     let root = temp_root("id01")?;
-    let sockets = [root.join("a.sock"), root.join("b.sock")];
+    let sockets = [root.join("a.sock"), root.join("b.sock"), root.join("replacement.sock")];
+    let profiles = root.join("native-nodes.json");
+    std::fs::write(
+        &profiles,
+        serde_json::to_vec(&[native_node_profile(node, "127.0.0.1:65475")?])?,
+    )?;
     let binary = mvp_s4_build_rf_binary().await?;
     let mut children = Vec::new();
     for (index, socket) in sockets.iter().enumerate() {
@@ -61,36 +67,11 @@ async fn run(node: &S8RealnetNode) -> TestResult {
             &node.ca_cert,
             None,
         );
+        command.arg("--builtin-nodes").arg(&profiles);
         command.env("RAMFLUX_SDK_RELAY_QUIC_ADDR", "127.0.0.1:65475");
         children.push(command.spawn()?);
     }
-    let result=tokio::time::timeout(Duration::from_secs(180),async {
-        for socket in &sockets { mvp_s4_wait_for_socket(socket).await?; }
-        let mut a=ramflux_sdk::LocalBusClient::connect(&sockets[0]).await?;
-        let mut b=ramflux_sdk::LocalBusClient::connect(&sockets[1]).await?;
-        let alice=create(&mut a,node,"alice",[0x41;32],[0x42;32]).await?;
-        let bob=create(&mut b,node,"bob",[0x51;32],[0x52;32]).await?;
-        for (bus,id,owner,peer) in [(&mut a,"alice",&alice,&bob),(&mut b,"bob",&bob,&alice)] {
-            call(bus,id,"contact.add",json!({"link_id":format!("id01-{id}"),"requester_id":owner["principal_commitment"],"target_id":peer["principal_commitment"]})).await?;
-        }
-        let original=call(&mut b,"bob","device.refresh",json!({"principal_commitment":alice["principal_commitment"]})).await?;
-        assert_eq!(original["device_set_epoch"],1);assert_eq!(original["kind_asserted"],"human");assert_eq!(original["kind_verified"],true);assert_eq!(original["safety_kind_verified"],false);
-        let second_seed=[0x43u8;32];
-        call(&mut a,"alice","device.activate",json!({"device_id":"id01-alice-two","target_delivery_id":"id01-target-alice-two","device_seed":second_seed,"device_epoch":1})).await?;
-        let added=call(&mut b,"bob","device.refresh",json!({"principal_commitment":alice["principal_commitment"]})).await?;
-        assert_eq!(added["device_set_epoch"],2);assert_eq!(added["devices"].as_array().map(Vec::len),Some(2));
-        let sent=send(&mut b,&bob,&alice,"id01-before-revoke").await?;
-        assert!(serde_json::to_string(&sent)?.contains("id01-before-revoke"));
-        let revoked=call(&mut a,"alice","device.revoke",json!({"device_id":"id01-alice-two"})).await?;
-        assert_eq!(revoked["revoked"],true);assert_eq!(revoked["device_set_epoch"],3);
-        let observed=call(&mut b,"bob","device.refresh",json!({"principal_commitment":alice["principal_commitment"]})).await?;
-        assert_eq!(observed["device_set_epoch"],3);
-        let tombstone=observed["devices"].as_array().and_then(|d|d.iter().find(|d|d["device_id"]=="id01-alice-two")).ok_or("signed tombstone missing")?;
-        assert_eq!(tombstone["status"],"revoked");assert!(tombstone["revoked_at"].as_i64().is_some());
-        assert!(send(&mut b,&bob,&alice,"id01-after-revoke").await.is_err());
-        realnet_step("ID-01 peer revocation enforced",format!("root={} epoch=3 revoked=id01-alice-two",alice["principal_commitment"]));
-        Ok::<_,Box<dyn std::error::Error>>(())
-    }).await;
+    let result = tokio::time::timeout(Duration::from_secs(180), flow(node, &sockets, &root)).await;
     for child in &mut children {
         let _ = child.start_kill();
         let _ = child.wait().await;
@@ -99,21 +80,109 @@ async fn run(node: &S8RealnetNode) -> TestResult {
     result??;
     Ok(())
 }
-async fn create(
-    bus: &mut ramflux_sdk::LocalBusClient,
-    node: &S8RealnetNode,
-    id: &str,
-    root_seed: [u8; 32],
-    device_seed: [u8; 32],
-) -> TestResult<Value> {
-    let principal = format!("id01-{id}");
-    let device = format!("id01-{id}-one");
-    let target = format!("id01-target-{id}-one");
-    let body = json!({"node_id":null,"local_account_id":id,"principal_id":principal,"principal_commitment":"","device_id":device,"target_delivery_id":target,"account_secret":"id01-test-secret","root_seed":root_seed,"device_seed":device_seed,"client_mode":"attended_cli","kind":"human","gateway":{"bind_addr":"0.0.0.0:0","gateway_addr":node.gateway_quic_addr.to_string(),"server_name":"localhost","ca_cert":node.ca_cert,"principal_id":principal,"device_id":device,"target_delivery_id":target,"prekey_http_url":null}});
-    let value = bus.request(None, "account", "account.create", body).await?;
-    assert_eq!(value["local_account_id"], id);
-    Ok(value)
+
+async fn flow(node: &S8RealnetNode, sockets: &[PathBuf; 3], root: &Path) -> TestResult {
+    for socket in sockets {
+        mvp_s4_wait_for_socket(socket).await?;
+    }
+    let mut a = ramflux_sdk::LocalBusClient::connect(&sockets[0]).await?;
+    let mut b = ramflux_sdk::LocalBusClient::connect(&sockets[1]).await?;
+    let mut replacement = ramflux_sdk::LocalBusClient::connect(&sockets[2]).await?;
+    for bus in [&mut a, &mut b, &mut replacement] {
+        select_native_node(bus, &node.node_id).await?;
+    }
+    let alice = create_native_account(&sockets[0], "Alice").await?;
+    let bob = create_native_account(&sockets[1], "Bob").await?;
+    call(&mut a, &alice.account_id, "contact.add", json!({"principal_id":bob.principal_id}))
+        .await?;
+    call(&mut b, &bob.account_id, "contact.accept", json!({"principal_id":alice.principal_id}))
+        .await?;
+    let original = call(
+        &mut b,
+        &bob.account_id,
+        "device.refresh",
+        json!({"principal_commitment":alice.anchor}),
+    )
+    .await?;
+    assert_eq!(original["device_set_epoch"], (1_u64 << 32) + 1);
+    assert_eq!(original["kind_asserted"], "human");
+    assert_eq!(original["kind_verified"], true);
+    assert_eq!(original["safety_kind_verified"], false);
+    send(&mut b, &bob, &alice.anchor, &alice.device_id, &alice.delivery_id, "id01-before-recovery")
+        .await?;
+    history(&mut a, &alice.account_id, "id01-before-recovery").await?;
+    let archive = root.join("alice.rfbackup");
+    create_native_backup(&mut a, &alice.account_id, &archive).await?;
+    let id = restore_native_backup(&mut replacement, &archive, true).await?;
+    call(&mut replacement, &id, "account.unlock", json!({"passphrase":NATIVE_RESTORED_PASSPHRASE}))
+        .await?;
+    let pending = call(&mut replacement, &id, "account.status", json!({})).await?;
+    assert_eq!(pending["networking"], "networking_pending");
+    assert_ne!(pending["device_id"], alice.device_id);
+    let refusal = replacement
+        .request_frame_response(ramflux_sdk::LocalBusFrame::request(
+            "pending-receive",
+            Some(id.clone()),
+            "message",
+            "message.receive",
+            json!({"limit":1,"conversation_id":null,"auto_fetch_attachments":false}),
+        ))
+        .await?;
+    assert_eq!(refusal.error.as_ref().map(|error| error.code.as_str()), Some("NetworkingPending"));
+    // SAS pairing is separate. Explicit phrase recovery promotes the replacement and retires A.
+    let recovered =
+        recover_native_account(&sockets[2], &id, &alice, NATIVE_RESTORED_PASSPHRASE).await?;
+    assert_eq!(recovered.networking, ramflux_sdk::custody::CreationState::Live);
+    history(&mut replacement, &id, "id01-before-recovery").await?;
+    assert_replacement(&mut a, &mut b, &mut replacement, &alice, &bob, &id).await
 }
+
+async fn assert_replacement(
+    a: &mut ramflux_sdk::LocalBusClient,
+    b: &mut ramflux_sdk::LocalBusClient,
+    replacement: &mut ramflux_sdk::LocalBusClient,
+    alice: &NativeAccount,
+    bob: &NativeAccount,
+    id: &str,
+) -> TestResult {
+    let observed =
+        call(b, &bob.account_id, "device.refresh", json!({"principal_commitment":alice.anchor}))
+            .await?;
+    assert_eq!(observed["device_set_epoch"], (2_u64 << 32) + 1);
+    let devices = observed["devices"].as_array().ok_or("native roster missing")?;
+    assert_eq!(devices.len(), 2);
+    let retired = devices
+        .iter()
+        .find(|device| device["device_id"] == alice.device_id)
+        .ok_or("signed old-branch tombstone missing")?;
+    assert_eq!(retired["status"], "revoked");
+    assert!(retired["revoked_at"].as_u64().is_some());
+    assert!(
+        send(b, bob, &alice.anchor, &alice.device_id, &alice.delivery_id, "id01-retired-target")
+            .await
+            .is_err()
+    );
+    // A still has its old local credential: the current authority must refuse its new traffic.
+    assert!(
+        send(a, alice, &bob.anchor, &bob.device_id, &bob.delivery_id, "id01-retired-signer")
+            .await
+            .is_err()
+    );
+    let current = call(replacement, id, "account.status", json!({})).await?;
+    assert_eq!(current["networking"], "live");
+    send(
+        b,
+        bob,
+        &alice.anchor,
+        current["device_id"].as_str().ok_or("replacement branch missing")?,
+        current["target_delivery_id"].as_str().ok_or("replacement route missing")?,
+        "id01-after-recovery",
+    )
+    .await?;
+    history(replacement, id, "id01-after-recovery").await?;
+    Ok(())
+}
+
 async fn call(
     bus: &mut ramflux_sdk::LocalBusClient,
     account: &str,
@@ -124,11 +193,47 @@ async fn call(
         .request(Some(account.into()), method.split('.').next().ok_or("method")?, method, body)
         .await?)
 }
+
 async fn send(
     bus: &mut ramflux_sdk::LocalBusClient,
-    bob: &Value,
-    alice: &Value,
+    owner: &NativeAccount,
+    anchor: &str,
+    device: &str,
+    delivery: &str,
     id: &str,
 ) -> TestResult<Value> {
-    call(bus,"bob","message.submit",json!({"conversation_id":"id01-thread","message_id":id,"envelope_id":id,"source_principal_id":bob["principal_id"],"sender_id":bob["device_id"],"recipient_device_id":"id01-alice-two","recipient_principal_commitment":alice["principal_commitment"],"target_delivery_id":"id01-target-alice-two","encrypted_body_base64":"","plaintext_body_base64":ramflux_protocol::encode_base64url(b"root-authorized device traffic"),"created_at":realnet_now_i64(),"ttl":600})).await
+    call(
+        bus,
+        &owner.account_id,
+        "message.submit",
+        json!({
+            "conversation_id":"id01-thread", "message_id":id, "envelope_id":id,
+            "source_principal_id":owner.principal_id, "sender_id":owner.device_id,
+            "recipient_device_id":device, "recipient_principal_commitment":anchor,
+            "target_delivery_id":delivery,"encrypted_body_base64":"",
+            "plaintext_body_base64":ramflux_protocol::encode_base64url(b"native device traffic"),
+            "created_at":realnet_now_i64(), "ttl":600
+        }),
+    )
+    .await
+}
+
+async fn history(
+    bus: &mut ramflux_sdk::LocalBusClient,
+    account: &str,
+    message: &str,
+) -> TestResult {
+    for _ in 0..100 {
+        let rows =
+            call(bus, account, "message.read", json!({"conversation_id":"id01-thread"})).await?;
+        if let Some(row) = rows["messages"]
+            .as_array()
+            .and_then(|rows| rows.iter().find(|row| row["message_id"] == message))
+        {
+            assert_eq!(row["body_utf8"], "native device traffic");
+            return Ok(());
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    Err("native device traffic was not received".into())
 }
