@@ -102,13 +102,29 @@ impl Drop for ContactFailureLogs<'_> {
 async fn rf(binary: &Path, socket: &Path, args: &[&str]) -> TestResult<Value> {
     let mut all = vec!["--socket", socket.to_str().ok_or("socket path")?];
     all.extend_from_slice(args);
-    eprintln!("STEP: contact01 rf begin args={args:?}");
+    let shown_args = public_args(args);
+    realnet_step("contact01 rf begin", format!("args={shown_args:?}"));
     let result = mvp_s10_rf_json(binary, &all, "contact01").await;
     match &result {
-        Ok(value) => eprintln!("STEP: contact01 rf ok args={args:?} response={value}"),
-        Err(error) => eprintln!("STEP: contact01 rf failed args={args:?} error={error}"),
+        Ok(value) => {
+            realnet_step("contact01 rf ok", format!("args={shown_args:?} response={value}"));
+        }
+        Err(error) => {
+            realnet_step("contact01 rf failed", format!("args={shown_args:?} error={error}"));
+        }
     }
     result
+}
+fn public_args(args: &[&str]) -> Vec<String> {
+    let mut redact = false;
+    args.iter()
+        .map(|argument| {
+            let shown = if redact { "<redacted>" } else { argument };
+            redact =
+                matches!(*argument, "--secret" | "--root-seed-byte-hex" | "--device-seed-byte-hex");
+            shown.to_owned()
+        })
+        .collect()
 }
 async fn configure(binary: &Path, socket: &Path, origin: &str) -> TestResult {
     rf(binary, socket, &["node", "add", origin]).await?;
@@ -133,19 +149,72 @@ async fn call(
     method: &str,
     body: Value,
 ) -> TestResult<Value> {
-    eprintln!("STEP: contact01 call begin account={id} method={method} body={body}");
+    realnet_step("contact01 call begin", format!("account={id} method={method} body={body}"));
+    let started = std::time::Instant::now();
     match bus.request(Some(id.into()), "contact01", method, body).await {
         Ok(value) => {
+            if method == "identity.directory" {
+                for (index, row) in value["identities"].as_array().into_iter().flatten().enumerate()
+                {
+                    realnet_step(
+                        "contact01 identity.directory row",
+                        format!(
+                            "account={id} index={index} elapsed_us={} row={}",
+                            started.elapsed().as_micros(),
+                            public_identity_row(row),
+                        ),
+                    );
+                }
+            }
             let response = value.to_string();
             let shown = response.get(..response.floor_char_boundary(1024)).unwrap_or_default();
-            eprintln!("STEP: contact01 call ok account={id} method={method} response={shown}");
+            realnet_step(
+                "contact01 call ok",
+                format!("account={id} method={method} response={shown}"),
+            );
             Ok(value)
         }
         Err(error) => {
-            eprintln!("STEP: contact01 call failed account={id} method={method} error={error}");
+            realnet_step(
+                "contact01 call failed",
+                format!("account={id} method={method} error={error}"),
+            );
             Err(error.into())
         }
     }
+}
+fn public_identity_row(row: &Value) -> Value {
+    let fields = [
+        "id",
+        "principal_id",
+        "display_name",
+        "kind",
+        "is_self",
+        "principal_commitment",
+        "contact_identity_commitment",
+        "devices",
+        "safety_state",
+        "safety_number",
+        "safety_number_available",
+        "kind_verified",
+        "kind_asserted",
+        "reachable",
+        "verified",
+        "display_name_confusable_with",
+        "mixed_script",
+        "root_commitment",
+        "root_source",
+        "node",
+        "pair_recovery",
+        "device_set_epoch",
+        "device_set_hash",
+    ];
+    Value::Object(
+        fields
+            .into_iter()
+            .filter_map(|field| row.get(field).map(|value| (field.to_owned(), value.clone())))
+            .collect(),
+    )
 }
 async fn identity(
     bus: &mut ramflux_sdk::LocalBusClient,
