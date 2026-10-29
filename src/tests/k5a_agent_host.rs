@@ -68,7 +68,7 @@ async fn run(node: &S8RealnetNode, surface_case: bool) -> TestResult {
     let rf = build::binary(
         "rf",
         &code_root().join("ramflux/apps/rf/Cargo.toml"),
-        Some("itest-local-mint,itest-identity-proof,itest-memory-vault,itest-legacy-accounts"),
+        Some("itest-local-mint,itest-memory-vault,itest-legacy-accounts"),
     )
     .await?;
     let binary =

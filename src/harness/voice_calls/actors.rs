@@ -13,7 +13,7 @@ pub(super) async fn binary() -> VoiceResult<PathBuf> {
             "--bin",
             "rf",
             "--features",
-            "itest-local-mint,itest-identity-proof,itest-memory-vault,itest-legacy-accounts",
+            "itest-local-mint,itest-memory-vault,itest-legacy-accounts",
             "--manifest-path",
         ])
         .arg(manifest)
