@@ -1032,15 +1032,10 @@ fn s29_connect_container_to_network(
 
 #[cfg(feature = "realnet")]
 fn s29_find_federation_container(project_name: &str) -> Result<String, Box<dyn std::error::Error>> {
-    for runtime in ["podman", "docker"] {
-        let output =
-            std::process::Command::new(runtime).args(["ps", "--format", "{{.Names}}"]).output();
-        let Ok(output) = output else {
-            continue;
-        };
-        if !output.status.success() {
-            continue;
-        }
+    let output = std::process::Command::new(container_runtime()?)
+        .args(["ps", "--format", "{{.Names}}"])
+        .output()?;
+    if output.status.success() {
         let names = String::from_utf8(output.stdout)?;
         if let Some(name) = names.lines().find(|name| {
             name.contains(project_name)
@@ -1054,18 +1049,11 @@ fn s29_find_federation_container(project_name: &str) -> Result<String, Box<dyn s
 
 #[cfg(feature = "realnet")]
 fn s29_run_container_runtime(args: &[&str]) -> Result<(), Box<dyn std::error::Error>> {
-    let mut last_error = String::new();
-    for runtime in ["podman", "docker"] {
-        let status = std::process::Command::new(runtime).args(args).status();
-        match status {
-            Ok(status) if status.success() => return Ok(()),
-            Ok(status) => {
-                last_error = format!("{runtime} {args:?} failed with {status}");
-            }
-            Err(error) => {
-                last_error = format!("{runtime} {args:?} failed: {error}");
-            }
-        }
+    let runtime = container_runtime()?;
+    let status = std::process::Command::new(runtime).args(args).status()?;
+    if status.success() {
+        Ok(())
+    } else {
+        Err(format!("{runtime} {args:?} failed with {status}").into())
     }
-    Err(last_error.into())
 }

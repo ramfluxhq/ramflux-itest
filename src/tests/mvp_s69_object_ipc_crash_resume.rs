@@ -761,7 +761,7 @@ fn s69_container(service: &str) -> String {
 #[cfg(feature = "realnet")]
 fn s69_reset_capture() -> Result<(), Box<dyn std::error::Error>> {
     let container = s69_container("ramflux-relay");
-    let output = std::process::Command::new(container_runtime())
+    let output = std::process::Command::new(container_runtime()?)
         .args(["exec", &container, "rm", "-f", S69_CAPTURE_PATH])
         .output()?;
     if !output.status.success() {
@@ -777,7 +777,7 @@ fn s69_reset_capture() -> Result<(), Box<dyn std::error::Error>> {
 #[cfg(feature = "realnet")]
 fn s69_read_capture() -> Result<Vec<S69CaptureLine>, Box<dyn std::error::Error>> {
     let container = s69_container("ramflux-relay");
-    let output = std::process::Command::new(container_runtime())
+    let output = std::process::Command::new(container_runtime()?)
         .args([
             "exec",
             &container,
@@ -825,8 +825,12 @@ fn s69_assert_no_double_mutation(
 
 #[cfg(feature = "realnet")]
 fn s69_container_logs(service: &str) -> String {
+    let runtime = match container_runtime() {
+        Ok(runtime) => runtime,
+        Err(error) => return format!("container runtime unavailable: {error}"),
+    };
     let container = s69_container(service);
-    std::process::Command::new(container_runtime()).args(["logs", &container]).output().map_or_else(
+    std::process::Command::new(runtime).args(["logs", &container]).output().map_or_else(
         |error| format!("failed to collect {service} logs: {error}"),
         |output| {
             format!(

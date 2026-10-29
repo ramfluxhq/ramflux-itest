@@ -646,7 +646,7 @@ fn s62_recreate_relay_env(
 #[cfg(feature = "realnet")]
 fn s62_read_capture() -> Result<Vec<S62CaptureLine>, Box<dyn std::error::Error>> {
     let container = s62_container("ramflux-relay");
-    let output = std::process::Command::new(container_runtime())
+    let output = std::process::Command::new(container_runtime()?)
         .args(["exec", &container, "cat", S62_CAPTURE_PATH])
         .output()?;
     if !output.status.success() {
@@ -669,7 +669,7 @@ fn s62_read_capture() -> Result<Vec<S62CaptureLine>, Box<dyn std::error::Error>>
 #[cfg(feature = "realnet")]
 fn s62_reset_capture() -> Result<(), Box<dyn std::error::Error>> {
     let container = s62_container("ramflux-relay");
-    let output = std::process::Command::new(container_runtime())
+    let output = std::process::Command::new(container_runtime()?)
         .args(["exec", &container, "rm", "-f", S62_CAPTURE_PATH])
         .output()?;
     if !output.status.success() {
@@ -762,13 +762,13 @@ fn s62_container(service: &str) -> String {
 #[cfg(feature = "realnet")]
 fn s62_kill_relay() -> Result<(), Box<dyn std::error::Error>> {
     let container = s62_container("ramflux-relay");
-    let output = std::process::Command::new(container_runtime())
+    let output = std::process::Command::new(container_runtime()?)
         .args(["kill", "--signal", "KILL", &container])
         .output()?;
     if !output.status.success() {
         return Err(format!(
             "{} kill {container} failed: {}",
-            container_runtime(),
+            container_runtime()?,
             String::from_utf8_lossy(&output.stderr)
         )
         .into());
@@ -778,8 +778,11 @@ fn s62_kill_relay() -> Result<(), Box<dyn std::error::Error>> {
 
 #[cfg(feature = "realnet")]
 fn s62_remove_hold_marker() {
+    let Ok(runtime) = container_runtime() else {
+        return;
+    };
     let container = s62_container("ramflux-relay");
-    let _ = std::process::Command::new(container_runtime())
+    let _ = std::process::Command::new(runtime)
         .args(["exec", &container, "rm", "-f", S62_HOLD_MARKER_PATH])
         .output();
 }
@@ -788,10 +791,13 @@ fn s62_remove_hold_marker() {
 /// post-commit hold marker on the shared redb volume.
 #[cfg(feature = "realnet")]
 async fn s62_wait_hold_marker(bound: Duration) -> bool {
+    let Ok(runtime) = container_runtime() else {
+        return false;
+    };
     let container = s62_container("ramflux-relay");
     let deadline = std::time::Instant::now() + bound;
     while std::time::Instant::now() < deadline {
-        if let Ok(output) = std::process::Command::new(container_runtime())
+        if let Ok(output) = std::process::Command::new(runtime)
             .args(["exec", &container, "test", "-f", S62_HOLD_MARKER_PATH])
             .output()
             && output.status.success()
@@ -862,11 +868,11 @@ fn s62_assert_between_attempt_restart(
 fn s62_container_ctl(action: &str, service: &str) -> Result<(), Box<dyn std::error::Error>> {
     let container = s62_container(service);
     let output =
-        std::process::Command::new(container_runtime()).args([action, &container]).output()?;
+        std::process::Command::new(container_runtime()?).args([action, &container]).output()?;
     if !output.status.success() {
         return Err(format!(
             "{} {action} {container} failed: {}",
-            container_runtime(),
+            container_runtime()?,
             String::from_utf8_lossy(&output.stderr)
         )
         .into());
@@ -876,8 +882,12 @@ fn s62_container_ctl(action: &str, service: &str) -> Result<(), Box<dyn std::err
 
 #[cfg(feature = "realnet")]
 fn s62_container_logs(service: &str) -> String {
+    let runtime = match container_runtime() {
+        Ok(runtime) => runtime,
+        Err(error) => return format!("container runtime unavailable: {error}"),
+    };
     let container = s62_container(service);
-    std::process::Command::new(container_runtime()).args(["logs", &container]).output().map_or_else(
+    std::process::Command::new(runtime).args(["logs", &container]).output().map_or_else(
         |error| format!("failed to collect {service} logs: {error}"),
         |output| {
             format!(

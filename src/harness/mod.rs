@@ -2,6 +2,9 @@
 // Copyright (c) 2026 Span Brain
 
 #![allow(unused_imports)]
+mod container_runtime;
+#[cfg(feature = "realnet")]
+pub(crate) use container_runtime::container_runtime;
 mod device_identity_fixture;
 mod node_prebuild;
 #[path = "rooted_registration.rs"]

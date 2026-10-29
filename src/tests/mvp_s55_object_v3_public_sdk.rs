@@ -412,8 +412,12 @@ async fn mvp_s55_object_status(
 
 #[cfg(feature = "realnet")]
 fn mvp_s55_container_logs(service: &str) -> String {
+    let runtime = match container_runtime() {
+        Ok(runtime) => runtime,
+        Err(error) => return format!("container runtime unavailable: {error}"),
+    };
     let container = format!("ramflux-s55-object-v3-sdk_{service}_1");
-    std::process::Command::new(container_runtime()).args(["logs", &container]).output().map_or_else(
+    std::process::Command::new(runtime).args(["logs", &container]).output().map_or_else(
         |error| format!("failed to collect {service} logs: {error}"),
         |output| {
             format!(

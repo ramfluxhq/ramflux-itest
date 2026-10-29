@@ -8,7 +8,7 @@ from pathlib import Path
 import sys
 
 
-def inventory(deploy):
+def inventory(deploy, files=None):
     spec = importlib.util.spec_from_file_location(
         "product_preflight", deploy / "scripts/compose-preflight.py"
     )
@@ -16,7 +16,8 @@ def inventory(deploy):
     spec.loader.exec_module(preflight)
     reverse = {new: old for old, new in preflight.MAPPING.items()}
     entries = []
-    files = [deploy / "docker-compose.yml", *sorted(deploy.glob("docker-compose.itest*.yml"))]
+    files = ([deploy / name for name in files] if files else
+             [deploy / "docker-compose.yml", *sorted(deploy.glob("docker-compose.itest*.yml"))])
     for path in files:
         for environment in preflight.podman_environments(path.read_text()):
             for service_key, expression in environment.items():
@@ -36,4 +37,4 @@ def inventory(deploy):
 
 
 if __name__ == "__main__":
-    print(json.dumps(inventory(Path(sys.argv[1]))))
+    print(json.dumps(inventory(Path(sys.argv[1]), sys.argv[2:])))

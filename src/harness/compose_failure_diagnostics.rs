@@ -55,7 +55,7 @@ fn collect_service_logs(
     overrides: ItestComposeOverrides,
     service: &str,
 ) -> Result<std::process::Output, Box<dyn std::error::Error>> {
-    let mut command = std::process::Command::new(container_runtime());
+    let mut command = std::process::Command::new(container_runtime()?);
     command.arg("compose");
     let _env_file = add_compose_env_file_arg(&mut command, project_name, env)?;
     command.arg("-p").arg(project_name);
@@ -80,7 +80,13 @@ fn collect_service_logs(
 /// accepted noise: a readiness timeout is rare and the extra output is labelled.
 pub(crate) fn dump_service_container_logs(service_name: &str) {
     let service = compose_service_name(service_name);
-    let runtime = container_runtime();
+    let runtime = match container_runtime() {
+        Ok(runtime) => runtime,
+        Err(error) => {
+            realnet_step("service container logs unavailable", error.to_string());
+            return;
+        }
+    };
     let listing =
         std::process::Command::new(runtime).args(["ps", "-a", "--format", "{{.Names}}"]).output();
     let names = match listing {

@@ -48,7 +48,7 @@ fn t22_production_keyless_v3_compose_smoke() -> Result<(), Box<dyn std::error::E
         ]
         .contains(&key.as_str())
     });
-    let mut command = std::process::Command::new(container_runtime());
+    let mut command = std::process::Command::new(container_runtime()?);
     command.arg("compose");
     let _env_file = add_compose_env_file_arg(&mut command, "s70-negative-trust", &env)?;
     command

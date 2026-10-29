@@ -944,7 +944,7 @@ fn t22_container_logs(project: &str, service: &str) -> String {
 
 #[cfg(feature = "realnet")]
 fn t22_compose_service_container(project: &str, service: &str) -> Option<String> {
-    let output = std::process::Command::new(container_runtime())
+    let output = std::process::Command::new(container_runtime().ok()?)
         .args([
             "ps",
             "-a",
@@ -966,7 +966,11 @@ fn t22_compose_service_container(project: &str, service: &str) -> Option<String>
 
 #[cfg(feature = "realnet")]
 fn t22_logs_for_container(container: &str) -> String {
-    std::process::Command::new(container_runtime())
+    let runtime = match container_runtime() {
+        Ok(runtime) => runtime,
+        Err(error) => return format!("container runtime unavailable: {error}"),
+    };
+    std::process::Command::new(runtime)
         .args(["logs", "--tail", "200", container])
         .output()
         .map_or_else(
@@ -983,7 +987,11 @@ fn t22_logs_for_container(container: &str) -> String {
 
 #[cfg(feature = "realnet")]
 fn t22_docker_ps(project: &str) -> String {
-    std::process::Command::new(container_runtime())
+    let runtime = match container_runtime() {
+        Ok(runtime) => runtime,
+        Err(error) => return format!("container runtime unavailable: {error}"),
+    };
+    std::process::Command::new(runtime)
         .args([
             "ps",
             "-a",
@@ -1007,7 +1015,10 @@ fn t22_docker_ps(project: &str) -> String {
 
 #[cfg(feature = "realnet")]
 fn t22_docker_stats(project: &str) -> Vec<T22DockerStats> {
-    let names = std::process::Command::new(container_runtime())
+    let Ok(runtime) = container_runtime() else {
+        return Vec::new();
+    };
+    let names = std::process::Command::new(runtime)
         .args([
             "ps",
             "-a",
@@ -1026,7 +1037,7 @@ fn t22_docker_stats(project: &str) -> Vec<T22DockerStats> {
         .map(str::trim)
         .filter(|line| !line.is_empty())
         .map(|container| {
-            let stats = std::process::Command::new(container_runtime())
+            let stats = std::process::Command::new(runtime)
                 .args(["stats", "--no-stream", "--format", "{{json .}}", container])
                 .output()
                 .map_or_else(
@@ -1047,8 +1058,12 @@ fn t22_docker_stats(project: &str) -> Vec<T22DockerStats> {
 #[cfg(feature = "realnet")]
 fn t22_project_logs(project: &str) -> String {
     use std::fmt::Write as _;
+    let runtime = match container_runtime() {
+        Ok(runtime) => runtime,
+        Err(error) => return format!("container runtime unavailable: {error}"),
+    };
 
-    let names = std::process::Command::new(container_runtime())
+    let names = std::process::Command::new(runtime)
         .args([
             "ps",
             "-a",

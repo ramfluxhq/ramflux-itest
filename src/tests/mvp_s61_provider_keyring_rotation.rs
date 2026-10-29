@@ -530,7 +530,7 @@ fn s61_assert_cache(
     label: &str,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let container = s61_container("ramflux-relay");
-    let output = std::process::Command::new(container_runtime())
+    let output = std::process::Command::new(container_runtime()?)
         .args(["exec", &container, "cat", "/var/lib/ramflux/relay/trust-snapshot.json"])
         .output()?;
     if !output.status.success() {
@@ -714,11 +714,11 @@ fn s61_container(service: &str) -> String {
 fn s61_container_ctl(action: &str, service: &str) -> Result<(), Box<dyn std::error::Error>> {
     let container = s61_container(service);
     let output =
-        std::process::Command::new(container_runtime()).args([action, &container]).output()?;
+        std::process::Command::new(container_runtime()?).args([action, &container]).output()?;
     if !output.status.success() {
         return Err(format!(
             "{} {action} {container} failed: {}",
-            container_runtime(),
+            container_runtime()?,
             String::from_utf8_lossy(&output.stderr)
         )
         .into());
@@ -728,8 +728,12 @@ fn s61_container_ctl(action: &str, service: &str) -> Result<(), Box<dyn std::err
 
 #[cfg(feature = "realnet")]
 fn s61_container_logs(service: &str) -> String {
+    let runtime = match container_runtime() {
+        Ok(runtime) => runtime,
+        Err(error) => return format!("container runtime unavailable: {error}"),
+    };
     let container = s61_container(service);
-    std::process::Command::new(container_runtime()).args(["logs", &container]).output().map_or_else(
+    std::process::Command::new(runtime).args(["logs", &container]).output().map_or_else(
         |error| format!("failed to collect {service} logs: {error}"),
         |output| {
             format!(
