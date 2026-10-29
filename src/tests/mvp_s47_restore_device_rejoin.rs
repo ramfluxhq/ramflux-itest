@@ -74,15 +74,21 @@ async fn mvp_s47_assert_restore_device_rejoin(
     let (alice_restored_tx, alice_restored_rx) = tokio::sync::watch::channel(false);
     let (bob_tx, bob_rx) = tokio::sync::watch::channel(false);
     let alice_primary_server = ramflux_sdk::serve_local_bus_until(
-        ramflux_sdk::LocalBusConfig::new(&alice_primary_socket, temp_root.join("alice_a/data")),
+        crate::harness::legacy_accounts::config(
+            &alice_primary_socket,
+            temp_root.join("alice_a/data"),
+        ),
         alice_primary_rx,
     );
     let alice_restored_server = ramflux_sdk::serve_local_bus_until(
-        ramflux_sdk::LocalBusConfig::new(&alice_restored_socket, temp_root.join("alice_b/data")),
+        crate::harness::legacy_accounts::config(
+            &alice_restored_socket,
+            temp_root.join("alice_b/data"),
+        ),
         alice_restored_rx,
     );
     let bob_server = ramflux_sdk::serve_local_bus_until(
-        ramflux_sdk::LocalBusConfig::new(&bob_socket, temp_root.join("bob/data")),
+        crate::harness::legacy_accounts::config(&bob_socket, temp_root.join("bob/data")),
         bob_rx,
     );
 
@@ -400,7 +406,8 @@ async fn mvp_s47_create_account(
         },
     };
     let response: ramflux_sdk::LocalBusAccountCreateResponse = serde_json::from_value(
-        bus.request(None, "account", "account.create", serde_json::to_value(request)?).await?,
+        bus.request(None, "account", "account.itest_legacy.create", serde_json::to_value(request)?)
+            .await?,
     )?;
     let derived = ramflux_sdk::identity_root_public_key_commitment_for_seed(
         spec.principal_id,

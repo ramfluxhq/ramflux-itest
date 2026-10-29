@@ -3,6 +3,8 @@
 
 #![allow(unused_imports)]
 mod device_identity_fixture;
+#[cfg(feature = "realnet")]
+pub(crate) mod legacy_accounts;
 #[cfg(all(test, feature = "realnet"))]
 mod native_accounts;
 #[cfg(all(test, feature = "realnet"))]

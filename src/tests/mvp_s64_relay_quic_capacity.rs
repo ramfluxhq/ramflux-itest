@@ -4052,49 +4052,10 @@ fn s64_evaluate_thresholds(
 // ---- realnet infra helpers (duplicated per the per-file v3 realnet idiom) ----
 
 #[cfg(feature = "realnet")]
-fn s64_release_build() -> bool {
-    std::env::var("RAMFLUX_PERF_RELEASE").as_deref() == Ok("1")
-}
-
+#[path = "mvp_s64_relay_quic_capacity/daemon.rs"]
+mod daemon;
 #[cfg(feature = "realnet")]
-async fn s64_build_rf_binary() -> Result<PathBuf, Box<dyn std::error::Error>> {
-    let manifest = code_root().join("ramflux/apps/rf/Cargo.toml");
-    let release = s64_release_build();
-    let status = tokio::task::spawn_blocking(move || {
-        let mut command = std::process::Command::new("cargo");
-        command.args(["build", "--quiet", "--features", "itest-local-mint"]);
-        if release {
-            command.arg("--release");
-        }
-        command.arg("--manifest-path").arg(manifest).status()
-    })
-    .await??;
-    if !status.success() {
-        return Err("failed to build rf binary for s64".into());
-    }
-    let profile = if release { "release" } else { "debug" };
-    Ok(code_root().join(format!("ramflux/target/{profile}/rf")))
-}
-
-#[cfg(feature = "realnet")]
-fn s64_spawn_rf_daemon_with_env(
-    rf_binary: &Path,
-    socket: &str,
-    data_root: &str,
-    env: &[(String, String)],
-) -> Result<tokio::process::Child, Box<dyn std::error::Error>> {
-    let log_path = format!("{}.daemon.log", socket.trim_end_matches(".sock"));
-    let stderr = std::fs::OpenOptions::new().create(true).append(true).open(&log_path)?;
-    let child = tokio::process::Command::new(rf_binary)
-        .args(["--socket", socket, "daemon", "start", "--data-root", data_root])
-        .envs(env.iter().map(|(key, value)| (key.clone(), value.clone())))
-        .env_remove("RAMFLUX_SDK_OBJECT_RELAY_LOCAL_MINT")
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::from(stderr))
-        .kill_on_drop(true)
-        .spawn()?;
-    Ok(child)
-}
+use daemon::{s64_build_rf_binary, s64_release_build, s64_spawn_rf_daemon_with_env};
 
 #[cfg(feature = "realnet")]
 #[allow(clippy::too_many_arguments)]

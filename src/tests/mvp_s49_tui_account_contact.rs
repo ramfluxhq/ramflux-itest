@@ -46,11 +46,11 @@ async fn mvp_s49_assert_tui_account_switch_and_contact_add(
     let (alice_tx, alice_rx) = tokio::sync::watch::channel(false);
     let (bob_tx, bob_rx) = tokio::sync::watch::channel(false);
     let alice_server = ramflux_sdk::serve_local_bus_until(
-        ramflux_sdk::LocalBusConfig::new(&alice_socket, &alice_data),
+        crate::harness::legacy_accounts::config(&alice_socket, &alice_data),
         alice_rx,
     );
     let bob_server = ramflux_sdk::serve_local_bus_until(
-        ramflux_sdk::LocalBusConfig::new(&bob_socket, &bob_data),
+        crate::harness::legacy_accounts::config(&bob_socket, &bob_data),
         bob_rx,
     );
 

@@ -250,7 +250,15 @@ pub(crate) fn mvp_s20_spawn_rf_daemon(
     data_root: &str,
 ) -> Result<tokio::process::Child, Box<dyn std::error::Error>> {
     let child = tokio::process::Command::new(rf_binary)
-        .args(["--socket", socket, "daemon", "start", "--data-root", data_root])
+        .args([
+            "--socket",
+            socket,
+            "daemon",
+            "start",
+            "--itest-legacy-accounts",
+            "--data-root",
+            data_root,
+        ])
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null())
         .kill_on_drop(true)

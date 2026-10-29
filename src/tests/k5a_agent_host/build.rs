@@ -8,14 +8,16 @@ pub(super) async fn binary(
     manifest: &Path,
     features: Option<&str>,
 ) -> TestResult<PathBuf> {
-    let target = code_root().join("ramflux/target");
+    let target = std::env::var_os("CARGO_TARGET_DIR")
+        .map_or_else(|| code_root().join("ramflux/target"), PathBuf::from);
     let mut command = tokio::process::Command::new("cargo");
     command
         .args(["build", "--bin", name, "--manifest-path"])
         .arg(manifest)
         .arg("--target-dir")
         .arg(&target)
-        .env_remove("CARGO_TARGET_DIR");
+        .env_remove("CARGO_TARGET_DIR")
+        .env("RAMFLUX_ITEST_BUILD", "1");
     if let Some(features) = features {
         command.args(["--features", features]);
     }

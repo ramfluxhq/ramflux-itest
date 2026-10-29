@@ -51,11 +51,11 @@ async fn mvp_s39_assert_device_aware_safety_number(
     let (alice_tx, alice_rx) = tokio::sync::watch::channel(false);
     let (bob_tx, bob_rx) = tokio::sync::watch::channel(false);
     let alice_server = ramflux_sdk::serve_local_bus_until(
-        ramflux_sdk::LocalBusConfig::new(&alice_socket, temp_root.join("alice/data")),
+        crate::harness::legacy_accounts::config(&alice_socket, temp_root.join("alice/data")),
         alice_rx,
     );
     let bob_server = ramflux_sdk::serve_local_bus_until(
-        ramflux_sdk::LocalBusConfig::new(&bob_socket, temp_root.join("bob/data")),
+        crate::harness::legacy_accounts::config(&bob_socket, temp_root.join("bob/data")),
         bob_rx,
     );
 
@@ -250,7 +250,8 @@ async fn mvp_s39_create_account(
         },
     };
     let response: ramflux_sdk::LocalBusAccountCreateResponse = serde_json::from_value(
-        bus.request(None, "account", "account.create", serde_json::to_value(request)?).await?,
+        bus.request(None, "account", "account.itest_legacy.create", serde_json::to_value(request)?)
+            .await?,
     )?;
     let derived = ramflux_sdk::identity_root_public_key_commitment_for_seed(
         spec.principal_id,

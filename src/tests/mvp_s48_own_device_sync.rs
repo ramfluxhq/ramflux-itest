@@ -102,15 +102,15 @@ async fn mvp_s48_assert_own_device_sync(
     let (alice_restored_tx, alice_restored_rx) = tokio::sync::watch::channel(false);
     let (bob_tx, bob_rx) = tokio::sync::watch::channel(false);
     let alice_primary_server = ramflux_sdk::serve_local_bus_until(
-        ramflux_sdk::LocalBusConfig::new(&alice_primary_socket, &alice_primary_data),
+        crate::harness::legacy_accounts::config(&alice_primary_socket, &alice_primary_data),
         alice_primary_rx,
     );
     let alice_restored_server = ramflux_sdk::serve_local_bus_until(
-        ramflux_sdk::LocalBusConfig::new(&alice_restored_socket, &alice_restored_data),
+        crate::harness::legacy_accounts::config(&alice_restored_socket, &alice_restored_data),
         alice_restored_rx,
     );
     let bob_server = ramflux_sdk::serve_local_bus_until(
-        ramflux_sdk::LocalBusConfig::new(&bob_socket, &bob_data),
+        crate::harness::legacy_accounts::config(&bob_socket, &bob_data),
         bob_rx,
     );
 
@@ -335,7 +335,7 @@ async fn mvp_s48_create_account(
         bus.request(
             None,
             "account",
-            "account.create",
+            "account.itest_legacy.create",
             serde_json::to_value(ramflux_sdk::LocalBusAccountCreateRequest {
                 label: None,
                 kind: None,

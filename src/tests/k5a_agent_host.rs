@@ -68,7 +68,7 @@ async fn run(node: &S8RealnetNode, surface_case: bool) -> TestResult {
     let rf = build::binary(
         "rf",
         &code_root().join("ramflux/apps/rf/Cargo.toml"),
-        Some("itest-local-mint"),
+        Some("itest-local-mint,itest-identity-proof,itest-memory-vault,itest-legacy-accounts"),
     )
     .await?;
     let binary =
@@ -208,8 +208,9 @@ async fn create(
             prekey_http_url: None,
         },
     };
-    let created =
-        bus.request(None, "account", "account.create", serde_json::to_value(request)?).await?;
+    let created = bus
+        .request(None, "account", "account.itest_legacy.create", serde_json::to_value(request)?)
+        .await?;
     if headless {
         assert_eq!(created["client_mode"], "headless_ai");
     }

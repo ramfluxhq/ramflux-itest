@@ -62,15 +62,15 @@ async fn mvp_s44_assert_signed_group_role_control(
     let (bob_shutdown_tx, bob_shutdown_rx) = tokio::sync::watch::channel(false);
     let (carol_shutdown_tx, carol_shutdown_rx) = tokio::sync::watch::channel(false);
     let alice_server = ramflux_sdk::serve_local_bus_until(
-        ramflux_sdk::LocalBusConfig::new(&alice_socket, temp_root.join("alice/data")),
+        crate::harness::legacy_accounts::config(&alice_socket, temp_root.join("alice/data")),
         alice_shutdown_rx,
     );
     let bob_server = ramflux_sdk::serve_local_bus_until(
-        ramflux_sdk::LocalBusConfig::new(&bob_socket, temp_root.join("bob/data")),
+        crate::harness::legacy_accounts::config(&bob_socket, temp_root.join("bob/data")),
         bob_shutdown_rx,
     );
     let carol_server = ramflux_sdk::serve_local_bus_until(
-        ramflux_sdk::LocalBusConfig::new(&carol_socket, temp_root.join("carol/data")),
+        crate::harness::legacy_accounts::config(&carol_socket, temp_root.join("carol/data")),
         carol_shutdown_rx,
     );
 
