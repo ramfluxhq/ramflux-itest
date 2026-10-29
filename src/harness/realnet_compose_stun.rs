@@ -23,6 +23,9 @@ use self_referencing_defaults::{COMPOSE_FIXTURE_DEFAULTS, outer_or_default};
 #[path = "compose_input_aliases.rs"]
 mod compose_input_aliases;
 #[cfg(all(test, feature = "realnet"))]
+#[path = "compose_security_inputs.rs"]
+mod security_inputs;
+#[cfg(all(test, feature = "realnet"))]
 pub(crate) use compose_input_aliases::itest_admin_token;
 
 /// `compose down` shutdown-grace timeout (seconds). Default "2" (fast teardown for normal tests).
@@ -131,7 +134,7 @@ pub(crate) fn run_docker_compose_with_env_and_overrides(
     notify_tokio_concurrent: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
     ensure_itest_shared_network()?;
-    let compose_env = compose_env_with_required_defaults(env);
+    let compose_env = compose_env_with_required_defaults(env)?;
     if args.contains(&"up") {
         super::server_secrets::write_discovery_secret(deploy_root, &compose_env)?;
     }
@@ -185,7 +188,9 @@ impl ComposeDownGuard {
 #[cfg(all(test, feature = "realnet"))]
 impl Drop for ComposeDownGuard {
     fn drop(&mut self) {
-        let compose_env = compose_env_with_required_defaults(&[]);
+        let Ok(compose_env) = compose_env_with_required_defaults(&[]) else {
+            return;
+        };
         let mut command = std::process::Command::new(container_runtime());
         command.arg("compose");
         let Ok(_env_file) = add_compose_env_file_arg(&mut command, "itest-down", &compose_env)
@@ -264,7 +269,9 @@ impl ComposeProjectDownGuard {
 #[cfg(all(test, feature = "realnet"))]
 impl Drop for ComposeProjectDownGuard {
     fn drop(&mut self) {
-        let compose_env = compose_env_with_required_defaults(&self.env);
+        let Ok(compose_env) = compose_env_with_required_defaults(&self.env) else {
+            return;
+        };
         // An opted-in fixture disarms this hook only after all of its assertions succeed.
         // Drop also runs on returned errors and unwinding, before compose removes containers.
         dump_compose_failure_logs(
@@ -413,7 +420,9 @@ impl ProductionComposeDownGuard {
 #[cfg(all(test, feature = "realnet"))]
 impl Drop for ProductionComposeDownGuard {
     fn drop(&mut self) {
-        let compose_env = compose_env_with_required_defaults(&self.env);
+        let Ok(compose_env) = compose_env_with_required_defaults(&self.env) else {
+            return;
+        };
         let mut command = std::process::Command::new(container_runtime());
         command.arg("compose");
         let Ok(_env_file) =
@@ -470,7 +479,7 @@ pub(crate) fn run_docker_compose_project_with_overrides(
     overrides: ItestComposeOverrides,
 ) -> Result<(), Box<dyn std::error::Error>> {
     ensure_itest_shared_network()?;
-    let compose_env = compose_env_with_required_defaults(env);
+    let compose_env = compose_env_with_required_defaults(env)?;
     if args.contains(&"up") {
         super::server_secrets::write_discovery_secret(deploy_root, &compose_env)?;
     }
@@ -543,7 +552,7 @@ fn operator_gid() -> Option<String> {
 #[cfg(all(test, feature = "realnet"))]
 pub(crate) fn compose_env_with_required_defaults(
     env: &[(String, String)],
-) -> Vec<(String, String)> {
+) -> Result<Vec<(String, String)>, Box<dyn std::error::Error>> {
     let mut compose_env = env.to_vec();
     ensure_itest_node_service_signing_seed_env(&mut compose_env);
     ensure_compose_default_env(&mut compose_env, "RAMFLUX_VERSION", "dev");
@@ -630,7 +639,8 @@ pub(crate) fn compose_env_with_required_defaults(
         compose_env.push(("RAMFLUX_NODE_ID".to_owned(), "localhost".to_owned()));
     }
     compose_input_aliases::forward_aliases(&mut compose_env, env);
-    compose_env
+    security_inputs::supply_required_inputs(&mut compose_env)?;
+    Ok(compose_env)
 }
 
 #[cfg(all(test, feature = "realnet"))]
@@ -711,7 +721,7 @@ pub(crate) fn checked_itest_compose_command(
     label: &str,
     project_name: Option<&str>,
 ) -> Result<(std::process::Command, ComposeEnvFile), Box<dyn std::error::Error>> {
-    let env = compose_env_with_required_defaults(&[]);
+    let env = compose_env_with_required_defaults(&[])?;
     let mut command = std::process::Command::new(container_runtime());
     command.arg("compose");
     let file = add_compose_env_file_arg(&mut command, label, &env)?;
@@ -834,7 +844,7 @@ pub(crate) fn run_production_compose_project(
     env: &[(String, String)],
     args: &[&str],
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let compose_env = compose_env_with_required_defaults(env);
+    let compose_env = compose_env_with_required_defaults(env)?;
     if args.contains(&"up") {
         super::server_secrets::write_discovery_secret(deploy_root, &compose_env)?;
     }
@@ -1245,13 +1255,14 @@ mod compose_default_tests {
     use super::*;
 
     #[test]
-    fn capture_path_is_concrete_and_preserves_explicit_fixture_values() {
+    fn capture_path_is_concrete_and_preserves_explicit_fixture_values()
+    -> Result<(), Box<dyn std::error::Error>> {
         let key = "RAMFLUX_RELAY_ITEST_CAPTURE_FILE";
         for configured in [None, Some("/var/lib/ramflux/relay/custom-capture.jsonl")] {
             let env = configured
                 .map(|value| vec![(key.to_owned(), value.to_owned())])
                 .unwrap_or_default();
-            let env = compose_env_with_required_defaults(&env);
+            let env = compose_env_with_required_defaults(&env)?;
             let values: Vec<_> = env.iter().filter(|(name, _)| name == key).collect();
             assert_eq!(values.len(), 1);
             assert_eq!(
@@ -1260,5 +1271,6 @@ mod compose_default_tests {
             );
             assert!(!values[0].1.contains("${"));
         }
+        Ok(())
     }
 }
