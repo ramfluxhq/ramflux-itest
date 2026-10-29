@@ -39,7 +39,7 @@ fn t22_production_keyless_v3_compose_smoke() -> Result<(), Box<dyn std::error::E
     let mut env = compose_env_with_required_defaults(&[(
         "RAMFLUX_GATEWAY_V3_ISSUER_SEED".into(),
         itest_node_service_signing_seed_b64url(),
-    )]);
+    )])?;
     env.retain(|(key, _)| {
         ![
             "RAMFLUX_FEDERATION_TRUST_ENDPOINT",

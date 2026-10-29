@@ -173,7 +173,7 @@ mod tests {
     #[test]
     fn compose_preflight_accepts_generated_tokens_and_refuses_conflicting_fixture_aliases()
     -> Result<(), Box<dyn std::error::Error>> {
-        let env = super::super::compose_env_with_required_defaults(&[]);
+        let env = super::super::compose_env_with_required_defaults(&[])?;
         let mut command = std::process::Command::new("container-engine-must-not-run");
         let file = super::super::add_compose_env_file_arg(&mut command, "preflight-good", &env)?;
         #[cfg(unix)]

@@ -292,7 +292,7 @@ networks:
         };
         let files = itest_compose_files(&deploy)?;
         assert!(!files.is_empty(), "no docker-compose.itest*.yml under {}", deploy.display());
-        let supplied = compose_env_with_required_defaults(&[]);
+        let supplied = compose_env_with_required_defaults(&[])?;
         let mut uncovered = Vec::new();
         let mut seen = 0;
         for path in &files {
@@ -336,26 +336,29 @@ networks:
     }
 
     #[test]
-    fn default_table_has_unique_keys_without_duplicating_explicit_defaults() {
+    fn default_table_has_unique_keys_without_duplicating_explicit_defaults()
+    -> Result<(), Box<dyn std::error::Error>> {
         let mut keys = COMPOSE_FIXTURE_DEFAULTS.iter().map(|(key, _)| *key).collect::<Vec<_>>();
         let count = keys.len();
         keys.sort_unstable();
         keys.dedup();
         assert_eq!(keys.len(), count, "duplicate key in COMPOSE_FIXTURE_DEFAULTS");
-        let supplied = compose_env_with_required_defaults(&[]);
+        let supplied = compose_env_with_required_defaults(&[])?;
         for (key, default) in COMPOSE_FIXTURE_DEFAULTS {
             let expected = outer_or_default(key, default);
             assert_eq!(value_of(&supplied, key), vec![expected.as_str()], "{key} supplied once");
         }
+        Ok(())
     }
 
     #[test]
-    fn fixture_values_win_over_table_defaults() {
+    fn fixture_values_win_over_table_defaults() -> Result<(), Box<dyn std::error::Error>> {
         let env = compose_env_with_required_defaults(&[(
             "RAMFLUX_NOTIFY_WEBPUSH_ORIGINS".to_owned(),
             "http://127.0.0.1:9".to_owned(),
-        )]);
+        )])?;
         assert_eq!(value_of(&env, "RAMFLUX_NOTIFY_WEBPUSH_ORIGINS"), vec!["http://127.0.0.1:9"]);
+        Ok(())
     }
 
     /// Mirrors what compose interpolates: a key present in the process environment reaches the
@@ -363,8 +366,9 @@ networks:
     /// an operator's `RAMFLUX_ITEST_PERF=1 cargo test ...` and reports what it saw, so it doubles
     /// as the env pass-through smoke on a QA host.
     #[test]
-    fn process_environment_values_pass_through_to_the_compose_env() {
-        let supplied = compose_env_with_required_defaults(&[]);
+    fn process_environment_values_pass_through_to_the_compose_env()
+    -> Result<(), Box<dyn std::error::Error>> {
+        let supplied = compose_env_with_required_defaults(&[])?;
         for key in ["RAMFLUX_ITEST_PERF", "RAMFLUX_RELAY_REDB_CACHE_BYTES"] {
             let outer = std::env::var_os(key).map(|value| value.to_string_lossy().into_owned());
             let (_, default) = COMPOSE_FIXTURE_DEFAULTS
@@ -379,6 +383,7 @@ networks:
             );
             assert_eq!(value_of(&supplied, key), vec![expected.as_str()]);
         }
+        Ok(())
     }
 
     /// Proves the pass-through with concrete values by re-running this test in a child process
@@ -388,14 +393,14 @@ networks:
     fn exported_operator_knobs_reach_the_compose_env_unchanged()
     -> Result<(), Box<dyn std::error::Error>> {
         if std::env::var_os("RAMFLUX_ITEST_OUTER_ENV_CHILD").is_some() {
-            let supplied = compose_env_with_required_defaults(&[]);
+            let supplied = compose_env_with_required_defaults(&[])?;
             assert_eq!(value_of(&supplied, "RAMFLUX_ITEST_PERF"), vec!["1"]);
             assert_eq!(value_of(&supplied, "RAMFLUX_RELAY_REDB_CACHE_BYTES"), vec!["16777216"]);
             assert_eq!(value_of(&supplied, "RAMFLUX_ROUTER_WAL_SHARDS"), vec![""]);
             let fixture = compose_env_with_required_defaults(&[(
                 "RAMFLUX_ITEST_PERF".to_owned(),
                 "fixture".to_owned(),
-            )]);
+            )])?;
             assert_eq!(value_of(&fixture, "RAMFLUX_ITEST_PERF"), vec!["fixture"]);
             return Ok(());
         }

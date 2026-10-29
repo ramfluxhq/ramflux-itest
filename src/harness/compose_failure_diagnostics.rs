@@ -21,7 +21,9 @@ pub(super) fn dump_compose_failure_logs(
     else {
         return;
     };
-    let compose_env = compose_env_with_required_defaults(env);
+    let Ok(compose_env) = compose_env_with_required_defaults(env) else {
+        return;
+    };
     for service in services.split(',').filter(|service| !service.is_empty()) {
         realnet_step(
             "failure container logs begin",
