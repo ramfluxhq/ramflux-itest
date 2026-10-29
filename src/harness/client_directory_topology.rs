@@ -129,7 +129,11 @@ pub(crate) fn client_directory_daemon_command(
     owner_principal: Option<&str>,
 ) -> tokio::process::Command {
     let mut command = tokio::process::Command::new(rf_binary);
-    command.arg("--socket").arg(socket).args(["daemon", "start", "--data-root"]).arg(data_root);
+    command
+        .arg("--socket")
+        .arg(socket)
+        .args(["daemon", "start", "--itest-memory-vault", "--data-root"])
+        .arg(data_root);
     // Bob's owner lineage must come from Alice's signed attachment, never the parent's environment.
     for key in [
         "RAMFLUX_SDK_OBJECT_RELAY_LOCAL_MINT",

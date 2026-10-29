@@ -4,19 +4,7 @@
 //! Explicit realnet fixture; signed discovery uses the harness's receiving-node identity.
 use ramflux_protocol::custody::*;
 use std::path::Path;
-pub(crate) fn provision_if_enabled(
-    extra_env: &[(String, String)],
-    directory: &Path,
-    node_id: &str,
-    root_seed: [u8; 32],
-) -> Result<Vec<(String, String)>, Box<dyn std::error::Error>> {
-    if extra_env.iter().any(|(key, value)| key == "RAMFLUX_CUSTODY_ITEST_ENABLE" && value == "1") {
-        provision(directory, node_id, root_seed)
-    } else {
-        Ok(Vec::new())
-    }
-}
-fn provision(
+pub(crate) fn provision(
     directory: &Path,
     node_id: &str,
     root_seed: [u8; 32],
@@ -140,14 +128,13 @@ mod tests {
     }
 
     #[test]
-    fn ordinary_realnet_projects_do_not_provision_custody_credentials()
+    fn native_realnet_projects_provision_custody_credentials_by_default()
     -> Result<(), Box<dyn std::error::Error>> {
         let root = Root(crate::temp_root("custody_fixture_disabled")?);
-        assert_eq!(
-            provision_if_enabled(&[], &root.0, "fixture.example", [7; 32])?,
-            Vec::<(String, String)>::new(),
-        );
-        assert!(!root.0.join("certs/router/custody-node.json").exists());
+        std::fs::create_dir_all(root.0.join("certs/router"))?;
+        let values = provision(&root.0, "fixture.example", [7; 32])?;
+        assert!(values.iter().any(|(key, _)| key == "RAMFLUX_CUSTODY_NODE_PUBLIC_KEY"));
+        assert!(root.0.join("certs/router/custody-node.json").exists());
         Ok(())
     }
 }

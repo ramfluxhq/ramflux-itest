@@ -3,6 +3,14 @@
 
 #![allow(unused_imports)]
 mod device_identity_fixture;
+#[cfg(all(test, feature = "realnet"))]
+mod native_accounts;
+#[cfg(all(test, feature = "realnet"))]
+mod native_backup;
+#[cfg(all(test, feature = "realnet"))]
+pub(crate) use native_accounts::*;
+#[cfg(all(test, feature = "realnet"))]
+pub(crate) use native_backup::*;
 mod node_prebuild;
 mod server_secrets;
 pub(crate) use device_identity_fixture::{bind_fixture_member, fixture_device};

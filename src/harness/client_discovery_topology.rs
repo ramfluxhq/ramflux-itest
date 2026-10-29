@@ -94,6 +94,7 @@ pub(crate) fn start_client_discovery_topology_named(
             );
         }
     }
+    env.extend(super::custody_node_fixture::provision(&deploy, "localhost", [0x49; 32])?);
     let guard = ProductionComposeDownGuard::new(deploy.clone(), project.to_owned(), env.clone());
     run_production_compose_project(&deploy, project, &env, &["up", "--build", "-d"])?;
     let origin = format!("http://127.0.0.1:{}", port_base + 82);

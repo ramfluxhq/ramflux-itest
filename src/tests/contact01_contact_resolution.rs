@@ -24,41 +24,24 @@ fn contact01_realnet_add_then_dm() -> TestResult {
         let b = root.join("bob.sock");
         let (a_stop, a_rx) = tokio::sync::watch::channel(false);
         let (b_stop, b_rx) = tokio::sync::watch::channel(false);
-        let a_server = ramflux_sdk::serve_local_bus_until(
-            ramflux_sdk::LocalBusConfig::new(&a, root.join("a")),
-            a_rx,
-        );
-        let b_server = ramflux_sdk::serve_local_bus_until(
-            ramflux_sdk::LocalBusConfig::new(&b, root.join("b")),
-            b_rx,
-        );
+        let config = |socket: &Path, directory: PathBuf| {
+            let mut config = ramflux_sdk::LocalBusConfig::new(socket, directory);
+            config.custody_vault =
+                Some(std::sync::Arc::new(ramflux_sdk::custody::MemoryPrimaryVault::default()));
+            config
+        };
+        let a_server = ramflux_sdk::serve_local_bus_until(config(&a, root.join("a")), a_rx);
+        let b_server = ramflux_sdk::serve_local_bus_until(config(&b, root.join("b")), b_rx);
         let flow = async {
             let result = async {
                 mvp_s4_wait_for_socket(&a).await?;
                 mvp_s4_wait_for_socket(&b).await?;
                 configure(&binary, &a, &topology.origin).await?;
                 configure(&binary, &b, &topology.origin).await?;
-                create(&binary, &a, "alice", "a1", "a2").await?;
-                create(&binary, &b, "bob", "b1", "b2").await?;
+                let alice_account = create_native_account(&a, "Alice").await?;
+                let bob_account = create_native_account(&b, "Bob").await?;
                 let mut alice = ramflux_sdk::LocalBusClient::connect(&a).await?;
                 let mut bob = ramflux_sdk::LocalBusClient::connect(&b).await?;
-                let added = rf(
-                    &binary,
-                    &a,
-                    &["contact", "add", "--account", "alice", "--principal", "bob"],
-                )
-                .await?;
-                assert_contact(&added, "bob", "lookup")?;
-                let accepted =
-                    call(&mut bob, "bob", "contact.accept", json!({"principal_id":"alice"}))
-                        .await?;
-                assert_contact(&accepted, "alice", "lookup")?;
-                exchange(&mut alice, &mut bob, "alice", "bob", "principal").await?;
-                // A second fresh pair proves card resolution without identity state from principal lookup.
-                create(&binary, &a, "carol", "c1", "c2").await?;
-                create(&binary, &b, "dave", "d1", "d2").await?;
-                let carol = rf(&binary, &a, &["contact", "card", "--account", "carol"]).await?;
-                let dave = rf(&binary, &b, &["contact", "card", "--account", "dave"]).await?;
                 let added = rf(
                     &binary,
                     &a,
@@ -66,17 +49,23 @@ fn contact01_realnet_add_then_dm() -> TestResult {
                         "contact",
                         "add",
                         "--account",
-                        "carol",
-                        "--card",
-                        dave["card"].as_str().ok_or("missing card")?,
+                        &alice_account.account_id,
+                        "--principal",
+                        &bob_account.principal_id,
                     ],
                 )
                 .await?;
-                assert_contact(&added, "dave", "card")?;
-                let accepted =
-                    call(&mut bob, "dave", "contact.accept", json!({"card":carol["link"]})).await?;
-                assert_contact(&accepted, "carol", "card")?;
-                exchange(&mut alice, &mut bob, "carol", "dave", "card").await?;
+                assert_contact(&added, &bob_account, "lookup")?;
+                let accepted = call(
+                    &mut bob,
+                    &bob_account.account_id,
+                    "contact.accept",
+                    json!({"principal_id":alice_account.principal_id}),
+                )
+                .await?;
+                assert_contact(&accepted, &alice_account, "lookup")?;
+                exchange(&mut alice, &mut bob, &alice_account, &bob_account, "principal").await?;
+                exchange_cards(&binary, &a, &b, &mut alice, &mut bob).await?;
                 Ok::<(), Box<dyn std::error::Error>>(())
             }
             .await;
@@ -127,41 +116,11 @@ async fn configure(binary: &Path, socket: &Path, origin: &str) -> TestResult {
     rf(binary, socket, &["node", "set-default", "localhost"]).await?;
     Ok(())
 }
-async fn create(binary: &Path, socket: &Path, id: &str, root: &str, device: &str) -> TestResult {
-    let created = rf(
-        binary,
-        socket,
-        &[
-            "account",
-            "create",
-            "--node",
-            "localhost",
-            "--account",
-            id,
-            "--principal",
-            id,
-            "--device",
-            id,
-            "--target",
-            id,
-            "--secret",
-            "test-only-secret",
-            "--root-seed-byte-hex",
-            root,
-            "--device-seed-byte-hex",
-            device,
-        ],
-    )
-    .await?;
-    assert_eq!(created["local_account_id"], id);
-    assert_eq!(created["client_mode"], "headless_ai");
-    Ok(())
-}
-fn assert_contact(response: &Value, principal: &str, source: &str) -> TestResult {
+fn assert_contact(response: &Value, peer: &NativeAccount, source: &str) -> TestResult {
     let contact = &response["contact"];
-    assert_eq!(contact["principal_id"], principal);
-    assert_eq!(contact["kind_asserted"], "headless_ai");
-    assert_eq!(contact["display_name"], principal);
+    assert_eq!(contact["principal_id"], peer.principal_id);
+    assert_eq!(contact["kind_asserted"], "human");
+    assert_eq!(contact["display_name"], peer.display_name);
     assert_eq!(contact["reachable"], true);
     assert_eq!(contact["verified"], false);
     assert_eq!(contact["root_source"], source);
@@ -191,19 +150,19 @@ async fn call(
 async fn identity(
     bus: &mut ramflux_sdk::LocalBusClient,
     id: &str,
-    peer: &str,
+    peer: &NativeAccount,
 ) -> TestResult<Value> {
     let directory = call(bus, id, "identity.directory", json!({})).await?;
     let row = directory["identities"]
         .as_array()
         .ok_or("missing identities")?
         .iter()
-        .find(|r| r["principal_id"] == peer)
+        .find(|r| r["principal_id"] == peer.principal_id)
         .ok_or("contact did not populate the identity directory")?
         .clone();
-    assert_eq!(row["kind"], "headless_ai");
+    assert_eq!(row["kind"], "human");
     assert_eq!(row["kind_verified"], true);
-    assert_eq!(row["display_name"], peer);
+    assert_eq!(row["display_name"], peer.display_name);
     assert_eq!(row["mixed_script"], false);
     assert!(row["display_name_confusable_with"].is_null());
     assert_eq!(row["reachable"], true);
@@ -212,35 +171,35 @@ async fn identity(
     assert_eq!(row["safety_number"].as_array().map(Vec::len), Some(12));
     Ok(row)
 }
-async fn exchange(
+pub(super) async fn exchange(
     a: &mut ramflux_sdk::LocalBusClient,
     b: &mut ramflux_sdk::LocalBusClient,
-    alice: &str,
-    bob: &str,
+    alice: &NativeAccount,
+    bob: &NativeAccount,
     label: &str,
 ) -> TestResult {
-    let bob_row = identity(a, alice, bob).await?;
-    let alice_row = identity(b, bob, alice).await?;
+    let bob_row = identity(a, &alice.account_id, bob).await?;
+    let alice_row = identity(b, &bob.account_id, alice).await?;
     let safety_a = call(
         a,
-        alice,
+        &alice.account_id,
         "contact.safety_number",
         json!({"contact_identity_commitment":bob_row["contact_identity_commitment"]}),
     )
     .await?;
     let safety_b = call(
         b,
-        bob,
+        &bob.account_id,
         "contact.safety_number",
         json!({"contact_identity_commitment":alice_row["contact_identity_commitment"]}),
     )
     .await?;
     assert_eq!(safety_a["safety_number"], safety_b["safety_number"]);
     let conversation = format!("contact01-{label}");
-    send(a, alice, &bob_row, &conversation, &format!("{label}-hello")).await?;
-    read(b, bob, &conversation, &format!("{label}-hello"), alice).await?;
-    send(b, bob, &alice_row, &conversation, &format!("{label}-reply")).await?;
-    read(a, alice, &conversation, &format!("{label}-reply"), bob).await?;
+    send(a, &alice.account_id, &bob_row, &conversation, &format!("{label}-hello")).await?;
+    read(b, &bob.account_id, &conversation, &format!("{label}-hello"), &alice.device_id).await?;
+    send(b, &bob.account_id, &alice_row, &conversation, &format!("{label}-reply")).await?;
+    read(a, &alice.account_id, &conversation, &format!("{label}-reply"), &bob.device_id).await?;
     Ok(())
 }
 async fn send(
@@ -284,4 +243,41 @@ async fn read(
         tokio::time::sleep(Duration::from_millis(100)).await;
     }
     Err(format!("contact DM was not received: {id}/{conversation}/{text}").into())
+}
+
+async fn exchange_cards(
+    binary: &Path,
+    alice_socket: &Path,
+    bob_socket: &Path,
+    alice: &mut ramflux_sdk::LocalBusClient,
+    bob: &mut ramflux_sdk::LocalBusClient,
+) -> TestResult {
+    // A second fresh pair proves card resolution without identity state from principal lookup.
+    let carol_account = create_native_account(alice_socket, "Carol").await?;
+    let dave_account = create_native_account(bob_socket, "Dave").await?;
+    let carol =
+        rf(binary, alice_socket, &["contact", "card", "--account", &carol_account.account_id])
+            .await?;
+    let dave =
+        rf(binary, bob_socket, &["contact", "card", "--account", &dave_account.account_id]).await?;
+    let added = rf(
+        binary,
+        alice_socket,
+        &[
+            "contact",
+            "add",
+            "--account",
+            &carol_account.account_id,
+            "--card",
+            dave["card"].as_str().ok_or("missing card")?,
+        ],
+    )
+    .await?;
+    assert_contact(&added, &dave_account, "card")?;
+    let accepted =
+        call(bob, &dave_account.account_id, "contact.accept", json!({"card":carol["link"]}))
+            .await?;
+    assert_contact(&accepted, &carol_account, "card")?;
+    exchange(alice, bob, &carol_account, &dave_account, "card").await?;
+    Ok(())
 }
