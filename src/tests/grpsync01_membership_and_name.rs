@@ -286,7 +286,9 @@ async fn create(
             prekey_http_url: None,
         },
     };
-    Ok(bus.request(None, "create", "account.create", serde_json::to_value(request)?).await?)
+    Ok(bus
+        .request(None, "create", "account.itest_legacy.create", serde_json::to_value(request)?)
+        .await?)
 }
 async fn add(bus: &mut LocalBusClient, member: &Value) -> TestResult {
     call(

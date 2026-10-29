@@ -76,6 +76,10 @@ pub(crate) async fn create_native_account(
     });
     let account =
         ceremony.confirm(&words, &Zeroizing::new(NATIVE_DATA_PASSPHRASE.to_owned())).await?;
+    eprintln!(
+        "STEP: native creation confirmed account={} networking={:?}",
+        account.account_id, account.networking
+    );
     assert_eq!(account.networking, ramflux_sdk::custody::CreationState::Live);
     let mut bus = LocalBusClient::connect(socket).await?;
     let status = bus
@@ -110,7 +114,12 @@ pub(crate) async fn recover_native_account(
     let mut ceremony = LocalBusRecoveryClient::connect(socket).await?;
     let pending = ceremony.begin(account_id).await?;
     assert_eq!(pending.account_anchor, owner.anchor);
-    Ok(ceremony
+    let account = ceremony
         .confirm(&owner.phrase, &Zeroizing::new(passphrase.to_owned()), &owner.anchor)
-        .await?)
+        .await?;
+    eprintln!(
+        "STEP: native recovery confirmed account={} networking={:?}",
+        account.account_id, account.networking
+    );
+    Ok(account)
 }
