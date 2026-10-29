@@ -6,6 +6,8 @@ use super::*;
 #[cfg(feature = "realnet")]
 #[path = "s35_fixture.rs"]
 mod fixture;
+#[path = "s35_observer.rs"]
+mod observer;
 #[cfg(feature = "realnet")]
 #[path = "s35_owncopy.rs"]
 mod owncopy;
@@ -284,6 +286,7 @@ async fn mvp_s35_assert_multi_device_activation(
             owncopy::assert_live_sent_messages(
                 &mut bob_primary,
                 &mut bob_restored,
+                &bob_restored_socket,
                 &alice_commitment,
                 &bob_commitment,
             )

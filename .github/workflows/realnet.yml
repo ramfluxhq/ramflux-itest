@@ -393,6 +393,7 @@ jobs:
         working-directory: ramflux-itest
         env:
           RAMFLUX_ITEST_REALNET: "1"
+          RAMFLUX_BUS_TRACE: ${{ matrix.slice == 's35' && '1' || '' }}
           RAMFLUX_OBJECT_V3: "1"
           RAMFLUX_CROSS_GATEWAY: "1"
           RAMFLUX_ITEST_VOICE: ${{ matrix.voice || '' }}
