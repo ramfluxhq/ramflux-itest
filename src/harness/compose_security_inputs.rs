@@ -18,32 +18,32 @@ struct SecurityInput {
 fn required_inputs() -> HarnessResult<&'static [SecurityInput]> {
     static INPUTS: OnceLock<Result<Vec<SecurityInput>, String>> = OnceLock::new();
     INPUTS
-        .get_or_init(|| {
-            let load = || -> HarnessResult<Vec<SecurityInput>> {
-                let deploy = super::self_referencing_defaults::pinned_product_deploy_dir()?
-                    .ok_or("pinned product checkout required for security input inventory")?;
-                let output = std::process::Command::new("python3")
-                    .args(["-B", "-c", include_str!("compose_security_inventory.py")])
-                    .arg(deploy)
-                    .output()?;
-                if !output.status.success() {
-                    return Err(format!(
-                        "required Compose security input inventory failed: {}",
-                        String::from_utf8_lossy(&output.stderr)
-                    )
-                    .into());
-                }
-                Ok(serde_json::from_slice(&output.stdout)?)
-            };
-            load().map_err(|error| error.to_string())
-        })
+        .get_or_init(|| load_required_inputs(&[]).map_err(|error| error.to_string()))
         .as_deref()
         .map_err(|error| error.clone().into())
 }
 
+fn load_required_inputs(files: &[&str]) -> HarnessResult<Vec<SecurityInput>> {
+    let deploy = super::self_referencing_defaults::pinned_product_deploy_dir()?
+        .ok_or("pinned product checkout required for security input inventory")?;
+    let output = std::process::Command::new("python3")
+        .args(["-I", "-B", "-c", include_str!("compose_security_inventory.py")])
+        .arg(deploy)
+        .args(files)
+        .output()?;
+    if !output.status.success() {
+        return Err(format!(
+            "required Compose security input inventory failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        )
+        .into());
+    }
+    Ok(serde_json::from_slice(&output.stdout)?)
+}
+
 struct SecurityMaterial {
     directory: PathBuf,
-    issuer_seed: String,
+    issuer_seeds: std::collections::BTreeMap<String, String>,
     offline_root_public_key: String,
 }
 
@@ -52,7 +52,17 @@ impl SecurityMaterial {
         use std::io::Write;
         use std::os::unix::fs::{DirBuilderExt, OpenOptionsExt};
 
-        let issuer_seed = ramflux_crypto::random_32()?;
+        let mut issuer_seeds = std::collections::BTreeMap::new();
+        for input in required_inputs()?
+            .iter()
+            .filter(|input| input.service_key == "RAMFLUX_GATEWAY_V3_ISSUER_SEED")
+        {
+            if let std::collections::btree_map::Entry::Vacant(entry) =
+                issuer_seeds.entry(input.key.clone())
+            {
+                entry.insert(ramflux_protocol::encode_base64url(ramflux_crypto::random_32()?));
+            }
+        }
         let offline_root_seed = ramflux_crypto::random_32()?;
         let directory = std::env::temp_dir().join(format!(
             "ramflux-itest-security-{}",
@@ -68,7 +78,7 @@ impl SecurityMaterial {
         seed_file.sync_all()?;
         Ok(Self {
             directory,
-            issuer_seed: ramflux_protocol::encode_base64url(issuer_seed),
+            issuer_seeds,
             offline_root_public_key: ramflux_crypto::public_key_base64url_from_seed(
                 offline_root_seed,
             ),
@@ -97,7 +107,11 @@ pub(super) fn supply_required_inputs(env: &mut Vec<(String, String)>) -> Harness
             input.default.clone()
         } else {
             match input.service_key.as_str() {
-                "RAMFLUX_GATEWAY_V3_ISSUER_SEED" => security_material()?.issuer_seed.clone(),
+                "RAMFLUX_GATEWAY_V3_ISSUER_SEED" => security_material()?
+                    .issuer_seeds
+                    .get(&input.key)
+                    .ok_or("required gateway issuer seed was not generated")?
+                    .clone(),
                 "RAMFLUX_FEDERATION_PROVIDER_OFFLINE_ROOT_PUBLIC_KEY" => {
                     security_material()?.offline_root_public_key.clone()
                 }
@@ -138,7 +152,7 @@ mod tests {
         use std::os::unix::fs::PermissionsExt;
         let first = SecurityMaterial::generate()?;
         let second = SecurityMaterial::generate()?;
-        assert_ne!(first.issuer_seed, second.issuer_seed);
+        assert!(first.issuer_seeds != second.issuer_seeds, "issuer seeds must differ per run");
         assert_ne!(first.offline_root_public_key, second.offline_root_public_key);
         for material in [first, second] {
             let path = material.directory.join("offline-root.seed");
@@ -151,6 +165,59 @@ mod tests {
             assert_eq!(std::fs::metadata(&material.directory)?.permissions().mode() & 0o777, 0o700);
             std::fs::remove_dir_all(material.directory)?;
         }
+        Ok(())
+    }
+
+    const K2B_FILES: &[&str] = &[
+        "docker-compose.itest.yml",
+        "docker-compose.itest.cross-gateway.yml",
+        "docker-compose.itest.object-v3.yml",
+    ];
+
+    #[test]
+    fn object_v3_overlay_security_inputs_are_nonempty_and_gateway_seeds_are_distinct()
+    -> HarnessResult<()> {
+        let inputs = load_required_inputs(&K2B_FILES[1..])?;
+        let env = super::super::compose_env_with_required_defaults(&[])?;
+        let mut issuer_seeds = std::collections::BTreeSet::new();
+        let mut issuer_keys = std::collections::BTreeSet::new();
+        for input in &inputs {
+            let value = env
+                .iter()
+                .find(|(key, _)| key == &input.key)
+                .map(|(_, value)| value)
+                .ok_or_else(|| format!("missing required overlay input {}", input.key))?;
+            assert!(!value.trim().is_empty(), "empty required overlay input {}", input.key);
+            if input.service_key == "RAMFLUX_GATEWAY_V3_ISSUER_SEED" {
+                issuer_keys.insert(&input.key);
+                issuer_seeds.insert(value);
+            }
+        }
+        assert!(issuer_keys.len() > 1, "overlays must declare multiple gateway issuers");
+        assert_eq!(issuer_seeds.len(), issuer_keys.len(), "gateway issuer seeds must be distinct");
+        Ok(())
+    }
+
+    #[test]
+    fn podman_preflight_renders_k2b_file_set() -> HarnessResult<()> {
+        if std::env::var("RAMFLUX_ITEST_PREFLIGHT_PODMAN").as_deref() != Ok("1") {
+            eprintln!("podman config-only proof not requested");
+            return Ok(());
+        }
+        let runtime = crate::container_runtime()?;
+        assert_eq!(runtime, "podman", "podman proof must use the podman provider");
+        let deploy = super::super::self_referencing_defaults::pinned_product_deploy_dir()?
+            .ok_or("pinned product checkout required")?;
+        let env = super::super::compose_env_with_required_defaults(&[])?;
+        let mut compose = std::process::Command::new(runtime);
+        compose.arg("compose");
+        let _file = super::super::add_compose_env_file_arg(&mut compose, "k2b-render", &env)?;
+        compose.args(["-p", "ramflux-k2b-config-only"]);
+        for file in K2B_FILES {
+            compose.args(["-f", file]);
+        }
+        super::super::run_compose_preflight(&compose, &deploy, &env)?;
+        eprintln!("pinned product preflight --provider podman: k2b config-only exit 0");
         Ok(())
     }
 
@@ -180,10 +247,11 @@ mod tests {
 
     #[test]
     fn product_preflight_renders_required_security_inputs() -> HarnessResult<()> {
-        let Ok(provider) = std::env::var("RAMFLUX_ITEST_PREFLIGHT_RENDER") else {
+        let Ok(_) = std::env::var("RAMFLUX_ITEST_PREFLIGHT_RENDER") else {
             eprintln!("config render not requested (set RAMFLUX_ITEST_PREFLIGHT_RENDER)");
             return Ok(());
         };
+        let provider = crate::container_runtime()?;
         let deploy = super::super::self_referencing_defaults::pinned_product_deploy_dir()?
             .ok_or("pinned product checkout required")?;
         let env = super::super::compose_env_with_required_defaults(&[(
@@ -217,7 +285,7 @@ mod tests {
             let status = std::process::Command::new("python3")
                 .arg("-B")
                 .arg(deploy.join("scripts/compose-preflight.py"))
-                .args(["--provider", &provider])
+                .args(["--provider", provider])
                 .args(compose.get_args())
                 // Config rendering needs no engine. Prevent even accidental engine calls.
                 .args(if provider == "docker" {

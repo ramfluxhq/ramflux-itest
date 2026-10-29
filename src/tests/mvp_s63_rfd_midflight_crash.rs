@@ -170,8 +170,12 @@ fn mvp_s63_realnet_object_v3_rfd_midflight_crash() -> Result<(), Box<dyn std::er
 
 #[cfg(feature = "realnet")]
 fn s63_container_logs(service: &str) -> String {
+    let runtime = match container_runtime() {
+        Ok(runtime) => runtime,
+        Err(error) => return format!("container runtime unavailable: {error}"),
+    };
     let container = format!("ramflux-s63-rfd-crash_{service}_1");
-    std::process::Command::new(container_runtime()).args(["logs", &container]).output().map_or_else(
+    std::process::Command::new(runtime).args(["logs", &container]).output().map_or_else(
         |error| format!("failed to collect {service} logs: {error}"),
         |output| {
             format!(
