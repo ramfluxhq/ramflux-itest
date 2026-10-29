@@ -9,7 +9,7 @@ repository = "https://github.com/ramfluxhq/ramflux-itest"
 [features]
 default = []
 loadgen = ["dep:http-body-util", "dep:hyper", "dep:hyper-util"]
-realnet = ["dep:ramflux-cli-pro", "ramflux-sdk/itest-fingerprint", "ramflux-sdk/itest-local-mint", "ramflux-sdk/itest-memory-vault"]
+realnet = ["dep:ramflux-cli-pro", "ramflux-sdk/itest-fingerprint", "ramflux-sdk/itest-local-mint", "ramflux-sdk/itest-memory-vault", "ramflux-sdk/itest-legacy-accounts"]
 
 [dependencies]
 ramflux-core = { git = "https://github.com/ramfluxhq/ramflux.git", rev = "bb2914265181d5ba1b849285a416bfd093b56056", package = "ramflux-core" }

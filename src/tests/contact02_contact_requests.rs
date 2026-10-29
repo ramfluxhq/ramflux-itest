@@ -40,11 +40,11 @@ async fn run(topology: &ClientDiscoveryTopology) -> TestResult {
     let (stop_a, rx_a) = tokio::sync::watch::channel(false);
     let (stop_b, rx_b) = tokio::sync::watch::channel(false);
     let server_a = ramflux_sdk::serve_local_bus_until(
-        ramflux_sdk::LocalBusConfig::new(&a, root.join("a")),
+        crate::harness::legacy_accounts::config(&a, root.join("a")),
         rx_a,
     );
     let server_b = ramflux_sdk::serve_local_bus_until(
-        ramflux_sdk::LocalBusConfig::new(&b, root.join("b")),
+        crate::harness::legacy_accounts::config(&b, root.join("b")),
         rx_b,
     );
     let flow = async {
@@ -136,7 +136,7 @@ async fn create(
         socket,
         &[
             "account",
-            "create",
+            "itest-legacy-create",
             "--node",
             "localhost",
             "--account",

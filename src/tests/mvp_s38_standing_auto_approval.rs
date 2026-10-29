@@ -41,7 +41,7 @@ async fn mvp_s38_assert_standing_auto_approval(
     {
         let (shutdown_tx, shutdown_rx) = tokio::sync::watch::channel(false);
         let server = ramflux_sdk::serve_local_bus_until(
-            ramflux_sdk::LocalBusConfig::new(&socket, &data_root),
+            crate::harness::legacy_accounts::config(&socket, &data_root),
             shutdown_rx,
         );
         let flow = async {
@@ -52,7 +52,7 @@ async fn mvp_s38_assert_standing_auto_approval(
                     bus.request(
                         None,
                         "account",
-                        "account.create",
+                        "account.itest_legacy.create",
                         serde_json::to_value(&account_request)?,
                     )
                     .await?,
@@ -154,7 +154,7 @@ async fn mvp_s38_assert_standing_auto_approval(
     {
         let (shutdown_tx, shutdown_rx) = tokio::sync::watch::channel(false);
         let server = ramflux_sdk::serve_local_bus_until(
-            ramflux_sdk::LocalBusConfig::new(&socket_restore, &data_root),
+            crate::harness::legacy_accounts::config(&socket_restore, &data_root),
             shutdown_rx,
         );
         let flow = async {
@@ -165,7 +165,7 @@ async fn mvp_s38_assert_standing_auto_approval(
                     bus.request(
                         None,
                         "account",
-                        "account.create",
+                        "account.itest_legacy.create",
                         serde_json::to_value(&account_request)?,
                     )
                     .await?,

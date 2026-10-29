@@ -60,7 +60,7 @@ async fn run(node: &S8RealnetNode) -> TestResult {
     let binary = mvp_s4_build_rf_binary().await?;
     let mut children = Vec::new();
     for (index, socket) in sockets.iter().enumerate() {
-        let mut command = client_directory_daemon_command(
+        let mut command = native_client_directory_daemon_command(
             &binary,
             socket,
             &root.join(format!("account-{index}")),

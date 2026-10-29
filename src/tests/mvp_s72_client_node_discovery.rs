@@ -24,11 +24,11 @@ fn mvp_s72_realnet_client_node_discovery_and_bound_dm() -> TestResult {
         let (alice_stop, alice_rx) = tokio::sync::watch::channel(false);
         let (bob_stop, bob_rx) = tokio::sync::watch::channel(false);
         let alice_server = ramflux_sdk::serve_local_bus_until(
-            ramflux_sdk::LocalBusConfig::new(&alice, root.join("alice")),
+            crate::harness::legacy_accounts::config(&alice, root.join("alice")),
             alice_rx,
         );
         let bob_server = ramflux_sdk::serve_local_bus_until(
-            ramflux_sdk::LocalBusConfig::new(&bob, root.join("bob")),
+            crate::harness::legacy_accounts::config(&bob, root.join("bob")),
             bob_rx,
         );
         let flow = async {
@@ -142,7 +142,7 @@ async fn create_bound_account(
         socket,
         &[
             "account",
-            "create",
+            "itest-legacy-create",
             "--node",
             "localhost",
             "--account",

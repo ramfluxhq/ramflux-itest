@@ -61,7 +61,9 @@ pub(super) async fn create_terminal(
             prekey_http_url: None,
         },
     };
-    Ok(bus.request(None, "account", "account.create", serde_json::to_value(request)?).await?)
+    Ok(bus
+        .request(None, "account", "account.itest_legacy.create", serde_json::to_value(request)?)
+        .await?)
 }
 pub(super) async fn contacts(
     human: &mut ramflux_sdk::LocalBusClient,
