@@ -3309,7 +3309,13 @@ fn mvp5_container_stats_sample(deploy_root: &std::path::Path) -> serde_json::Val
     if ids.is_empty() {
         return serde_json::json!({"timestamp_unix": timestamp, "stats": []});
     }
-    let output = std::process::Command::new("docker")
+    let runtime = match container_runtime() {
+        Ok(runtime) => runtime,
+        Err(error) => {
+            return serde_json::json!({"timestamp_unix": timestamp, "error": error.to_string()});
+        }
+    };
+    let output = std::process::Command::new(runtime)
         .arg("stats")
         .arg("--no-stream")
         .arg("--format")

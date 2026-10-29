@@ -1023,38 +1023,32 @@ fn assert_notify_soak_logs_clean() -> Result<(), Box<dyn std::error::Error>> {
 #[cfg(feature = "realnet")]
 fn read_notify_container_logs() -> Option<String> {
     let container_name = find_notify_container_name()?;
-    for runtime in ["podman", "docker"] {
-        let output =
-            std::process::Command::new(runtime).arg("logs").arg(&container_name).output().ok()?;
-        if output.status.success() {
-            let mut logs = String::from_utf8_lossy(&output.stdout).into_owned();
-            logs.push_str(&String::from_utf8_lossy(&output.stderr));
-            return Some(logs);
-        }
+    let output = std::process::Command::new(container_runtime().ok()?)
+        .args(["logs", &container_name])
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
     }
-    None
+    let mut logs = String::from_utf8_lossy(&output.stdout).into_owned();
+    logs.push_str(&String::from_utf8_lossy(&output.stderr));
+    Some(logs)
 }
 
 #[cfg(feature = "realnet")]
 fn find_notify_container_name() -> Option<String> {
-    for runtime in ["podman", "docker"] {
-        let output = std::process::Command::new(runtime)
-            .arg("ps")
-            .arg("--format")
-            .arg("{{.Names}}")
-            .output()
-            .ok()?;
-        if !output.status.success() {
-            continue;
-        }
-        let names = String::from_utf8_lossy(&output.stdout);
-        if let Some(name) =
-            names.lines().find(|name| name.contains("ramflux-notify") || name.contains("notify"))
-        {
-            return Some(name.to_owned());
-        }
+    let output = std::process::Command::new(container_runtime().ok()?)
+        .args(["ps", "--format", "{{.Names}}"])
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
     }
-    None
+    let names = String::from_utf8_lossy(&output.stdout);
+    names
+        .lines()
+        .find(|name| name.contains("ramflux-notify") || name.contains("notify"))
+        .map(str::to_owned)
 }
 
 #[cfg(feature = "realnet")]

@@ -43,17 +43,6 @@ pub(crate) fn compose_down_timeout() -> String {
 }
 
 #[cfg(all(test, feature = "realnet"))]
-pub(crate) fn container_runtime() -> &'static str {
-    if std::process::Command::new("docker").arg("--version").status().is_ok() {
-        "docker"
-    } else if std::process::Command::new("podman").arg("--version").status().is_ok() {
-        "podman"
-    } else {
-        "docker"
-    }
-}
-
-#[cfg(all(test, feature = "realnet"))]
 #[derive(Clone, Copy, Default)]
 pub(crate) struct ItestComposeOverrides {
     pub(crate) federation_compio: bool,
@@ -138,7 +127,7 @@ pub(crate) fn run_docker_compose_with_env_and_overrides(
     if args.contains(&"up") {
         super::server_secrets::write_discovery_secret(deploy_root, &compose_env)?;
     }
-    let mut command = std::process::Command::new(container_runtime());
+    let mut command = std::process::Command::new(container_runtime()?);
     command.arg("compose");
     let _env_file = add_compose_env_file_arg(&mut command, "itest", &compose_env)?;
     add_itest_compose_files(
@@ -188,10 +177,13 @@ impl ComposeDownGuard {
 #[cfg(all(test, feature = "realnet"))]
 impl Drop for ComposeDownGuard {
     fn drop(&mut self) {
+        let Ok(runtime) = container_runtime() else {
+            return;
+        };
         let Ok(compose_env) = compose_env_with_required_defaults(&[]) else {
             return;
         };
-        let mut command = std::process::Command::new(container_runtime());
+        let mut command = std::process::Command::new(runtime);
         command.arg("compose");
         let Ok(_env_file) = add_compose_env_file_arg(&mut command, "itest-down", &compose_env)
         else {
@@ -269,6 +261,9 @@ impl ComposeProjectDownGuard {
 #[cfg(all(test, feature = "realnet"))]
 impl Drop for ComposeProjectDownGuard {
     fn drop(&mut self) {
+        let Ok(runtime) = container_runtime() else {
+            return;
+        };
         let Ok(compose_env) = compose_env_with_required_defaults(&self.env) else {
             return;
         };
@@ -297,7 +292,7 @@ impl Drop for ComposeProjectDownGuard {
             self.gateway_compio,
             self.notify_compio,
         );
-        let mut command = std::process::Command::new(container_runtime());
+        let mut command = std::process::Command::new(runtime);
         command.arg("compose");
         let Ok(_env_file) =
             add_compose_env_file_arg(&mut command, &self.project_name, &compose_env)
@@ -355,7 +350,10 @@ fn dump_compose_logs(
     let Ok(log_file_for_stderr) = log_file.try_clone() else {
         return;
     };
-    let mut command = std::process::Command::new(container_runtime());
+    let Ok(runtime) = container_runtime() else {
+        return;
+    };
+    let mut command = std::process::Command::new(runtime);
     command.arg("compose");
     let Ok(_env_file) = add_compose_env_file_arg(&mut command, project_name, env) else {
         return;
@@ -420,10 +418,13 @@ impl ProductionComposeDownGuard {
 #[cfg(all(test, feature = "realnet"))]
 impl Drop for ProductionComposeDownGuard {
     fn drop(&mut self) {
+        let Ok(runtime) = container_runtime() else {
+            return;
+        };
         let Ok(compose_env) = compose_env_with_required_defaults(&self.env) else {
             return;
         };
-        let mut command = std::process::Command::new(container_runtime());
+        let mut command = std::process::Command::new(runtime);
         command.arg("compose");
         let Ok(_env_file) =
             add_compose_env_file_arg(&mut command, &self.project_name, &compose_env)
@@ -483,7 +484,7 @@ pub(crate) fn run_docker_compose_project_with_overrides(
     if args.contains(&"up") {
         super::server_secrets::write_discovery_secret(deploy_root, &compose_env)?;
     }
-    let mut command = std::process::Command::new(container_runtime());
+    let mut command = std::process::Command::new(container_runtime()?);
     command.arg("compose");
     let _env_file = add_compose_env_file_arg(&mut command, project_name, &compose_env)?;
     command.arg("-p").arg(project_name);
@@ -688,13 +689,10 @@ pub(crate) fn run_compose_preflight(
 ) -> Result<(), Box<dyn std::error::Error>> {
     let deploy = self_referencing_defaults::pinned_product_deploy_dir()?
         .ok_or("pinned product checkout required for Compose preflight")?;
-    let provider = match container_runtime() {
-        "docker" => "docker",
-        "podman" => "podman",
-        runtime => return Err(format!("unsupported Compose runtime {runtime}").into()),
-    };
+    let provider = container_runtime()?;
     let mut preflight = std::process::Command::new("python3");
     preflight
+        .arg("-I")
         .arg(deploy.join("scripts/compose-preflight.py"))
         .arg("--provider")
         .arg(provider)
@@ -722,7 +720,7 @@ pub(crate) fn checked_itest_compose_command(
     project_name: Option<&str>,
 ) -> Result<(std::process::Command, ComposeEnvFile), Box<dyn std::error::Error>> {
     let env = compose_env_with_required_defaults(&[])?;
-    let mut command = std::process::Command::new(container_runtime());
+    let mut command = std::process::Command::new(container_runtime()?);
     command.arg("compose");
     let file = add_compose_env_file_arg(&mut command, label, &env)?;
     if let Some(project_name) = project_name {
@@ -817,7 +815,7 @@ fn compose_bool_env(name: &str) -> bool {
 pub(crate) fn ensure_itest_shared_network() -> Result<(), Box<dyn std::error::Error>> {
     let network = std::env::var("RAMFLUX_ITEST_SHARED_NETWORK")
         .unwrap_or_else(|_| "ramflux-itest-mesh".to_owned());
-    let inspect = std::process::Command::new(container_runtime())
+    let inspect = std::process::Command::new(container_runtime()?)
         .arg("network")
         .arg("inspect")
         .arg(&network)
@@ -825,7 +823,7 @@ pub(crate) fn ensure_itest_shared_network() -> Result<(), Box<dyn std::error::Er
     if inspect.success() {
         return Ok(());
     }
-    let create = std::process::Command::new(container_runtime())
+    let create = std::process::Command::new(container_runtime()?)
         .arg("network")
         .arg("create")
         .arg(&network)
@@ -848,7 +846,7 @@ pub(crate) fn run_production_compose_project(
     if args.contains(&"up") {
         super::server_secrets::write_discovery_secret(deploy_root, &compose_env)?;
     }
-    let mut command = std::process::Command::new(container_runtime());
+    let mut command = std::process::Command::new(container_runtime()?);
     command.arg("compose");
     let _env_file = add_compose_env_file_arg(&mut command, project_name, &compose_env)?;
     command.arg("-p").arg(project_name).arg("-f").arg("docker-compose.yml");

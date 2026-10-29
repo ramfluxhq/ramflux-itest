@@ -1600,7 +1600,7 @@ fn mvp_s56_spawn_rf_daemon_with_env(
 
 #[cfg(feature = "realnet")]
 fn mvp_s56_relay_exec(container: &str, args: &[&str]) -> Result<(), Box<dyn std::error::Error>> {
-    let output = std::process::Command::new(container_runtime())
+    let output = std::process::Command::new(container_runtime()?)
         .arg("exec")
         .arg(container)
         .args(args)
@@ -1618,7 +1618,7 @@ fn mvp_s56_relay_exec(container: &str, args: &[&str]) -> Result<(), Box<dyn std:
 
 #[cfg(feature = "realnet")]
 fn mvp_s56_relay_read(container: &str, path: &str) -> Result<String, Box<dyn std::error::Error>> {
-    let output = std::process::Command::new(container_runtime())
+    let output = std::process::Command::new(container_runtime()?)
         .arg("exec")
         .arg(container)
         .arg("cat")
