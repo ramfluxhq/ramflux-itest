@@ -294,27 +294,35 @@ pub(crate) async fn mvp_s8_create_rf_account(
 
 #[cfg(all(test, feature = "realnet"))]
 pub(crate) async fn mvp_s4_build_rf_binary() -> Result<PathBuf, Box<dyn std::error::Error>> {
+    let target = std::env::var_os("CARGO_TARGET_DIR")
+        .map_or_else(|| code_root().join("ramflux/target"), PathBuf::from);
+    let target = if target.is_absolute() { target } else { std::env::current_dir()?.join(target) };
     let manifest = code_root().join("ramflux/apps/rf/Cargo.toml");
     let status = tokio::task::spawn_blocking(move || {
         std::process::Command::new("cargo")
             // T22-A1 / RQ-04: the itest rf binary enables itest-local-mint so LocalMint object tests
             // (e.g. mvp_s40 `--relay-service-key`) keep working. Short proof lifetimes are separately
-            // gated for expiry/renewal acceptance. Production rf uses neither test feature.
+            // gated for expiry/renewal acceptance. Production rf excludes these integration-only features.
             .args([
                 "build",
                 "--quiet",
                 "--features",
-                "itest-local-mint,itest-identity-proof",
+                "itest-local-mint,itest-identity-proof,itest-memory-vault",
                 "--manifest-path",
             ])
             .arg(manifest)
+            .env("RAMFLUX_ITEST_BUILD", "1")
             .status()
     })
     .await??;
     if !status.success() {
         return Err("failed to build rf binary".into());
     }
-    Ok(code_root().join("ramflux/target/debug/rf"))
+    let binary = target.join("debug/rf");
+    if !binary.is_file() {
+        return Err(format!("built rf binary missing: {}", binary.display()).into());
+    }
+    Ok(binary)
 }
 
 #[cfg(all(test, feature = "realnet"))]

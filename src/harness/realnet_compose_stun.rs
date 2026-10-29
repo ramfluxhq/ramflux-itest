@@ -804,6 +804,12 @@ pub(crate) fn run_production_compose_project(
     if env.iter().any(|(key, _)| key == "RAMFLUX_ITEST_FEDERATION_ADMIN_PORT") {
         command.arg("-f").arg("docker-compose.itest.admin.yml");
     }
+    if env.iter().any(|(key, value)| key == "RAMFLUX_CUSTODY_NODE_RECORD_FILE" && !value.is_empty())
+    {
+        command.arg("-f").arg(
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("fixtures/custody-production.compose.yml"),
+        );
+    }
     command
         .args(args)
         .envs(compose_env.iter().map(|(key, value)| (key, value)))
@@ -1117,8 +1123,7 @@ pub(crate) fn start_s8_realnet_compose_project_with_env_and_federation_compio(
         ramflux_protocol::encode_base64url(node_signing_seed),
     ));
     ensure_itest_node_service_signing_seed_env(&mut env);
-    env.extend(super::custody_node_fixture::provision_if_enabled(
-        extra_env,
+    env.extend(super::custody_node_fixture::provision(
         &project_deploy_dir,
         &node_id,
         node_signing_seed,

@@ -507,7 +507,7 @@ pub(crate) async fn assert_dm_double_ratchet_realnet_gateway_quic(
     gateway_url: &str,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let S11RealnetGatewayPair { temp_root, alice, bob, mut alice_engine, mut bob_engine } =
-        s11_realnet_gateway_pair(gateway_quic_addr, ca_cert, gateway_url).await?;
+        Box::pin(s11_realnet_gateway_pair(gateway_quic_addr, ca_cert, gateway_url)).await?;
 
     let root_seed = [0x51; 32];
     let alice_initial_ratchet = ramflux_crypto::X25519KeyPair::from_seed([0xA1; 32]);
