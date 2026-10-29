@@ -197,9 +197,9 @@ pub(super) async fn exchange(
     assert_eq!(safety_a["safety_number"], safety_b["safety_number"]);
     let conversation = format!("contact01-{label}");
     send(a, &alice.account_id, &bob_row, &conversation, &format!("{label}-hello")).await?;
-    read(b, &bob.account_id, &conversation, &format!("{label}-hello"), &alice.device_id).await?;
+    read(b, &bob.account_id, &conversation, &format!("{label}-hello"), alice).await?;
     send(b, &bob.account_id, &alice_row, &conversation, &format!("{label}-reply")).await?;
-    read(a, &alice.account_id, &conversation, &format!("{label}-reply"), &bob.device_id).await?;
+    read(a, &alice.account_id, &conversation, &format!("{label}-reply"), bob).await?;
     Ok(())
 }
 async fn send(
@@ -227,7 +227,7 @@ async fn read(
     id: &str,
     conversation: &str,
     text: &str,
-    sender: &str,
+    sender: &NativeAccount,
 ) -> TestResult {
     for _ in 0..100 {
         let response =
@@ -237,7 +237,8 @@ async fn read(
             .and_then(|messages| messages.iter().find(|m| m["message_id"] == message_id(text)))
         {
             assert_eq!(message["body_utf8"], text);
-            assert_eq!(message["sender_id"], sender);
+            assert_eq!(message["sender_id"], sender.principal_id);
+            assert_eq!(message["sender_device_id"], sender.device_id);
             return Ok(());
         }
         tokio::time::sleep(Duration::from_millis(100)).await;
