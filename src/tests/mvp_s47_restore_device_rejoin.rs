@@ -71,7 +71,7 @@ async fn run(node: &S8RealnetNode) -> TestResult {
         }
         result
     };
-    let result = tokio::time::timeout(Duration::from_mins(4), async {
+    let result = Box::pin(tokio::time::timeout(Duration::from_mins(4), async {
         let (alice_result, replacement_result, bob_result, flow_result) = tokio::join!(
             ramflux_sdk::serve_local_bus_until(alice.0, alice.1),
             ramflux_sdk::serve_local_bus_until(replacement.0, replacement.1),
@@ -82,7 +82,7 @@ async fn run(node: &S8RealnetNode) -> TestResult {
         replacement_result?;
         bob_result?;
         flow_result
-    })
+    }))
     .await;
     let _ = std::fs::remove_dir_all(&root);
     result??;
@@ -284,12 +284,8 @@ async fn wait_for_message(
             .as_array()
             .and_then(|rows| rows.iter().find(|row| row["message_id"] == message))
         {
-            let plaintext = row["plaintext_body_base64"]
-                .as_str()
-                .ok_or("S47 received message plaintext missing")?;
             assert_eq!(
-                ramflux_protocol::decode_base64url(plaintext)?,
-                b"native restore traffic",
+                row["body_utf8"], "native restore traffic",
                 "S47 restored device must decrypt the delivered body"
             );
             return Ok(());
@@ -304,12 +300,9 @@ async fn assert_foreign_registration_refused(
     node: &S8RealnetNode,
     alice: &NativeAccount,
 ) -> TestResult {
-    use ramflux_crypto::custody::{branch_exporter_hash, sign_branch_proof_v3};
     use ramflux_protocol::custody::{
-        BindingMode, BranchProofV3, CustodyClientFrame, CustodyProofAction, CustodyRefusal,
-        CustodyServerFrame, DeviceRef,
+        CustodyProofAction, CustodyRefusal, CustodyServerFrame, DeviceRef, Publication,
     };
-    use ramflux_transport::{GatewaySessionFrameSink, GatewaySessionFrameSource};
 
     let before = fetch_s47_manifest(&node.gateway_url, &alice.anchor)?;
     let before_manifest = ramflux_protocol::canonical_json_bytes(&before)?;
@@ -354,12 +347,77 @@ async fn assert_foreign_registration_refused(
         None,
         None,
     )?;
-    let action = CustodyProofAction::Register { prekey_bundle: serde_json::to_value(bundle)? };
+    let register = CustodyProofAction::Register { prekey_bundle: serde_json::to_value(bundle)? };
     let claimed = DeviceRef {
         account_anchor: alice.anchor.clone(),
         device_id: branch.device_id.clone(),
         device_epoch: branch.device_epoch,
     };
+    let registration_refusal = attempt_foreign_custody_action(
+        node,
+        &claimed,
+        &branch,
+        &foreign_record,
+        register,
+        [0x4c; 32],
+    )
+    .await?;
+    assert_eq!(
+        registration_refusal,
+        CustodyServerFrame::Refused { code: CustodyRefusal::BindingRefused },
+        "foreign-device S47 registration must receive the binding refusal"
+    );
+
+    let mut foreign_claiming_alice = foreign_record.clone();
+    foreign_claiming_alice.body.account_anchor.clone_from(&alice.anchor);
+    let publish = CustodyProofAction::Publish {
+        publication: Box::new(Publication {
+            record: foreign_claiming_alice.clone(),
+            compacted_ids: None,
+        }),
+    };
+    let publication_refusal = attempt_foreign_custody_action(
+        node,
+        &claimed,
+        &branch,
+        &foreign_claiming_alice,
+        publish,
+        [0x4d; 32],
+    )
+    .await?;
+    assert_eq!(
+        publication_refusal,
+        CustodyServerFrame::Refused { code: CustodyRefusal::InvalidInput },
+        "foreign-signed S47 publication claiming Alice's anchor must be refused"
+    );
+
+    let after = fetch_s47_manifest(&node.gateway_url, &alice.anchor)?;
+    assert_eq!(ramflux_protocol::canonical_json_bytes(&after)?, before_manifest);
+    assert_eq!(
+        ramflux_protocol::canonical_json_bytes(
+            after
+                .pointer("/custody/publication/record")
+                .ok_or("S47 native device set missing after foreign registration")?,
+        )?,
+        before_device_set
+    );
+    Ok(())
+}
+
+async fn attempt_foreign_custody_action(
+    node: &S8RealnetNode,
+    claimed: &ramflux_protocol::custody::DeviceRef,
+    branch: &ramflux_crypto::DeviceBranch,
+    record: &ramflux_protocol::custody::Envelope<ramflux_protocol::custody::DeviceSet>,
+    action: ramflux_protocol::custody::CustodyProofAction,
+    proof_id: [u8; 32],
+) -> TestResult<ramflux_protocol::custody::CustodyServerFrame> {
+    use ramflux_crypto::custody::{branch_exporter_hash, sign_branch_proof_v3};
+    use ramflux_protocol::custody::{
+        BindingMode, BranchProofV3, CustodyClientFrame, CustodyServerFrame,
+    };
+    use ramflux_transport::{GatewaySessionFrameSink, GatewaySessionFrameSource};
+
     let (_, mut stream) = ramflux_transport::TcpTlsGatewayClient::connect(
         "0.0.0.0:0".parse()?,
         node.gateway_quic_addr,
@@ -370,7 +428,7 @@ async fn assert_foreign_registration_refused(
     .await?;
     stream
         .send_frame(&serde_json::to_vec(&CustodyClientFrame::CustodyOpen {
-            binding_mode: BindingMode::DirectExporter,
+            binding_mode: BindingMode::HomeRelayReceipt,
         })?)
         .await?;
     let opened: CustodyServerFrame = serde_json::from_slice(&stream.recv_frame().await?)?;
@@ -389,23 +447,23 @@ async fn assert_foreign_registration_refused(
                 .map_err(|_| "S47 custody challenge nonce length")?;
             let issued = u64::try_from(realnet_now_i64())?;
             let proof = sign_branch_proof_v3(
-                &branch,
+                branch,
                 BranchProofV3 {
                     schema: ramflux_protocol::domain::BRANCH_PROOF_V3.into(),
                     version: 3,
-                    device_ref: claimed,
+                    device_ref: claimed.clone(),
                     certificate_hash: ramflux_protocol::custody::object_hash(
-                        foreign_record.body.devices[0]
+                        record.body.devices[0]
                             .branch_certificate
                             .as_ref()
                             .ok_or("S47 foreign branch certificate missing")?,
                     )?,
-                    record_hash: ramflux_protocol::custody::object_hash(&foreign_record)?,
-                    proof_id: ramflux_protocol::encode_base64url([0x4c; 32]),
+                    record_hash: ramflux_protocol::custody::object_hash(record)?,
+                    proof_id: ramflux_protocol::encode_base64url(proof_id),
                     challenge_nonce: challenge.challenge_nonce,
                     action_hash: challenge.action_hash,
                     audience: challenge.audience,
-                    binding_mode: BindingMode::DirectExporter,
+                    binding_mode: BindingMode::HomeRelayReceipt,
                     transport_binding: branch_exporter_hash(&stream.custody_exporter(&nonce)?),
                     issued_at: issued,
                     expires_at: challenge.expires_at.min(issued.saturating_add(300)),
@@ -421,23 +479,7 @@ async fn assert_foreign_registration_refused(
         }
         response => response,
     };
-    assert_eq!(
-        refusal,
-        CustodyServerFrame::Refused { code: CustodyRefusal::InvalidInput },
-        "foreign-root signed S47 registration must receive the typed refusal"
-    );
-
-    let after = fetch_s47_manifest(&node.gateway_url, &alice.anchor)?;
-    assert_eq!(ramflux_protocol::canonical_json_bytes(&after)?, before_manifest);
-    assert_eq!(
-        ramflux_protocol::canonical_json_bytes(
-            after
-                .pointer("/custody/publication/record")
-                .ok_or("S47 native device set missing after foreign registration")?,
-        )?,
-        before_device_set
-    );
-    Ok(())
+    Ok(refusal)
 }
 
 fn fetch_s47_manifest(gateway_url: &str, anchor: &str) -> TestResult<Value> {
@@ -453,8 +495,15 @@ fn assert_gateway_has_no_private_material(
     use hkdf::Hkdf;
     use sha2::Sha256;
 
-    let capture = s47_service_file(S47_GATEWAY_CAPTURE)?;
-    let database = s47_service_file("/var/lib/ramflux/gateway/gateway.redb")?;
+    let capture = s47_service_file("ramflux-gateway", S47_GATEWAY_CAPTURE)?;
+    let gateway_database =
+        s47_service_file("ramflux-gateway", "/var/lib/ramflux/gateway/gateway.redb")?;
+    let router_database =
+        s47_service_file("ramflux-router", "/var/lib/ramflux/router/router.redb")?;
+    assert!(
+        contains_subslice(&capture, b"s47-after-recovery"),
+        "S47 gateway capture positive control is missing the known recovery marker"
+    );
     let phrase = ramflux_crypto::custody::RecoveryPhrase::parse(alice.recovery_phrase())?;
     let entropy = phrase.entropy();
     let mut master_seed = zeroize::Zeroizing::new([0_u8; 32]);
@@ -473,7 +522,11 @@ fn assert_gateway_has_no_private_material(
     }
     for (index, secret) in secrets.iter().enumerate() {
         let encoded = ramflux_protocol::encode_base64url(secret.as_slice());
-        for (surface, bytes) in [("capture", &capture), ("database", &database)] {
+        for (surface, bytes) in [
+            ("gateway capture", capture.as_slice()),
+            ("gateway database", gateway_database.as_slice()),
+            ("router database", router_database.as_slice()),
+        ] {
             assert!(
                 !contains_subslice(bytes, secret),
                 "gateway {surface} leaked S47 private dictionary entry {index}"
@@ -487,8 +540,8 @@ fn assert_gateway_has_no_private_material(
     Ok(())
 }
 
-fn s47_service_file(path: &str) -> TestResult<Vec<u8>> {
-    let (mut command, _env_file) = checked_itest_compose_command("s47-read-gateway-file")?;
+fn s47_service_file(service: &str, path: &str) -> TestResult<Vec<u8>> {
+    let (mut command, _env_file) = checked_itest_compose_command("s47-read-service-file")?;
     let output = command
         .arg("-p")
         .arg(S47_COMPOSE_PROJECT)
@@ -496,14 +549,14 @@ fn s47_service_file(path: &str) -> TestResult<Vec<u8>> {
         .arg("docker-compose.itest.yml")
         .arg("exec")
         .arg("-T")
-        .arg("ramflux-gateway")
+        .arg(service)
         .arg("cat")
         .arg(path)
         .current_dir(code_root().join("ramflux/deploy"))
         .output()?;
     if !output.status.success() {
         return Err(format!(
-            "failed to read S47 gateway file {path}: status={} stderr={}",
+            "failed to read S47 {service} file {path}: status={} stderr={}",
             output.status,
             String::from_utf8_lossy(&output.stderr)
         )
