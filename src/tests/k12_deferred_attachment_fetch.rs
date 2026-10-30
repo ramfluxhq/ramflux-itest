@@ -236,6 +236,7 @@ async fn send(
     let added =
         call(alice, &a.account_id, "contact.add", json!({"principal_id":b.principal_id})).await?;
     assert_eq!(added["contact"]["root_commitment"], b.anchor);
+    wait_for_pending_native_contact_request(bob, &b.account_id, a).await?;
     let accepted =
         call(bob, &b.account_id, "contact.accept", json!({"principal_id":a.principal_id})).await?;
     assert_eq!(accepted["state"], "accepted");

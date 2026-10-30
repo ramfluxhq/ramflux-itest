@@ -8,10 +8,6 @@ use super::*;
 const MVP_S39_PRODUCER_ROOT_SEED: [u8; 32] = [0x69; 32];
 #[cfg(all(test, feature = "realnet"))]
 const MVP_S39_PRODUCER_DEVICE_SEED: [u8; 32] = [0x6A; 32];
-#[cfg(all(test, feature = "realnet"))]
-const MVP_S39_SESSION_ROOT_SEED: [u8; 32] = [0x51; 32];
-#[cfg(all(test, feature = "realnet"))]
-const MVP_S39_SESSION_DEVICE_SEED: [u8; 32] = [0x52; 32];
 
 #[cfg(feature = "realnet")]
 #[test]
@@ -72,12 +68,8 @@ async fn mvp_s39_assert_resume_rejoin(
         mvp_s1_open_quic_stream(gateway_quic_addr, ca_cert).await?;
     eprintln!("S39-STEP: initial open/auth before");
     let open = mvp_s1_open_frame(Some(initial_cookie.to_owned()), 1_760_000_001, "s39_initial");
-    let auth = mvp_s39_rooted_auth(
-        &open,
-        "principal_s1_realnet",
-        MVP_S39_SESSION_ROOT_SEED,
-        MVP_S39_SESSION_DEVICE_SEED,
-    )?;
+    let auth =
+        mvp_s39_rooted_auth(&open, "principal_s1_realnet", MVP_S1_ROOT_SEED, MVP_S1_DEVICE_SEED)?;
     mvp_s1_write_client_frame(
         &mut send,
         &ramflux_node_core::GatewayClientFrame::Open { open: open.clone() },
@@ -355,8 +347,8 @@ async fn mvp_s39_submit_acknowledged(
         itest_envelope("env_s39_acknowledged_before_resume", "target_s1_gateway_session"),
         "principal_s1_realnet",
         "device_s1_realnet",
-        MVP_S39_SESSION_ROOT_SEED,
-        MVP_S39_SESSION_DEVICE_SEED,
+        MVP_S1_ROOT_SEED,
+        MVP_S1_DEVICE_SEED,
     )?;
     mvp_s1_write_client_frame(send, &ramflux_node_core::GatewayClientFrame::Submit { submit })
         .await?;
@@ -438,12 +430,8 @@ async fn mvp_s39_open_with_resume(
         open.resume_token_hash = Some(ramflux_node_core::gateway_resume_token_hash(resume_token));
         open.last_seen_inbox_seq = Some(last_seen_inbox_seq);
     }
-    let auth = mvp_s39_rooted_auth(
-        &open,
-        "principal_s1_realnet",
-        MVP_S39_SESSION_ROOT_SEED,
-        MVP_S39_SESSION_DEVICE_SEED,
-    )?;
+    let auth =
+        mvp_s39_rooted_auth(&open, "principal_s1_realnet", MVP_S1_ROOT_SEED, MVP_S1_DEVICE_SEED)?;
     mvp_s1_write_client_frame(
         &mut send,
         &ramflux_node_core::GatewayClientFrame::Open { open: open.clone() },
@@ -470,12 +458,8 @@ async fn mvp_s39_open_with_forged_resume(
     open.previous_session_id = Some(previous_session_id.to_owned());
     open.resume_token_hash = Some(resume_token_hash.to_owned());
     open.last_seen_inbox_seq = Some(1);
-    let auth = mvp_s39_rooted_auth(
-        &open,
-        "principal_s1_realnet",
-        MVP_S39_SESSION_ROOT_SEED,
-        MVP_S39_SESSION_DEVICE_SEED,
-    )?;
+    let auth =
+        mvp_s39_rooted_auth(&open, "principal_s1_realnet", MVP_S1_ROOT_SEED, MVP_S1_DEVICE_SEED)?;
     mvp_s1_write_client_frame(
         &mut send,
         &ramflux_node_core::GatewayClientFrame::Open { open: open.clone() },
