@@ -94,6 +94,17 @@ fn security_material() -> HarnessResult<&'static SecurityMaterial> {
         .map_err(|error| error.clone().into())
 }
 
+/// Share the generated issuer seed with signed fixtures before their certificates are built.
+pub(crate) fn gateway_issuer_seed(key: &str) -> HarnessResult<[u8; 32]> {
+    let encoded = security_material()?
+        .issuer_seeds
+        .get(key)
+        .ok_or_else(|| format!("unknown gateway issuer seed input {key}"))?;
+    ramflux_protocol::decode_base64url(encoded)?
+        .try_into()
+        .map_err(|_| "generated gateway issuer seed length".into())
+}
+
 pub(super) fn supply_required_inputs(env: &mut Vec<(String, String)>) -> HarnessResult<()> {
     for input in required_inputs()? {
         // Alias forwarding has already preserved fixture/process precedence, including

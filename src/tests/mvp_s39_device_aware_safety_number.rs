@@ -76,12 +76,9 @@ async fn run(node: &S8RealnetNode) -> TestResult {
 
 #[allow(clippy::too_many_lines)]
 async fn flow(node: &S8RealnetNode, sockets: &[PathBuf; 3], root: &Path) -> TestResult {
-    for socket in sockets {
-        mvp_s4_wait_for_socket(socket).await?;
-    }
-    let mut alice = ramflux_sdk::LocalBusClient::connect(&sockets[0]).await?;
-    let mut bob = ramflux_sdk::LocalBusClient::connect(&sockets[1]).await?;
-    let mut replacement = ramflux_sdk::LocalBusClient::connect(&sockets[2]).await?;
+    let mut alice = connect_native_bus(&sockets[0]).await?;
+    let mut bob = connect_native_bus(&sockets[1]).await?;
+    let mut replacement = connect_native_bus(&sockets[2]).await?;
     for bus in [&mut alice, &mut bob, &mut replacement] {
         select_native_node(bus, &node.node_id).await?;
     }

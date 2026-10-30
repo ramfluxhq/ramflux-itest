@@ -20,7 +20,7 @@ fn k12_realnet_deferred_attachment_fetch() -> TestResult {
     {
         return Err("k12 requires RAMFLUX_OBJECT_V3=1 RAMFLUX_CROSS_GATEWAY=1".into());
     }
-    let mut stack = start_client_directory_stack_named(
+    let mut stack = start_client_directory_stack_with_issuer(
         PROJECT,
         S8ComposePorts {
             gateway_http: 64_501,
@@ -40,6 +40,8 @@ fn k12_realnet_deferred_attachment_fetch() -> TestResult {
             "RAMFLUX_RELAY_ITEST_CAPTURE_FILE".to_owned(),
             "/var/lib/ramflux/relay/k12-capture.jsonl".to_owned(),
         )],
+        "node_a.realnet",
+        "gw-a",
     )?;
     let runtime = tokio::runtime::Builder::new_current_thread().enable_all().build()?;
     runtime.block_on(run(&stack.node))?;
@@ -78,10 +80,8 @@ async fn run(node: &S8RealnetNode) -> TestResult {
     bob_command.arg("--builtin-nodes").arg(&profiles).env("RAMFLUX_SYNC_ATTACHMENT_PREFETCH", "0");
     let mut bob_process = bob_command.spawn()?;
     let result = tokio::time::timeout(Duration::from_mins(5), async {
-        mvp_s4_wait_for_socket(&alice_socket).await?;
-        mvp_s4_wait_for_socket(&bob_socket).await?;
-        let mut alice = ramflux_sdk::LocalBusClient::connect(&alice_socket).await?;
-        let mut bob = ramflux_sdk::LocalBusClient::connect(&bob_socket).await?;
+        let mut alice = connect_native_bus(&alice_socket).await?;
+        let mut bob = connect_native_bus(&bob_socket).await?;
         select_native_node(&mut alice, &node.node_id).await?;
         select_native_node(&mut bob, &node.node_id).await?;
         let a = create_native_account(&alice_socket, "Alice").await?;
@@ -98,7 +98,7 @@ async fn run(node: &S8RealnetNode) -> TestResult {
             received.to_string().contains("env_k12"),
             "message must be received without a download"
         );
-        let directory = call(&mut bob, "bob", "object.directory", json!({})).await?;
+        let directory = call(&mut bob, &b.account_id, "object.directory", json!({})).await?;
         assert_eq!(directory["objects"][0]["transfer_state"], "not_fetched");
         assert_eq!(
             directory["objects"][0]["object_id"]

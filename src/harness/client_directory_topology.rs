@@ -61,38 +61,52 @@ fn signed_gateway_materials(
 ) -> Result<SignedGatewayMaterials, Box<dyn std::error::Error>> {
     let materials = MaterialDirectory(temp_root("client_directory_v3_materials")?);
     let now = ramflux_node_core::now_unix_seconds();
-    let root_seed = [0x44; 32];
-    let attestation_seed = [0x33; 32];
     let provider_seed = [0x66; 32];
     let offline_root_seed = [0x88; 32];
-    let certificate = t22_certificate(now, 3600, issuer, gateway, root_seed, attestation_seed)?;
-    let envelope = t22_trust_envelope(now, 3600, issuer, root_seed, provider_seed, &certificate)?;
-    let keyring = t22_provider_keyring(now, 3600, issuer, offline_root_seed, provider_seed)?;
-    for directory in ["gateway-a", "gateway-b", "federation"] {
-        std::fs::create_dir_all(materials.0.join(directory))?;
-    }
-    for directory in ["gateway-a", "gateway-b"] {
+    let mut env = Vec::new();
+    let mut selected = false;
+    for (node, instance, directory, seed_key, root_seed) in [
+        ("node_a.realnet", "gw-a", "gateway-a", "RAMFLUX_GATEWAY_A_V3_ISSUER_SEED", [0x43; 32]),
+        ("node_b.realnet", "gw-b", "gateway-b", "RAMFLUX_GATEWAY_B_V3_ISSUER_SEED", [0x44; 32]),
+    ] {
+        let seed = gateway_issuer_seed(seed_key)?;
+        let mut certificate = t22_certificate(now, 3600, node, instance, root_seed, seed)?;
+        certificate.cert_id = format!("client-directory-{instance}-cert");
+        certificate.attestation_key_id = format!("client-directory-{instance}-attestation");
+        certificate.node_root_signing_key_id = format!("{node}#root-1");
+        certificate.node_root_signature = ramflux_crypto::sign_canonical_bytes_with_seed(
+            &ramflux_node_core::gateway_issuer_certificate_signing_bytes(&certificate)?,
+            root_seed,
+        );
+        let envelope = t22_trust_envelope(now, 3600, node, root_seed, provider_seed, &certificate)?;
+        let keyring = t22_provider_keyring(now, 3600, node, offline_root_seed, provider_seed)?;
+        let gateway_dir = materials.0.join(directory);
+        std::fs::create_dir_all(&gateway_dir)?;
         std::fs::write(
-            materials.0.join(directory).join("issuer-cert.json"),
+            gateway_dir.join("issuer-cert.json"),
             serde_json::to_vec_pretty(&certificate)?,
         )?;
+        // The relay's production provider holds one issuer snapshot. Retain both signed trust
+        // chains and mount the chain selected by the slice's issuing gateway.
+        let trust_dir = materials.0.join("federation").join(instance);
+        std::fs::create_dir_all(&trust_dir)?;
+        for (name, bytes) in [
+            ("trust-snapshot.json", serde_json::to_vec_pretty(&envelope)?),
+            ("provider-keyring.json", serde_json::to_vec_pretty(&keyring)?),
+        ] {
+            std::fs::write(trust_dir.join(name), &bytes)?;
+            if (node, instance) == (issuer, gateway) {
+                std::fs::write(materials.0.join("federation").join(name), &bytes)?;
+                selected = true;
+            }
+        }
+        env.push((seed_key.to_owned(), ramflux_protocol::encode_base64url(seed)));
     }
-    std::fs::write(
-        materials.0.join("federation/trust-snapshot.json"),
-        serde_json::to_vec_pretty(&envelope)?,
-    )?;
-    std::fs::write(
-        materials.0.join("federation/provider-keyring.json"),
-        serde_json::to_vec_pretty(&keyring)?,
-    )?;
-    let seed_env = if gateway == "gw-a" {
-        "RAMFLUX_GATEWAY_A_V3_ISSUER_SEED"
-    } else {
-        "RAMFLUX_GATEWAY_B_V3_ISSUER_SEED"
-    };
-    let env = vec![
+    if !selected {
+        return Err(format!("unsupported client-directory issuer {issuer}/{gateway}").into());
+    }
+    env.extend([
         ("RAMFLUX_V3_MATERIALS_DIR".to_owned(), materials.0.to_string_lossy().into_owned()),
-        (seed_env.to_owned(), ramflux_protocol::encode_base64url(attestation_seed)),
         (
             "RAMFLUX_V3_FEDERATION_PROVIDER_OFFLINE_ROOT_PUBLIC_KEY".to_owned(),
             ramflux_crypto::public_key_base64url_from_seed(offline_root_seed),
@@ -107,7 +121,7 @@ fn signed_gateway_materials(
             "RAMFLUX_RELAY_ITEST_CAPTURE_JSON".to_owned(),
             "/tmp/ramflux-relay-itest-capture-s73.jsonl".to_owned(),
         ),
-    ];
+    ]);
     Ok(SignedGatewayMaterials { directory: materials, environment: env })
 }
 
@@ -216,40 +230,75 @@ mod issuer_tests {
     #[test]
     fn signed_materials_bind_selected_gateway_seed_and_owner_trust()
     -> Result<(), Box<dyn std::error::Error>> {
-        for (issuer, gateway, directory, seed_key) in [
-            ("node_a.realnet", "gw-a", "gateway-a", "RAMFLUX_GATEWAY_A_V3_ISSUER_SEED"),
-            ("node_b.realnet", "gw-b", "gateway-b", "RAMFLUX_GATEWAY_B_V3_ISSUER_SEED"),
-        ] {
+        for (issuer, gateway) in [("node_a.realnet", "gw-a"), ("node_b.realnet", "gw-b")] {
             let SignedGatewayMaterials { directory: materials, environment: env } =
                 signed_gateway_materials(issuer, gateway)?;
-            let env = env.into_iter().collect::<std::collections::BTreeMap<_, _>>();
-            let seed: [u8; 32] = ramflux_protocol::decode_base64url(
-                env.get(seed_key).ok_or("missing issuer seed")?,
-            )?
-            .try_into()
-            .map_err(|_| "invalid issuer seed length")?;
-            let certificate: ramflux_node_core::GatewayIssuerCertificate = serde_json::from_slice(
-                &std::fs::read(materials.0.join(directory).join("issuer-cert.json"))?,
-            )?;
-            assert_eq!(certificate.node_id, issuer);
-            assert_eq!(certificate.gateway_instance_id, gateway);
-            assert_eq!(
-                certificate.attestation_public_key,
-                ramflux_crypto::public_key_base64url_from_seed(seed)
+            let resolved = compose_env_with_required_defaults(&env)?;
+            let env = resolved.into_iter().collect::<std::collections::BTreeMap<_, _>>();
+            assert_ne!(
+                env["RAMFLUX_GATEWAY_A_V3_ISSUER_SEED"], env["RAMFLUX_GATEWAY_B_V3_ISSUER_SEED"],
+                "each gateway must keep its own issuer key"
             );
-            ramflux_crypto::verify_canonical_signature(
-                &ramflux_node_core::gateway_issuer_certificate_signing_bytes(&certificate)?,
-                &certificate.node_root_signature,
-                &ramflux_crypto::public_key_base64url_from_seed([0x44; 32]),
-            )?;
-            let trust: ramflux_node_core::ProviderSignedTrustSnapshot = serde_json::from_slice(
-                &std::fs::read(materials.0.join("federation/trust-snapshot.json"))?,
-            )?;
-            let keyring: ramflux_node_core::ProviderKeyring = serde_json::from_slice(
-                &std::fs::read(materials.0.join("federation/provider-keyring.json"))?,
-            )?;
-            assert_eq!(trust.snapshot.node_id, issuer);
-            assert_eq!(keyring.issuer_node_id, issuer);
+            for (node, instance, directory, seed_key) in [
+                ("node_a.realnet", "gw-a", "gateway-a", "RAMFLUX_GATEWAY_A_V3_ISSUER_SEED"),
+                ("node_b.realnet", "gw-b", "gateway-b", "RAMFLUX_GATEWAY_B_V3_ISSUER_SEED"),
+            ] {
+                let seed: [u8; 32] = ramflux_protocol::decode_base64url(
+                    env.get(seed_key).ok_or("missing issuer seed")?,
+                )?
+                .try_into()
+                .map_err(|_| "invalid issuer seed length")?;
+                let certificate: ramflux_node_core::GatewayIssuerCertificate =
+                    serde_json::from_slice(&std::fs::read(
+                        materials.0.join(directory).join("issuer-cert.json"),
+                    )?)?;
+                assert_eq!(certificate.node_id, node);
+                assert_eq!(certificate.gateway_instance_id, instance);
+                assert_eq!(
+                    certificate.attestation_public_key,
+                    ramflux_crypto::public_key_base64url_from_seed(seed)
+                );
+                let trust: ramflux_node_core::ProviderSignedTrustSnapshot =
+                    serde_json::from_slice(&std::fs::read(
+                        materials.0.join("federation").join(instance).join("trust-snapshot.json"),
+                    )?)?;
+                let keyring: ramflux_node_core::ProviderKeyring =
+                    serde_json::from_slice(&std::fs::read(
+                        materials.0.join("federation").join(instance).join("provider-keyring.json"),
+                    )?)?;
+                let now = ramflux_node_core::now_unix_seconds();
+                let verified = ramflux_node_core::verify_provider_keyring(
+                    &keyring,
+                    &env["RAMFLUX_V3_FEDERATION_PROVIDER_OFFLINE_ROOT_PUBLIC_KEY"],
+                    node,
+                )?;
+                ramflux_node_core::verify_provider_signed_trust_snapshot(&trust, &verified, now)?;
+                ramflux_node_core::verify_federated_issuer_trust_snapshot(
+                    &trust.snapshot,
+                    node,
+                    now,
+                )?;
+                let root = ramflux_node_core::select_trusted_node_root_key(
+                    &trust.snapshot,
+                    &certificate.node_root_signing_key_id,
+                    now,
+                )?;
+                ramflux_crypto::verify_canonical_signature(
+                    &ramflux_node_core::gateway_issuer_certificate_signing_bytes(&certificate)?,
+                    &certificate.node_root_signature,
+                    &root.public_key,
+                )?;
+                if (node, instance) == (issuer, gateway) {
+                    assert_eq!(
+                        std::fs::read(materials.0.join("federation/trust-snapshot.json"))?,
+                        serde_json::to_vec_pretty(&trust)?,
+                    );
+                    assert_eq!(
+                        std::fs::read(materials.0.join("federation/provider-keyring.json"))?,
+                        serde_json::to_vec_pretty(&keyring)?,
+                    );
+                }
+            }
             assert_eq!(env["RAMFLUX_V3_FEDERATION_TRUST_ISSUER_NODE_ID"], issuer);
             assert_eq!(
                 env["RAMFLUX_V3_FEDERATION_PROVIDER_OFFLINE_ROOT_PUBLIC_KEY"],
