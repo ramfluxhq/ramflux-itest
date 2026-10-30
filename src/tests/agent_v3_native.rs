@@ -52,6 +52,14 @@ fn scenario(case: Case) -> TestResult {
         Case::Surface => ("ramflux-k2b-native-surface", 64200),
         Case::Task => ("ramflux-k3b-native-task", 64300),
     };
+    let relay_quic = format!("127.0.0.1:{}", base + 47);
+    let gateway_b_quic = format!("127.0.0.1:{}", base + 89);
+    let extra_env = [
+        ("RAMFLUX_ITEST_RELAY_CLIENT_QUIC_PORT".to_owned(), (base + 47).to_string()),
+        ("RAMFLUX_ITEST_GATEWAY_B_HTTP_PORT".to_owned(), (base + 88).to_string()),
+        ("RAMFLUX_ITEST_GATEWAY_B_QUIC_PORT".to_owned(), (base + 89).to_string()),
+        ("RAMFLUX_ITEST_GATEWAY_B_TCP_PORT".to_owned(), (base + 89).to_string()),
+    ];
     let mut stack = start_client_directory_stack_named(
         name,
         S8ComposePorts {
@@ -68,24 +76,31 @@ fn scenario(case: Case) -> TestResult {
             signaling_turn_tcp: base + 79,
             retention_http: base + 7,
         },
-        &[],
+        &extra_env,
     )?;
-    tokio::runtime::Builder::new_current_thread()
-        .enable_all()
-        .build()?
-        .block_on(run(&stack.node, case))?;
+    tokio::runtime::Builder::new_current_thread().enable_all().build()?.block_on(run(
+        &stack.node,
+        case,
+        &relay_quic,
+        &gateway_b_quic,
+    ))?;
     stack.node.guard.mark_success();
     Ok(())
 }
 
-async fn run(node: &S8RealnetNode, case: Case) -> TestResult {
-    wait_relay_quic_healthy(S73_RELAY_QUIC, "ramflux-relay", &node.ca_cert).await?;
-    wait_for_private_gateway_quic(S73_GATEWAY_B_QUIC.parse()?, &node.ca_cert).await?;
+async fn run(
+    node: &S8RealnetNode,
+    case: Case,
+    relay_quic: &str,
+    gateway_b_quic: &str,
+) -> TestResult {
+    wait_relay_quic_healthy(relay_quic, "ramflux-relay", &node.ca_cert).await?;
+    wait_for_private_gateway_quic(gateway_b_quic.parse()?, &node.ca_cert).await?;
     let root = temp_root("agent-v3-native")?;
     std::fs::set_permissions(&root, std::fs::Permissions::from_mode(0o700))?;
     let socket = root.join("rfd.sock");
     let mut config = ramflux_sdk::LocalBusConfig::new(&socket, root.join("rfd"));
-    config.builtin_nodes = vec![native_node_profile(node, S73_RELAY_QUIC)?];
+    config.builtin_nodes = vec![native_node_profile(node, relay_quic)?];
     config.custody_vault =
         Some(std::sync::Arc::new(ramflux_sdk::custody::MemoryPrimaryVault::default()));
     let (stop, stopped) = tokio::sync::watch::channel(false);
@@ -101,9 +116,6 @@ async fn run(node: &S8RealnetNode, case: Case) -> TestResult {
         assert_eq!(std::fs::metadata(&bundle)?.permissions().mode() & 0o777, 0o600);
         attend(&mut bus, &human.account_id).await?;
         connect_contacts(&mut bus, &human, &agent).await?;
-        let prompt =
-            if matches!(case, Case::AgentSurface) { "@agent checklist" } else { "@agent ping" };
-        seed_dm(&mut bus, &human, &agent, "agent-v3-seed", prompt).await?;
         match case {
             Case::AgentHost => {
                 agent_host_case(&mut bus, &root, &socket, &bundle, &human, &agent, false).await?;
@@ -111,8 +123,14 @@ async fn run(node: &S8RealnetNode, case: Case) -> TestResult {
             Case::AgentSurface => {
                 agent_host_case(&mut bus, &root, &socket, &bundle, &human, &agent, true).await?;
             }
-            Case::Surface => surface_case(&mut bus, &socket, &human, &agent).await?,
-            Case::Task => task_case(&mut bus, &human, &agent).await?,
+            Case::Surface => {
+                seed_dm(&mut bus, &human, &agent, "agent-v3-seed", "@agent ping").await?;
+                surface_case(&mut bus, &socket, &human, &agent).await?;
+            }
+            Case::Task => {
+                seed_dm(&mut bus, &human, &agent, "agent-v3-seed", "@agent ping").await?;
+                task_case(&mut bus, &human, &agent).await?;
+            }
         }
         Ok::<(), Box<dyn std::error::Error>>(())
     };
@@ -151,9 +169,9 @@ async fn connect_contacts(
     call(bus, &human.account_id, "contact.add", json!({"principal_id":agent.principal_id})).await?;
     call(bus, &agent.account_id, "contact.accept", json!({"principal_id":human.principal_id}))
         .await?;
-    for (account, peer, kind) in [
-        (&human.account_id, &agent.principal_id, "headless_ai"),
-        (&agent.account_id, &human.principal_id, "human"),
+    for (account, peer, peer_device, kind) in [
+        (&human.account_id, &agent.principal_id, &agent.device_id, "headless_ai"),
+        (&agent.account_id, &human.principal_id, &human.device_id, "human"),
     ] {
         let directory = call(bus, account, "identity.directory", json!({"limit":100})).await?;
         let row = directory["identities"]
@@ -162,6 +180,9 @@ async fn connect_contacts(
             .ok_or("native contact missing")?;
         assert_eq!(row["kind"], kind);
         assert_eq!(row["kind_verified"], true);
+        assert!(row["devices"].as_array().is_some_and(|devices| {
+            devices.iter().any(|device| device["device_id"] == *peer_device)
+        }));
     }
     Ok(())
 }
@@ -231,6 +252,33 @@ async fn agent_host_case(
         .stderr(std::process::Stdio::inherit())
         .kill_on_drop(true)
         .spawn()?;
+    for _ in 0..200 {
+        if let Some(status) = child.try_wait()? {
+            return Err(format!("native agent host exited before subscribing: {status}").into());
+        }
+        if state.exists() {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    if !state.exists() {
+        return Err("native agent host did not subscribe before the DM seed".into());
+    }
+    let prompt = if surface { "@agent checklist" } else { "@agent ping" };
+    seed_dm(bus, human, agent, "agent-v3-seed", prompt).await?;
+    receive(bus, &agent.account_id).await?;
+    let seeded =
+        call(bus, &agent.account_id, "message.read", json!({"conversation_id":"dm_agent_v3"}))
+            .await?;
+    let seed = seeded["messages"]
+        .as_array()
+        .and_then(|messages| {
+            messages.iter().find(|message| message["message_id"] == "agent-v3-seed")
+        })
+        .ok_or("native seed sender missing")?;
+    let sender = seed["sender_id"].as_str().ok_or("native seed sender missing")?;
+    assert!(sender == human.device_id || sender == human.principal_id);
+    assert_eq!(seed["sender_root_commitment"], human.anchor);
     for _ in 0..200 {
         receive(bus, &human.account_id).await?;
         if surface {
