@@ -3,8 +3,11 @@
 
 //! Native realnet users are created through the ordinary exclusive local ceremony.
 #![cfg(all(test, feature = "realnet"))]
-use ramflux_sdk::{LocalBusClient, LocalBusCreationClient, LocalBusRecoveryClient};
-use std::path::Path;
+use ramflux_sdk::{
+    LocalBusClient, LocalBusCreationClient, LocalBusRecoveryClient, SdkError,
+    custody::{BranchCredentials, MemoryPrimaryVault, PrimaryVault},
+};
+use std::{path::Path, sync::Mutex};
 use zeroize::Zeroizing;
 
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
@@ -23,6 +26,84 @@ pub(crate) struct NativeAccount {
 
 pub(crate) const NATIVE_DATA_PASSPHRASE: &str = "native realnet local data passphrase";
 pub(crate) const NATIVE_RESTORED_PASSPHRASE: &str = "independent replacement local data password";
+
+/// Test-only vault that retains copies solely for private-material leak assertions.
+#[derive(Default)]
+pub(crate) struct RecordingPrimaryVault {
+    inner: MemoryPrimaryVault,
+    secrets: Mutex<Vec<Zeroizing<Vec<u8>>>>,
+}
+
+impl RecordingPrimaryVault {
+    pub(crate) fn secret_material(&self) -> std::result::Result<Vec<Zeroizing<Vec<u8>>>, SdkError> {
+        Ok(self
+            .secrets
+            .lock()
+            .map_err(|_| SdkError::CustodyVaultUnavailable)?
+            .iter()
+            .map(|secret| Zeroizing::new(secret.to_vec()))
+            .collect())
+    }
+
+    fn record(&self, secret: &[u8]) -> std::result::Result<(), SdkError> {
+        self.secrets
+            .lock()
+            .map_err(|_| SdkError::CustodyVaultUnavailable)?
+            .push(Zeroizing::new(secret.to_vec()));
+        Ok(())
+    }
+}
+
+impl PrimaryVault for RecordingPrimaryVault {
+    fn preflight(&self) -> std::result::Result<(), SdkError> {
+        self.inner.preflight()
+    }
+
+    fn store_new(
+        &self,
+        reference: &str,
+        key: &ramflux_crypto::custody::SelfSigningKey,
+    ) -> std::result::Result<(), SdkError> {
+        self.inner.store_new(reference, key)?;
+        self.record(key.vault_seed().as_slice())
+    }
+
+    fn load_primary(
+        &self,
+        reference: &str,
+    ) -> std::result::Result<ramflux_crypto::custody::SelfSigningKey, SdkError> {
+        self.inner.load_primary(reference)
+    }
+
+    fn load_branch(
+        &self,
+        reference: &str,
+        principal: &str,
+        device: &ramflux_protocol::custody::DeviceRef,
+    ) -> std::result::Result<BranchCredentials, SdkError> {
+        self.inner.load_branch(reference, principal, device)
+    }
+
+    fn delete(&self, reference: &str) -> std::result::Result<(), SdkError> {
+        self.inner.delete(reference)
+    }
+
+    fn store_branch(
+        &self,
+        reference: &str,
+        seeds: &Zeroizing<[u8; 64]>,
+    ) -> std::result::Result<(), SdkError> {
+        self.inner.store_branch(reference, seeds)?;
+        self.record(&seeds[..32])?;
+        self.record(&seeds[32..])
+    }
+}
+
+impl NativeAccount {
+    pub(crate) fn recovery_phrase(&self) -> &str {
+        self.phrase.as_str()
+    }
+}
 
 pub(crate) fn native_node_profile(
     node: &super::S8RealnetNode,

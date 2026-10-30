@@ -11,7 +11,7 @@ use serde_json::json;
 use std::path::Path;
 
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
-const ARCHIVE_SECRET: &str = "realnet archive password independent of data";
+pub(crate) const NATIVE_BACKUP_PASSPHRASE: &str = "realnet archive password independent of data";
 
 async fn attend(bus: &mut LocalBusClient) -> Result<()> {
     bus.request(
@@ -61,7 +61,7 @@ pub(crate) async fn create_native_backup(
             Some(account.into()),
             "account",
             "account.backup.create",
-            json!({"output_path":path,"passphrase":ARCHIVE_SECRET}),
+            json!({"output_path":path,"passphrase":NATIVE_BACKUP_PASSPHRASE}),
         )
         .await?;
     finished(bus, response, BackupJobState::Done).await?;
@@ -79,7 +79,7 @@ pub(crate) async fn restore_native_backup(
             None,
             "account",
             "account.restore.verify",
-            json!({"input_path":path,"passphrase":ARCHIVE_SECRET}),
+            json!({"input_path":path,"passphrase":NATIVE_BACKUP_PASSPHRASE}),
         )
         .await?;
     let verified = finished(bus, response, BackupJobState::Verified).await?;

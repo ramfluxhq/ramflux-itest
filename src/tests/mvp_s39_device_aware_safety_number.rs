@@ -74,6 +74,7 @@ async fn run(node: &S8RealnetNode) -> TestResult {
     Ok(())
 }
 
+#[allow(clippy::too_many_lines)]
 async fn flow(node: &S8RealnetNode, sockets: &[PathBuf; 3], root: &Path) -> TestResult {
     for socket in sockets {
         mvp_s4_wait_for_socket(socket).await?;
@@ -86,33 +87,41 @@ async fn flow(node: &S8RealnetNode, sockets: &[PathBuf; 3], root: &Path) -> Test
     }
     let alice_account = create_native_account(&sockets[0], "Alice").await?;
     let bob_account = create_native_account(&sockets[1], "Bob").await?;
-    call(
+    for account in [&alice_account, &bob_account] {
+        let manifest = wait_for_native_manifest(&node.gateway_url, &account.anchor).await?;
+        ramflux_sdk::RamfluxClient::verify_device_manifest_json(manifest, &account.anchor)?;
+    }
+    let added = call(
         &mut alice,
         &alice_account.account_id,
         "contact.add",
         json!({"principal_id":bob_account.principal_id}),
     )
     .await?;
-    call(
+    assert_eq!(added["contact"]["root_commitment"], bob_account.anchor);
+    let accepted = call(
         &mut bob,
         &bob_account.account_id,
         "contact.accept",
         json!({"principal_id":alice_account.principal_id}),
     )
     .await?;
+    assert_eq!(accepted["state"], "accepted");
+    assert_eq!(accepted["contact"]["root_commitment"], alice_account.anchor);
     let alice_initial = safety(&mut alice, &alice_account.account_id, &bob_account.anchor).await?;
     let bob_initial = safety(&mut bob, &bob_account.account_id, &alice_account.anchor).await?;
     assert_eq!(alice_initial["safety_number"], bob_initial["safety_number"]);
     assert_eq!(alice_initial["fingerprint_hex"], bob_initial["fingerprint_hex"]);
     assert_eq!(alice_initial["self_device_count"], 1);
     assert_eq!(bob_initial["contact_device_count"], 1);
-    call(
+    let verified = call(
         &mut bob,
         &bob_account.account_id,
         "contact.verify",
         json!({"contact_identity_commitment":alice_account.anchor}),
     )
     .await?;
+    assert_eq!(verified["verification_state"], "verified");
 
     let archive = root.join("alice.rfbackup");
     create_native_backup(&mut alice, &alice_account.account_id, &archive).await?;
@@ -149,23 +158,37 @@ async fn flow(node: &S8RealnetNode, sockets: &[PathBuf; 3], root: &Path) -> Test
     assert_ne!(bob_after["contact_device_set_hash"], bob_initial["contact_device_set_hash"]);
     assert_eq!(bob_after["contact_device_count"], 1);
     assert_eq!(bob_after["verification_state"], "verification_stale");
+    let replacement_after = safety(&mut replacement, &restored_id, &bob_account.anchor).await?;
+    assert_eq!(replacement_after["safety_number"], bob_after["safety_number"]);
+    assert_eq!(replacement_after["fingerprint_hex"], bob_after["fingerprint_hex"]);
+    assert_eq!(replacement_after["self_device_count"], 1);
+    let stale = call(
+        &mut bob,
+        &bob_account.account_id,
+        "contact.verification.status",
+        json!({"contact_identity_commitment":alice_account.anchor}),
+    )
+    .await?;
+    assert_eq!(stale["stored_verification_state"], "verified");
+    assert_eq!(stale["verification_state"], "verification_stale");
+    let reverified = call(
+        &mut bob,
+        &bob_account.account_id,
+        "contact.verify",
+        json!({"contact_identity_commitment":alice_account.anchor}),
+    )
+    .await?;
+    assert_eq!(reverified["verification_state"], "verified");
 
-    let manifest = fetch_manifest(&node.gateway_url, &alice_account.anchor)?;
+    let manifest = wait_for_native_manifest(&node.gateway_url, &alice_account.anchor).await?;
     assert!(manifest["custody"].is_object(), "S39 must exercise native custody evidence");
     ramflux_sdk::RamfluxClient::verify_device_manifest_json(
         manifest.clone(),
         &alice_account.anchor,
     )?;
-    assert_tamper_rejected(manifest.clone(), &alice_account.anchor, |value| {
-        value["root_public_key"] =
-            json!(ramflux_crypto::public_key_base64url_from_seed([0x5a; 32]));
-    });
-    assert_tamper_rejected(manifest.clone(), &alice_account.anchor, |value| {
-        value["custody"]["publication"]["record"]["signature"] = json!("tampered");
-    });
-    assert_tamper_rejected(manifest, &alice_account.anchor, |value| {
-        value["devices"][0]["prekey_bundle"]["signature_by_device_identity"] = json!("tampered");
-    });
+    assert_tamper_rejected(manifest.clone(), &alice_account.anchor, Tamper::RootPublicKey)?;
+    assert_tamper_rejected(manifest.clone(), &alice_account.anchor, Tamper::CustodySignature)?;
+    assert_tamper_rejected(manifest, &alice_account.anchor, Tamper::PrekeySignature)?;
     Ok(())
 }
 
@@ -195,10 +218,79 @@ fn fetch_manifest(gateway_url: &str, anchor: &str) -> TestResult<Value> {
     ))?)
 }
 
-fn assert_tamper_rejected(mut manifest: Value, anchor: &str, mutate: impl FnOnce(&mut Value)) {
-    mutate(&mut manifest);
-    assert!(
-        ramflux_sdk::RamfluxClient::verify_device_manifest_json(manifest, anchor).is_err(),
-        "tampered native manifest must fail closed"
-    );
+async fn wait_for_native_manifest(gateway_url: &str, anchor: &str) -> TestResult<Value> {
+    let mut last = Value::Null;
+    for _ in 0..100 {
+        last = fetch_manifest(gateway_url, anchor)?;
+        let projected = last.get("devices").and_then(Value::as_array);
+        let native = last.pointer("/custody/devices").and_then(Value::as_array);
+        if projected.is_some_and(|devices| devices.len() == 1)
+            && native.is_some_and(|devices| devices.len() == 1)
+        {
+            return Ok(last);
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    Err(format!(
+        "native S39 manifest never exposed exactly one projected and custody device; response={last}"
+    )
+    .into())
+}
+
+#[derive(Clone, Copy)]
+enum Tamper {
+    RootPublicKey,
+    CustodySignature,
+    PrekeySignature,
+}
+
+fn assert_tamper_rejected(mut manifest: Value, anchor: &str, tamper: Tamper) -> TestResult {
+    match tamper {
+        Tamper::RootPublicKey => {
+            let field = manifest
+                .get_mut("root_public_key")
+                .filter(|field| field.is_string())
+                .ok_or("native manifest root_public_key missing")?;
+            *field = json!(ramflux_crypto::public_key_base64url_from_seed([0x5a; 32]));
+        }
+        Tamper::CustodySignature => {
+            replace_signature(
+                &mut manifest,
+                "/custody/publication/record/signature",
+                "native custody signature missing",
+            )?;
+        }
+        Tamper::PrekeySignature => {
+            replace_signature(
+                &mut manifest,
+                "/devices/0/prekey_bundle/signature_by_device_identity",
+                "native prekey signature missing",
+            )?;
+        }
+    }
+    let error = match ramflux_sdk::RamfluxClient::verify_device_manifest_json(manifest, anchor) {
+        Ok(()) => return Err("tampered native manifest must fail closed".into()),
+        Err(error) => error,
+    };
+    match tamper {
+        Tamper::RootPublicKey => assert!(
+            matches!(&error, ramflux_sdk::SdkError::InboundRejected(reason)
+                if reason == "identity authority: native directory identity mismatch"),
+            "unexpected native root tamper error: {error:?}"
+        ),
+        Tamper::CustodySignature | Tamper::PrekeySignature => assert!(
+            matches!(
+                &error,
+                ramflux_sdk::SdkError::Crypto(ramflux_crypto::CryptoError::VerifyFailed)
+            ),
+            "unexpected native signature tamper error: {error:?}"
+        ),
+    }
+    Ok(())
+}
+
+fn replace_signature(manifest: &mut Value, pointer: &str, missing: &str) -> TestResult {
+    let field = manifest.pointer_mut(pointer).filter(|field| field.is_string()).ok_or(missing)?;
+    *field = json!(ramflux_protocol::encode_base64url([0xa5; 64]));
+    Ok(())
 }

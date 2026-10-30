@@ -289,6 +289,10 @@ jobs:
             tests: tests::k5a_agent_host::k5a2_realnet_agent_surface
           - slice: s35
             tests: tests::mvp_s35_multi_device::mvp_s35_realnet_multi_device_activation_fanout
+          - slice: s39a
+            tests: tests::mvp_s39_gateway_resume::mvp_s39_realnet_gateway_session_resume_token_rejoin
+          - slice: s39b
+            tests: tests::mvp_s39_device_aware_safety_number::mvp_s39_realnet_device_aware_safety_number_fail_closed
           - slice: s42
             tests: tests::mvp_s42_tui_object_attachment::mvp_s42_realnet_tui_object_attachment_panel
           - slice: s47
