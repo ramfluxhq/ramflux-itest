@@ -338,7 +338,7 @@ async fn wait_message(
                 .iter()
                 .find(|message| message["message_id"] == expected && message["body_utf8"] == id)
         }) {
-            assert_eq!(message["sender_id"], sender.device_id);
+            assert_eq!(message["sender_id"], sender.principal_id);
             assert_eq!(message["sender_device_id"], sender.device_id);
             return Ok(());
         }
