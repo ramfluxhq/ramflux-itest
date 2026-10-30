@@ -22,8 +22,9 @@ fn grpsync01_realnet_membership_and_name() -> TestResult {
             return Err(format!("grpsync01 requires {flag}=1").into());
         }
     }
+    let custody_node = "node_a.realnet";
     let gateway_a_issuer_seed = ramflux_protocol::encode_base64url([0x33; 32]);
-    let mut stack = start_client_directory_stack_named(
+    let mut stack = start_client_directory_stack_with_issuer(
         "ramflux-grpsync01",
         S8ComposePorts {
             gateway_http: 64901,
@@ -39,7 +40,12 @@ fn grpsync01_realnet_membership_and_name() -> TestResult {
             signaling_turn_tcp: 64979,
             retention_http: 64907,
         },
-        &[("RAMFLUX_GATEWAY_A_V3_ISSUER_SEED".into(), gateway_a_issuer_seed)],
+        &[
+            ("RAMFLUX_GATEWAY_A_V3_ISSUER_SEED".into(), gateway_a_issuer_seed),
+            ("RAMFLUX_GATEWAY_B_NODE_ID".into(), custody_node.into()),
+        ],
+        custody_node,
+        "gw-b",
     )?;
     tokio::runtime::Builder::new_current_thread()
         .enable_all()
@@ -93,7 +99,6 @@ async fn run(node: &S8RealnetNode) -> TestResult {
 
 fn gateway_b_profile(node: &S8RealnetNode, relay: &str) -> TestResult<NodeProfile> {
     let mut profile = native_node_profile(node, relay)?;
-    profile.node_id = "node_b.realnet".into();
     profile.gateway.quic_addr = S73_GATEWAY_B_QUIC.into();
     profile.gateway.tcp_addr = S73_GATEWAY_B_QUIC.into();
     Ok(profile)
@@ -115,6 +120,7 @@ async fn flow(sockets: &[PathBuf; 2], owner_node: &str, peer_node: &str) -> Test
         .await?;
     call(&mut peer, &bob.account_id, "contact.accept", json!({"principal_id":alice.principal_id}))
         .await?;
+    wait_contact_route(&mut owner, &alice.account_id, &bob).await?;
 
     step("native_create_and_principal_add");
     call(
@@ -131,10 +137,11 @@ async fn flow(sockets: &[PathBuf; 2], owner_node: &str, peer_node: &str) -> Test
         json!({"group_id":GROUP,"member_id":bob.principal_id,"role":"member"}),
     )
     .await?;
+    wait_state(&mut owner, &alice.account_id, 2, NAME, &[&alice.device_id, &bob.device_id]).await?;
     wait_state(&mut peer, &bob.account_id, 2, NAME, &[&alice.device_id, &bob.device_id]).await?;
 
     step("cross_gateway_native_messages");
-    send(&mut owner, &alice, "owner-first").await?;
+    send_from_device(&mut owner, &alice, "owner-first").await?;
     wait_message(&mut peer, &bob.account_id, &alice, "owner-first").await?;
     send(&mut peer, &bob, "peer-first").await?;
     wait_message(&mut owner, &alice.account_id, &bob, "peer-first").await?;
@@ -161,7 +168,10 @@ async fn flow(sockets: &[PathBuf; 2], owner_node: &str, peer_node: &str) -> Test
     )
     .await?;
     wait_state(&mut owner, &alice.account_id, 4, "Reviewed checklist", &[&alice.device_id]).await?;
+    wait_state(&mut peer, &bob.account_id, 4, "Reviewed checklist", &[&alice.device_id]).await?;
     assert_typed_send_refusal(&mut peer, &bob).await?;
+    send_from_device(&mut owner, &alice, "owner-after-removal").await?;
+    assert_message_unavailable(&mut peer, &bob.account_id, &alice, "owner-after-removal").await?;
     step("complete");
     Ok(())
 }
@@ -200,15 +210,56 @@ async fn call(
 }
 
 async fn send(bus: &mut LocalBusClient, sender: &NativeAccount, id: &str) -> TestResult {
+    send_as(bus, sender, id, &sender.principal_id).await
+}
+
+async fn send_from_device(
+    bus: &mut LocalBusClient,
+    sender: &NativeAccount,
+    id: &str,
+) -> TestResult {
+    send_as(bus, sender, id, &sender.device_id).await
+}
+
+async fn send_as(
+    bus: &mut LocalBusClient,
+    sender: &NativeAccount,
+    id: &str,
+    sender_id: &str,
+) -> TestResult {
     call(
         bus,
         &sender.account_id,
         "group.send",
         json!({"group_id":GROUP,"conversation_id":THREAD,"message_id":id,
-            "sender_id":sender.principal_id,"encrypted_body_base64":"",
+            "sender_id":sender_id,"encrypted_body_base64":"",
             "plaintext_body_base64":ramflux_protocol::encode_base64url(id)}),
     )
     .await?;
+    Ok(())
+}
+
+async fn assert_message_unavailable(
+    bus: &mut LocalBusClient,
+    account: &str,
+    sender: &NativeAccount,
+    id: &str,
+) -> TestResult {
+    let expected =
+        ramflux_protocol::group_message_id(GROUP, &sender.anchor, &sender.device_id, id)?;
+    for _ in 0..20 {
+        call(bus, account, "message.receive", json!({"limit":32})).await?;
+        let read = call(bus, account, "message.read", json!({"conversation_id":THREAD})).await?;
+        if read["messages"].as_array().is_some_and(|messages| {
+            messages.iter().any(|message| message["message_id"] == expected)
+        }) {
+            return Err(format!(
+                "removed native member read post-removal group message: account={account} id={id}"
+            )
+            .into());
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
     Ok(())
 }
 
@@ -242,6 +293,35 @@ async fn wait_state(
     .into())
 }
 
+async fn wait_contact_route(
+    bus: &mut LocalBusClient,
+    account: &str,
+    peer: &NativeAccount,
+) -> TestResult {
+    let mut observed = Value::Null;
+    for _ in 0..100 {
+        call(bus, account, "message.receive", json!({"limit":32})).await?;
+        observed = call(bus, account, "identity.directory", json!({})).await?;
+        if observed["identities"].as_array().is_some_and(|identities| {
+            identities.iter().any(|identity| {
+                identity["principal_id"] == peer.principal_id
+                    && identity["reachable"] == true
+                    && identity["devices"].as_array().is_some_and(|devices| {
+                        devices.iter().any(|device| device["device_id"] == peer.device_id)
+                    })
+            })
+        }) {
+            return Ok(());
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    Err(format!(
+        "contact route did not converge: account={account} peer={} observed={observed}",
+        peer.principal_id
+    )
+    .into())
+}
+
 async fn wait_message(
     bus: &mut LocalBusClient,
     account: &str,
@@ -258,7 +338,7 @@ async fn wait_message(
                 .iter()
                 .find(|message| message["message_id"] == expected && message["body_utf8"] == id)
         }) {
-            assert_eq!(message["sender_id"], sender.principal_id);
+            assert_eq!(message["sender_id"], sender.device_id);
             assert_eq!(message["sender_device_id"], sender.device_id);
             return Ok(());
         }
