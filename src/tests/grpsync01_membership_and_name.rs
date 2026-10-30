@@ -23,7 +23,6 @@ fn grpsync01_realnet_membership_and_name() -> TestResult {
         }
     }
     let custody_node = "node_a.realnet";
-    let gateway_a_issuer_seed = ramflux_protocol::encode_base64url([0x33; 32]);
     let mut stack = start_client_directory_stack_with_issuer(
         "ramflux-grpsync01",
         S8ComposePorts {
@@ -40,12 +39,9 @@ fn grpsync01_realnet_membership_and_name() -> TestResult {
             signaling_turn_tcp: 64979,
             retention_http: 64907,
         },
-        &[
-            ("RAMFLUX_GATEWAY_A_V3_ISSUER_SEED".into(), gateway_a_issuer_seed),
-            ("RAMFLUX_GATEWAY_B_NODE_ID".into(), custody_node.into()),
-        ],
+        &[("RAMFLUX_GATEWAY_B_NODE_ID".into(), custody_node.into())],
         custody_node,
-        "gw-b",
+        "gw-a",
     )?;
     tokio::runtime::Builder::new_current_thread()
         .enable_all()
