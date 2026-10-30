@@ -44,6 +44,7 @@ pub(super) async fn run(
     )
     .await?;
     wait_membership(bus, agent, true).await?;
+    assert_pinned_projection(bus, agent).await?;
     send(bus, human, "native-group-ping").await?;
     wait_replies(bus, human, agent, 1).await?;
     let before = checkpoint(&state, None).await?;
@@ -85,6 +86,48 @@ pub(super) async fn run(
     assert!(host.try_wait()?.is_none(), "membership refusal stopped the host");
     host.start_kill()?;
     host.wait().await?;
+    Ok(())
+}
+
+async fn assert_pinned_projection(
+    bus: &mut ramflux_sdk::LocalBusClient,
+    agent: &NativeAccount,
+) -> TestResult {
+    let directory = call(bus, &agent.account_id, "conversation.directory", json!({"limit":100}))
+        .await
+        .map_err(|error| format!("native group conversation projection: {error:?}"))?;
+    assert!(
+        directory["conversations"].as_array().is_some_and(|rows| rows
+            .iter()
+            .any(|row| row["id"] == THREAD && row["group_id"] == GROUP)),
+        "native group conversation missing: {directory}"
+    );
+    let identities =
+        call(bus, &agent.account_id, "identity.directory", json!({"limit":100})).await?;
+    let own = identities["identities"]
+        .as_array()
+        .and_then(|rows| {
+            rows.iter()
+                .find(|row| row["is_self"] == true && row["principal_id"] == agent.principal_id)
+        })
+        .ok_or("native group self projection")?;
+    assert_eq!(own["contact_identity_commitment"], agent.anchor);
+    let key = own["devices"]
+        .as_array()
+        .and_then(|rows| rows.iter().find(|row| row["device_id"] == agent.device_id))
+        .ok_or("native group self device")?["signing_public_key"]
+        .clone();
+    let membership =
+        call(bus, &agent.account_id, "group.members", json!({"group_id":GROUP})).await?;
+    assert!(
+        membership["member_roster"].as_array().is_some_and(|rows| rows.iter().any(
+            |row| row["identity"]["principal_id"] == agent.principal_id
+                && row["identity"]["root_commitment"] == agent.anchor
+                && row["identity"]["device_id"] == agent.device_id
+                && row["identity"]["signing_public_key"] == key
+        )),
+        "native group pin mismatch: {membership}; self={own}"
+    );
     Ok(())
 }
 
