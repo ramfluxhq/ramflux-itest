@@ -118,10 +118,10 @@ async fn run(
         connect_contacts(&mut bus, &human, &agent).await?;
         match case {
             Case::AgentHost => {
-                agent_host_case(&mut bus, &root, &socket, &bundle, &human, &agent, false).await?;
+                agent_host_case(&mut bus, &root, &bundle, &human, &agent, false).await?;
             }
             Case::AgentSurface => {
-                agent_host_case(&mut bus, &root, &socket, &bundle, &human, &agent, true).await?;
+                agent_host_case(&mut bus, &root, &bundle, &human, &agent, true).await?;
             }
             Case::Surface => {
                 seed_dm(&mut bus, &human, &agent, "agent-v3-seed", "@agent ping").await?;
@@ -140,7 +140,10 @@ async fn run(
         result
     };
     let (server_result, flow_result) =
-        tokio::time::timeout(Duration::from_mins(6), async { tokio::join!(server, flow) }).await?;
+        Box::pin(tokio::time::timeout(Duration::from_mins(6), async {
+            tokio::join!(server, flow)
+        }))
+        .await?;
     server_result?;
     flow_result?;
     std::fs::remove_dir_all(root)?;
@@ -228,12 +231,12 @@ async fn build_agent_host() -> TestResult<PathBuf> {
 async fn agent_host_case(
     bus: &mut ramflux_sdk::LocalBusClient,
     root: &Path,
-    socket: &Path,
     bundle: &Path,
     human: &NativeAccount,
     agent: &NativeAccount,
     surface: bool,
 ) -> TestResult {
+    let socket = root.join("rfd.sock");
     let binary = build_agent_host().await?;
     let config = root.join("host.json");
     let state = root.join("host-state.json");
@@ -582,7 +585,7 @@ async fn task_case(
         .iter()
         .filter(|row| row["content_type"] == "task" && row["task_id"] == "native-task")
         .collect::<Vec<_>>();
-    assert!(!rows.is_empty());
+    assert_ne!(rows, [] as [&serde_json::Value; 0]);
     assert!(rows.iter().all(|row| row["actor_kind_verified"] == true));
     let fallbacks = rows.iter().filter_map(|row| row["body_utf8"].as_str()).collect::<Vec<_>>();
     assert!(fallbacks.iter().any(|text| text.contains("Task native-task accepted")));
