@@ -56,6 +56,7 @@ async fn run(node: &S8RealnetNode) -> VoiceResult {
     for (id, socket) in ["alice", "bob"].iter().zip(&sockets) {
         children.push(
             client_directory_daemon_command(&rf, socket, &root.join(id), &node.ca_cert, None)
+                .arg("--itest-memory-vault")
                 .spawn()?,
         );
     }
@@ -77,31 +78,52 @@ async fn flow(node: &S8RealnetNode, rf: &Path, sockets: &[PathBuf; 2]) -> VoiceR
     }
     let mut alice = ramflux_sdk::LocalBusClient::connect(&sockets[0]).await?;
     let mut bob = ramflux_sdk::LocalBusClient::connect(&sockets[1]).await?;
-    let a = actors::create(&mut alice, node, "alice", [0xc1; 32], [0xc2; 32]).await?;
-    let b = actors::create(&mut bob, node, "bob", [0xc3; 32], [0xc4; 32]).await?;
-    for (bus, id, own, peer) in [(&mut alice, "alice", &a, &b), (&mut bob, "bob", &b, &a)] {
-        let accepted=actors::call(bus,id,"contact.add",json!({"link_id":format!("call01-{id}"),"requester_id":own["principal_commitment"],"target_id":peer["principal_commitment"]})).await?;
-        assert_eq!(accepted["state"], "accepted");
+    let a = actors::create(&mut alice, &sockets[0], node, "Alice Call Fixture").await?;
+    let b = actors::create(&mut bob, &sockets[1], node, "Bob Call Fixture").await?;
+    let alice_id = a["local_account_id"].as_str().ok_or("missing alice account id")?;
+    let bob_id = b["local_account_id"].as_str().ok_or("missing bob account id")?;
+    actors::call(&mut alice, alice_id, "contact.add", json!({"principal_id":b["principal_id"]}))
+        .await?;
+    let request = actors::wait_inbound_contact_request(
+        &mut bob,
+        bob_id,
+        a["principal_id"].as_str().ok_or("missing alice principal")?,
+    )
+    .await?;
+    actors::call(&mut bob, bob_id, "contact.accept", json!({"request_id":request})).await?;
+    actors::wait_accepted_contact(
+        &mut alice,
+        alice_id,
+        b["principal_id"].as_str().ok_or("missing bob principal")?,
+    )
+    .await?;
+    actors::wait_accepted_contact(
+        &mut bob,
+        bob_id,
+        a["principal_id"].as_str().ok_or("missing alice principal")?,
+    )
+    .await?;
+    for (bus, id) in [(&mut alice, alice_id), (&mut bob, bob_id)] {
         actors::call(bus, id, "bus.subscribe", json!({"topics":["call.changed"]})).await?;
     }
-    actors::call(&mut alice,"alice","message.submit",json!({"conversation_id":"voice-thread","message_id":"voice-context","envelope_id":"voice-context-envelope","source_principal_id":a["principal_id"],"sender_id":a["device_id"],"recipient_device_id":b["device_id"],"recipient_principal_commitment":b["principal_commitment"],"target_delivery_id":b["target_delivery_id"],"encrypted_body_base64":"","plaintext_body_base64":ramflux_protocol::encode_base64url(b"voice context"),"created_at":realnet_now_i64(),"ttl":300})).await?;
-    actors::wait_context(&mut bob).await?;
+    actors::call(&mut alice,alice_id,"message.submit",json!({"conversation_id":"voice-thread","message_id":"voice-context","envelope_id":"voice-context-envelope","source_principal_id":a["principal_id"],"sender_id":a["device_id"],"recipient_device_id":b["device_id"],"recipient_principal_commitment":b["principal_commitment"],"target_delivery_id":b["target_delivery_id"],"encrypted_body_base64":"","plaintext_body_base64":ramflux_protocol::encode_base64url(b"voice context"),"created_at":realnet_now_i64(),"ttl":300})).await?;
+    actors::wait_context(&mut bob, bob_id).await?;
     realnet_step("voice invite", "caller=alice callee=bob");
     let invite =
-        actors::cli(rf, &sockets[0], "invite", "alice", Some(("--conversation", "voice-thread")))
+        actors::cli(rf, &sockets[0], "invite", alice_id, Some(("--conversation", "voice-thread")))
             .await?;
     assert_eq!(invite["state"], "outgoing_ringing");
     let id = invite["call_id"].as_str().ok_or("missing call id")?;
     assert_eq!(ramflux_protocol::decode_base64url(id)?.len(), 16);
-    actors::wait_state(&mut bob, "bob", id, "incoming_ringing").await?;
-    let answered = actors::cli(rf, &sockets[1], "answer", "bob", Some(("--call", id))).await?;
+    actors::wait_state(&mut bob, bob_id, id, "incoming_ringing").await?;
+    let answered = actors::cli(rf, &sockets[1], "answer", bob_id, Some(("--call", id))).await?;
     assert_eq!(answered["state"], "connecting");
-    actors::wait_state(&mut alice, "alice", id, "active").await?;
-    actors::wait_state(&mut bob, "bob", id, "active").await?;
+    actors::wait_state(&mut alice, alice_id, id, "active").await?;
+    actors::wait_state(&mut bob, bob_id, id, "active").await?;
     realnet_step("voice media", "authenticated signaling active on both daemons");
     let own =
-        actors::call(&mut alice, "alice", "call.media.session", json!({"call_id":id})).await?;
-    let peer = actors::call(&mut bob, "bob", "call.media.session", json!({"call_id":id})).await?;
+        actors::call(&mut alice, alice_id, "call.media.session", json!({"call_id":id})).await?;
+    let peer = actors::call(&mut bob, bob_id, "call.media.session", json!({"call_id":id})).await?;
     assert_eq!(own["sframe"]["cipher_suite"], 5);
     assert_eq!(peer["sframe"]["cipher_suite"], 5);
     assert_eq!(own["sframe"]["send"]["kid"], 0);
@@ -121,10 +143,10 @@ async fn flow(node: &S8RealnetNode, rf: &Path, sockets: &[PathBuf; 2]) -> VoiceR
         return Err("directional media keys do not match".into());
     }
     assert!(
-        actors::call(&mut alice, "alice", "call.media.session", json!({"call_id":id}))
+        actors::call(&mut alice, alice_id, "call.media.session", json!({"call_id":id}))
             .await
             .is_err(),
-        "legacy engines must never reacquire a used key"
+        "native engines must never reacquire a used key"
     );
     media::round_trip(&own, &peer).await?;
     for bus in [&mut alice, &mut bob] {
@@ -133,12 +155,12 @@ async fn flow(node: &S8RealnetNode, rf: &Path, sockets: &[PathBuf; 2]) -> VoiceR
         assert_eq!(event.body["call_id"], id);
         actors::public_fields_only(&event.body)?;
     }
-    let ended = actors::cli(rf, &sockets[0], "hangup", "alice", Some(("--call", id))).await?;
+    let ended = actors::cli(rf, &sockets[0], "hangup", alice_id, Some(("--call", id))).await?;
     assert_eq!(ended["end_reason"], "completed");
-    let ended = actors::wait_state(&mut bob, "bob", id, "ended").await?;
+    let ended = actors::wait_state(&mut bob, bob_id, id, "ended").await?;
     assert_eq!(ended["end_reason"], "completed");
     let timeline =
-        actors::call(&mut bob, "bob", "message.list", json!({"conversation_id":"voice-thread"}))
+        actors::call(&mut bob, bob_id, "message.list", json!({"conversation_id":"voice-thread"}))
             .await?;
     let record = timeline["messages"]
         .as_array()
@@ -150,14 +172,14 @@ async fn flow(node: &S8RealnetNode, rf: &Path, sockets: &[PathBuf; 2]) -> VoiceR
     actors::public_fields_only(record)?;
     // A second call exercises peer rejection rather than the removed local answer stub.
     let retry =
-        actors::cli(rf, &sockets[0], "invite", "alice", Some(("--conversation", "voice-thread")))
+        actors::cli(rf, &sockets[0], "invite", alice_id, Some(("--conversation", "voice-thread")))
             .await?;
     let retry_id = retry["call_id"].as_str().ok_or("retry call id missing")?;
     assert_ne!(retry_id, id);
-    actors::wait_state(&mut bob, "bob", retry_id, "incoming_ringing").await?;
-    actors::cli(rf, &sockets[1], "reject", "bob", Some(("--call", retry_id))).await?;
+    actors::wait_state(&mut bob, bob_id, retry_id, "incoming_ringing").await?;
+    actors::cli(rf, &sockets[1], "reject", bob_id, Some(("--call", retry_id))).await?;
     assert_eq!(
-        actors::wait_state(&mut alice, "alice", retry_id, "ended").await?["end_reason"],
+        actors::wait_state(&mut alice, alice_id, retry_id, "ended").await?["end_reason"],
         "declined"
     );
     realnet_step(

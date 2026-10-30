@@ -727,6 +727,7 @@ async fn handle_local_gateway_stream(
                 )
                 .map_err(|source| source.to_string())?;
                 let entry = ramflux_sdk::GatewayInboxEntry {
+                    forwarded: false,
                     inbox_seq: 1,
                     target_delivery_id: submit.envelope.target_delivery_id.clone(),
                     envelope: submit.envelope,
@@ -1081,6 +1082,7 @@ fn handle_local_router_inbox_request(
     let mut inbox = lock_inbox(state)?;
     let inbox_seq = u64::try_from(inbox.len())?.saturating_add(1);
     inbox.push(ramflux_sdk::GatewayInboxEntry {
+        forwarded: false,
         inbox_seq,
         target_delivery_id: inbound.envelope.target_delivery_id.clone(),
         envelope: inbound.envelope.clone(),
