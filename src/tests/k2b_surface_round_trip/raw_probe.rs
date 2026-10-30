@@ -70,34 +70,41 @@ pub(super) async fn reject_at_author(
             .ok_or("author identity")?;
         call(human,"human","message.submit",json!({"conversation_id":conversation,"message_id":id,"envelope_id":id,"source_principal_id":"principal_k2b_human","sender_id":"device_k2b_human","recipient_device_id":"device_k2b_agent","recipient_principal_commitment":peer["contact_identity_commitment"],"target_delivery_id":"target_k2b_agent","encrypted_body_base64":"","plaintext_body_base64":ramflux_protocol::encode_base64url(raw),"created_at":realnet_now_i64(),"ttl":300})).await?;
     }
-    tokio::time::timeout(Duration::from_secs(20), async {
+    waits::condition(&format!("receiver rejection surface={surface} kind={kind}"), async {
         loop {
-            call(
-                agent,
-                "agent",
-                "message.receive",
-                json!({"limit":32,"auto_fetch_attachments":false}),
-            )
-            .await?;
-            if let Ok(event) =
-                tokio::time::timeout(Duration::from_millis(300), watcher.next_event()).await
-            {
-                let event = event?;
-                if event.method == "surface.rejected"
-                    && event.body["envelope_id"]
-                        .as_str()
-                        .is_some_and(|id| delivery_ids.iter().any(|sent| sent == id))
-                {
-                    let code = &event.body["renderer_error"]["code"];
-                    let expected =
-                        if kind == "event" { "non_author_update" } else { "renderer_error" };
-                    assert_eq!(code, expected, "unexpected reject: {}", event.body);
-                    return Ok::<(), Box<dyn std::error::Error>>(());
+            // Retain a partial event read across polling ticks. Finish each bus
+            // receive request before reusing the same client for surface.get.
+            let event = {
+                let pending_event = watcher.next_event();
+                tokio::pin!(pending_event);
+                loop {
+                    call(
+                        agent,
+                        "agent",
+                        "message.receive",
+                        json!({"limit":32,"auto_fetch_attachments":false}),
+                    )
+                    .await?;
+                    if let Ok(event) =
+                        tokio::time::timeout(Duration::from_millis(300), &mut pending_event).await
+                    {
+                        break event?;
+                    }
                 }
+            };
+            if event.method == "surface.rejected"
+                && event.body["envelope_id"]
+                    .as_str()
+                    .is_some_and(|id| delivery_ids.iter().any(|sent| sent == id))
+            {
+                let code = &event.body["renderer_error"]["code"];
+                let expected = if kind == "event" { "non_author_update" } else { "renderer_error" };
+                assert_eq!(code, expected, "unexpected reject: {}", event.body);
+                return Ok(());
             }
         }
     })
-    .await??;
+    .await?;
     let after = call(agent, "agent", "surface.get", json!({"surface_id":surface})).await?;
     assert_eq!(after, before, "foreign rejects must not mutate the author's view");
     Ok(())

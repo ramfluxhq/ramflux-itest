@@ -9,6 +9,8 @@ use serde_json::{Value, json};
 mod actors;
 #[path = "k2b_surface_round_trip/raw_probe.rs"]
 mod raw_probe;
+#[path = "k2b_surface_round_trip/waits.rs"]
+mod waits;
 use actors::*;
 type TestResult<T = ()> = Result<T, Box<dyn std::error::Error>>;
 #[test]
@@ -22,6 +24,7 @@ fn k2b_realnet_surface_round_trip() -> TestResult {
     {
         return Err("k2b requires RAMFLUX_OBJECT_V3=1 RAMFLUX_CROSS_GATEWAY=1".into());
     }
+    let budget = waits::WaitBudget::new(tokio::time::Instant::now());
     let mut stack = start_client_directory_stack_named(
         "ramflux-k2b-surfaces",
         S8ComposePorts {
@@ -43,11 +46,11 @@ fn k2b_realnet_surface_round_trip() -> TestResult {
     tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()?
-        .block_on(run(&stack.node))?;
+        .block_on(run(&stack.node, budget))?;
     stack.node.guard.mark_success();
     Ok(())
 }
-async fn run(node: &S8RealnetNode) -> TestResult {
+async fn run(node: &S8RealnetNode, budget: waits::WaitBudget) -> TestResult {
     step("transport_readiness", "-");
     wait_relay_quic_healthy(S73_RELAY_QUIC, "ramflux-relay", &node.ca_cert).await?;
     wait_for_private_gateway_quic(S73_GATEWAY_B_QUIC.parse()?, &node.ca_cert).await?;
@@ -79,7 +82,7 @@ async fn run(node: &S8RealnetNode) -> TestResult {
         None,
     )
     .spawn()?;
-    let result=tokio::time::timeout(Duration::from_mins(6),async {
+    let result=budget.run(async {
         mvp_s4_wait_for_socket(&a_socket).await?;mvp_s4_wait_for_socket(&b_socket).await?;
         let mut human=ramflux_sdk::LocalBusClient::connect(&a_socket).await?;let mut agent=ramflux_sdk::LocalBusClient::connect(&b_socket).await?;
         let own=create(&mut human,node,"human",41,false).await?;let peer=create(&mut agent,node,"agent",45,true).await?;
@@ -123,7 +126,7 @@ async fn run(node: &S8RealnetNode) -> TestResult {
     let _ = b.wait().await;
     let _ = std::fs::remove_file(a_socket);
     let _ = std::fs::remove_file(b_socket);
-    result??;
+    result?;
     std::fs::remove_dir_all(root)?;
     Ok(())
 }
@@ -198,12 +201,7 @@ async fn round_trip(
     assert_eq!(call(human, "human", "surface.action", request.clone()).await?["accepted"], true);
     let accepted = wait_action(agent, surface).await?;
     assert_eq!(accepted["actions"].as_array().map(Vec::len), Some(1));
-    let event = tokio::time::timeout(Duration::from_secs(10), watcher.next_event()).await??;
-    assert_eq!(event.method, "surface.changed");
-    assert!(event.body.get("snapshot").is_none());
-    assert!(event.body.get("fallback_text").is_none());
-    assert!(event.body.get("actions").is_none());
-    assert!(!event.body.to_string().contains("PRIVATE_FORM_VALUE"));
+    check_metadata_event(&mut watcher).await?;
     let replay = call(human, "human", "surface.action", request).await?;
     assert_eq!(replay["replayed"], true);
     reject_non_author_patch(
@@ -231,6 +229,19 @@ async fn round_trip(
     assert!(
         list["surfaces"].as_array().ok_or("surfaces")?.iter().any(|v| v["surface_id"] == surface)
     );
+    Ok(())
+}
+
+async fn check_metadata_event(watcher: &mut ramflux_sdk::LocalBusClient) -> TestResult {
+    let event = waits::condition("author surface.changed metadata event", async {
+        Ok(watcher.next_event().await?)
+    })
+    .await?;
+    assert_eq!(event.method, "surface.changed");
+    assert!(event.body.get("snapshot").is_none());
+    assert!(event.body.get("fallback_text").is_none());
+    assert!(event.body.get("actions").is_none());
+    assert!(!event.body.to_string().contains("PRIVATE_FORM_VALUE"));
     Ok(())
 }
 
@@ -278,6 +289,7 @@ async fn finish_surface(
     .await?;
     let closed = wait_surface(human, "human", surface, 4).await?;
     assert_eq!(closed["closed"], true);
+    step("surface_resync", conversation);
     let resync = call(agent,"agent","surface.resync",json!({"surface_ref":closed["surface_ref"],"message_id":format!("{surface}-explicit-resync")})).await?;
     assert_eq!(resync["accepted"], true);
     assert_eq!(resync["delivery_state"], "submitted");
@@ -290,7 +302,7 @@ async fn check_replica(
     surface: &str,
     accepted: &Value,
 ) -> TestResult {
-    let replica = tokio::time::timeout(Duration::from_secs(20), async {
+    let replica = waits::condition("own-device action replica", async {
         loop {
             call(
                 agent,
@@ -313,7 +325,7 @@ async fn check_replica(
             tokio::time::sleep(Duration::from_millis(100)).await;
         }
     })
-    .await??;
+    .await?;
     assert_eq!(accepted["actions"][0]["actionable"], true);
     assert_eq!(replica["actions"][0]["actionable"], false);
     assert_eq!(replica["actions"][0]["message_id"], accepted["actions"][0]["message_id"]);
