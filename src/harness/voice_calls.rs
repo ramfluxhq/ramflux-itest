@@ -16,6 +16,26 @@ enum AccountMode {
     Legacy,
 }
 
+#[derive(Clone, Copy)]
+enum HangupSide {
+    Caller,
+    Callee,
+}
+
+struct Overlap {
+    side: HangupSide,
+    barrier: PathBuf,
+}
+
+impl Overlap {
+    fn held_actor(&self) -> &'static str {
+        match self.side {
+            HangupSide::Caller => "bob",
+            HangupSide::Callee => "alice",
+        }
+    }
+}
+
 pub(crate) fn assert_realnet_voice_round_trip(project: &str) -> VoiceResult {
     assert_realnet_voice_round_trip_mode(project, AccountMode::Native)
 }
@@ -76,8 +96,13 @@ async fn run(node: &S8RealnetNode, mode: AccountMode) -> VoiceResult {
         )?;
     }
     let mut children = Vec::new();
-    let overlap = (std::env::var("RAMFLUX_ITEST_VOICE_HANGUP_OVERLAP").as_deref() == Ok("1"))
-        .then(|| root.join("refresh-barrier"));
+    let side = match std::env::var("RAMFLUX_ITEST_VOICE_HANGUP_OVERLAP").as_deref() {
+        Ok("1" | "caller") => Some(HangupSide::Caller),
+        Ok("callee") => Some(HangupSide::Callee),
+        Err(_) => None,
+        Ok(_) => return Err("voice hangup overlap must be 1, caller, or callee".into()),
+    };
+    let overlap = side.map(|side| Overlap { side, barrier: root.join("refresh-barrier") });
     for (id, socket) in ["alice", "bob"].iter().zip(&sockets) {
         let mut command = match mode {
             AccountMode::Native => native_client_directory_daemon_command(
@@ -95,16 +120,16 @@ async fn run(node: &S8RealnetNode, mode: AccountMode) -> VoiceResult {
             command.arg("--builtin-nodes").arg(&profiles);
         }
         command.env_remove("RAMFLUX_ITEST_VOICE_REFRESH_BARRIER");
-        if *id == "bob"
-            && let Some(path) = &overlap
+        if let Some(overlap) = &overlap
+            && *id == overlap.held_actor()
         {
-            command.env("RAMFLUX_ITEST_VOICE_REFRESH_BARRIER", path);
+            command.env("RAMFLUX_ITEST_VOICE_REFRESH_BARRIER", &overlap.barrier);
         }
         children.push(command.spawn()?);
     }
     let result = tokio::time::timeout(
         Duration::from_mins(3),
-        flow(node, &rf, &sockets, mode, overlap.as_deref()),
+        flow(node, &rf, &sockets, mode, overlap.as_ref()),
     )
     .await;
     for child in &mut children {
@@ -123,7 +148,7 @@ async fn flow(
     rf: &Path,
     sockets: &[PathBuf; 2],
     mode: AccountMode,
-    overlap: Option<&Path>,
+    overlap: Option<&Overlap>,
 ) -> VoiceResult {
     for socket in sockets {
         mvp_s4_wait_for_socket(socket).await?;
@@ -186,7 +211,7 @@ async fn flow(
         assert_eq!(event.body["call_id"], id);
         actors::public_fields_only(&event.body)?;
     }
-    verify_hangup(rf, &sockets[0], alice_id, (&mut bob, bob_id), id, overlap).await?;
+    verify_hangup(rf, sockets, [(&mut alice, alice_id), (&mut bob, bob_id)], id, overlap).await?;
     // A second call exercises peer rejection rather than the removed local answer stub.
     let retry =
         actors::cli(rf, &sockets[0], "invite", alice_id, Some(("--conversation", "voice-thread")))
@@ -208,40 +233,58 @@ async fn flow(
 
 async fn verify_hangup(
     rf: &Path,
-    socket: &Path,
-    alice_id: &str,
-    peer: (&mut ramflux_sdk::LocalBusClient, &str),
+    sockets: &[PathBuf; 2],
+    participants: [(&mut ramflux_sdk::LocalBusClient, &str); 2],
     id: &str,
-    overlap: Option<&Path>,
+    overlap: Option<&Overlap>,
 ) -> VoiceResult {
-    let (bob, bob_id) = peer;
-    if let Some(path) = overlap {
-        actors::wait_refresh_barrier(path).await?;
+    let [(alice, alice_id), (bob, bob_id)] = participants;
+    let side = overlap.map_or(HangupSide::Caller, |overlap| overlap.side);
+    if let Some(overlap) = overlap {
+        actors::wait_refresh_barrier(&overlap.barrier).await?;
         realnet_step(
             "voice forced overlap",
-            "renewed offer pending at callee; caller now hangs up",
+            match side {
+                HangupSide::Caller => "renewed offer pending at callee; caller now hangs up",
+                HangupSide::Callee => "renewal pending at caller; callee now hangs up",
+            },
         );
     }
-    let ended = actors::cli(rf, socket, "hangup", alice_id, Some(("--call", id))).await?;
-    if let Some(path) = overlap {
+    let (socket, account) = match side {
+        HangupSide::Caller => (&sockets[0], alice_id),
+        HangupSide::Callee => (&sockets[1], bob_id),
+    };
+    let ended = actors::cli(rf, socket, "hangup", account, Some(("--call", id))).await?;
+    if let Some(overlap) = overlap {
         // call.hangup returns only after its driver has attempted delivery and released the lease.
-        tokio::fs::write(path.with_extension("release"), b"caller hangup finished").await?;
+        tokio::fs::write(overlap.barrier.with_extension("release"), b"peer hangup finished")
+            .await?;
     }
-    actors::public_fields_only(&ended)?;
-    realnet_step("voice caller hangup", ended.to_string());
-    assert_eq!(ended["end_reason"], "completed", "caller hangup row: {ended}");
-    let ended = actors::wait_state(bob, bob_id, id, "ended").await?;
-    actors::public_fields_only(&ended)?;
-    realnet_step("voice callee ended", ended.to_string());
-    assert_eq!(ended["end_reason"], "completed", "callee terminal row: {ended}");
-    if let Some(path) = overlap {
+    let (caller_row, peer_row) = match side {
+        HangupSide::Caller => (ended, actors::wait_state(&mut *bob, bob_id, id, "ended").await?),
+        HangupSide::Callee => (actors::wait_state(alice, alice_id, id, "ended").await?, ended),
+    };
+    actors::public_fields_only(&caller_row)?;
+    realnet_step("voice caller ended", caller_row.to_string());
+    assert_eq!(caller_row["end_reason"], "completed", "caller terminal row: {caller_row}");
+    actors::public_fields_only(&peer_row)?;
+    realnet_step("voice callee ended", peer_row.to_string());
+    assert_eq!(peer_row["end_reason"], "completed", "callee terminal row: {peer_row}");
+    if let Some(overlap) = overlap {
         assert!(
-            path.with_extension("refused").exists(),
-            "forced overlap must exercise a refused callee refresh"
+            overlap.barrier.with_extension("refused").exists(),
+            "forced overlap must exercise a refused peer refresh"
         );
         realnet_step(
             "voice forced overlap verified",
-            "callee refresh refused after release, authenticated Hangup completed",
+            match side {
+                HangupSide::Caller => {
+                    "callee refresh refused after release, authenticated Hangup completed"
+                }
+                HangupSide::Callee => {
+                    "caller renewal refused after release, authenticated Hangup completed"
+                }
+            },
         );
     }
     let timeline =
