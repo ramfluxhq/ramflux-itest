@@ -81,3 +81,6 @@ dbg_macro = "deny"
 [[bin]]
 name = "demo-node-tool"
 path = "src/bin/demo_node_tool.rs"
+
+[dev-dependencies]
+tokio = { version = "1.42", features = ["test-util"] }

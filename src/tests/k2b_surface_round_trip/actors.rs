@@ -8,9 +8,17 @@ pub(super) async fn call(
     body: Value,
 ) -> TestResult<Value> {
     let conversation = body["conversation_id"].as_str().unwrap_or("-").to_owned();
-    bus.request(Some(account.into()), "surface", method, body).await.map_err(|error| {
-        format!("account={account} method={method} conversation={conversation}: {error}").into()
+    let label = format!(
+        "account={account} method={method} conversation={conversation} surface={} expected_version={}",
+        body["surface_id"].as_str().unwrap_or("-"),
+        body["version"]
+    );
+    waits::condition(&label, async {
+        bus.request(Some(account.into()), "surface", method, body).await.map_err(|error| {
+            format!("account={account} method={method} conversation={conversation}: {error}").into()
+        })
     })
+    .await
 }
 pub(super) async fn create(
     bus: &mut ramflux_sdk::LocalBusClient,
@@ -61,9 +69,12 @@ pub(super) async fn create_terminal(
             prekey_http_url: None,
         },
     };
-    Ok(bus
-        .request(None, "account", "account.itest_legacy.create", serde_json::to_value(request)?)
-        .await?)
+    waits::condition(&format!("account={id} method=account.itest_legacy.create"), async {
+        Ok(bus
+            .request(None, "account", "account.itest_legacy.create", serde_json::to_value(request)?)
+            .await?)
+    })
+    .await
 }
 pub(super) async fn contacts(
     human: &mut ramflux_sdk::LocalBusClient,
@@ -82,21 +93,28 @@ pub(super) async fn wait_conversation(
     account: &str,
     id: &str,
 ) -> TestResult {
-    for _ in 0..100 {
-        call(bus, account, "message.receive", json!({"limit":32,"auto_fetch_attachments":false}))
+    waits::condition(&format!("conversation account={account} id={id}"), async {
+        loop {
+            call(
+                bus,
+                account,
+                "message.receive",
+                json!({"limit":32,"auto_fetch_attachments":false}),
+            )
             .await?;
-        let list = call(bus, account, "conversation.directory", json!({"limit":100})).await?;
-        if list["conversations"]
-            .as_array()
-            .ok_or("conversations")?
-            .iter()
-            .any(|row| row["id"] == id)
-        {
-            return Ok(());
+            let list = call(bus, account, "conversation.directory", json!({"limit":100})).await?;
+            if list["conversations"]
+                .as_array()
+                .ok_or("conversations")?
+                .iter()
+                .any(|row| row["id"] == id)
+            {
+                return Ok(());
+            }
+            tokio::time::sleep(Duration::from_millis(100)).await;
         }
-        tokio::time::sleep(Duration::from_millis(100)).await;
-    }
-    Err("conversation did not arrive".into())
+    })
+    .await
 }
 pub(super) async fn wait_surface(
     bus: &mut ramflux_sdk::LocalBusClient,
@@ -104,33 +122,41 @@ pub(super) async fn wait_surface(
     id: &str,
     version: u64,
 ) -> TestResult<Value> {
-    let mut observed = Value::Null;
-    for _ in 0..100 {
+    waits::condition(&format!("surface account={account} surface_id={id} expected_version={version}"), async {
+    loop {
         call(bus, account, "message.receive", json!({"limit":32,"auto_fetch_attachments":false}))
             .await?;
         let view = call(bus, account, "surface.get", json!({"surface_id":id})).await?;
-        observed = json!({"version":view["version"],"out_of_sync":view["out_of_sync"],"renderer_error_code":view["renderer_error"]["code"]});
+        let observed = json!({"version":view["version"],"out_of_sync":view["out_of_sync"],"renderer_error_code":view["renderer_error"]["code"]});
+        eprintln!("STEP: k2b surface_id={id} expected_version={version} observed={observed}");
         if view["version"] == version {
             return Ok(view);
         }
         tokio::time::sleep(Duration::from_millis(100)).await;
     }
-    Err(format!("surface version did not arrive: account={account} surface_id={id} expected_version={version} observed={observed}").into())
+    }).await
 }
 pub(super) async fn wait_action(
     bus: &mut ramflux_sdk::LocalBusClient,
     id: &str,
 ) -> TestResult<Value> {
-    for _ in 0..100 {
-        call(bus, "agent", "message.receive", json!({"limit":32,"auto_fetch_attachments":false}))
+    waits::condition(&format!("author action surface_id={id}"), async {
+        loop {
+            call(
+                bus,
+                "agent",
+                "message.receive",
+                json!({"limit":32,"auto_fetch_attachments":false}),
+            )
             .await?;
-        let view = call(bus, "agent", "surface.get", json!({"surface_id":id})).await?;
-        if view["actions"].as_array().is_some_and(|actions| actions.len() == 1) {
-            return Ok(view);
+            let view = call(bus, "agent", "surface.get", json!({"surface_id":id})).await?;
+            if view["actions"].as_array().is_some_and(|actions| actions.len() == 1) {
+                return Ok(view);
+            }
+            tokio::time::sleep(Duration::from_millis(100)).await;
         }
-        tokio::time::sleep(Duration::from_millis(100)).await;
-    }
-    Err("surface action did not reach the author".into())
+    })
+    .await
 }
 pub(super) fn wire(
     conversation: &str,
@@ -172,6 +198,7 @@ pub(super) fn action_wire(
     )?)
 }
 pub(super) fn step(phase: &str, conversation: &str) {
+    waits::operation(&format!("phase={phase} conversation={conversation}"));
     eprintln!(
         "STEP: k2b timestamp={} phase={phase} conversation={conversation}",
         realnet_now_i64()
@@ -237,26 +264,33 @@ async fn wait_roster(
     account: &str,
     members: &[&Value],
 ) -> TestResult {
-    for _ in 0..100 {
-        call(bus, account, "message.receive", json!({"limit":32,"auto_fetch_attachments":false}))
+    waits::condition(&format!("group roster account={account} expected={members:?}"), async {
+        loop {
+            call(
+                bus,
+                account,
+                "message.receive",
+                json!({"limit":32,"auto_fetch_attachments":false}),
+            )
             .await?;
-        let groups = call(bus, account, "group.list", json!({"limit":100})).await?;
-        if groups["groups"]
-            .as_array()
-            .is_some_and(|groups| groups.iter().any(|g| g["group_id"] == "group_k2b"))
-        {
-            let state =
-                call(bus, account, "group.members", json!({"group_id":"group_k2b"})).await?;
-            if state["members"]
+            let groups = call(bus, account, "group.list", json!({"limit":100})).await?;
+            if groups["groups"]
                 .as_array()
-                .is_some_and(|actual| members.iter().all(|expected| actual.contains(expected)))
+                .is_some_and(|groups| groups.iter().any(|g| g["group_id"] == "group_k2b"))
             {
-                return Ok(());
+                let state =
+                    call(bus, account, "group.members", json!({"group_id":"group_k2b"})).await?;
+                if state["members"]
+                    .as_array()
+                    .is_some_and(|actual| members.iter().all(|expected| actual.contains(expected)))
+                {
+                    return Ok(());
+                }
             }
+            tokio::time::sleep(Duration::from_millis(100)).await;
         }
-        tokio::time::sleep(Duration::from_millis(100)).await;
-    }
-    Err(format!("group member roster did not arrive: account={account}").into())
+    })
+    .await
 }
 
 pub(super) async fn reject_non_author_patch(
