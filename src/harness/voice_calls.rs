@@ -8,7 +8,21 @@ mod actors;
 mod media;
 type VoiceResult<T = ()> = Result<T, Box<dyn std::error::Error>>;
 
+#[derive(Clone, Copy)]
+enum AccountMode {
+    Native,
+    Legacy,
+}
+
 pub(crate) fn assert_realnet_voice_round_trip(project: &str) -> VoiceResult {
+    assert_realnet_voice_round_trip_mode(project, AccountMode::Native)
+}
+
+pub(crate) fn assert_realnet_legacy_voice_round_trip(project: &str) -> VoiceResult {
+    assert_realnet_voice_round_trip_mode(project, AccountMode::Legacy)
+}
+
+fn assert_realnet_voice_round_trip_mode(project: &str, mode: AccountMode) -> VoiceResult {
     for variable in ["RAMFLUX_ITEST_VOICE", "RAMFLUX_OBJECT_V3", "RAMFLUX_CROSS_GATEWAY"] {
         if std::env::var(variable).as_deref() != Ok("1") {
             return Err(format!("voice acceptance requires {variable}=1").into());
@@ -41,26 +55,45 @@ pub(crate) fn assert_realnet_voice_round_trip(project: &str) -> VoiceResult {
     tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()?
-        .block_on(run(&stack.node))?;
+        .block_on(run(&stack.node, mode))?;
     stack.node.guard.mark_success();
     Ok(())
 }
-async fn run(node: &S8RealnetNode) -> VoiceResult {
+async fn run(node: &S8RealnetNode, mode: AccountMode) -> VoiceResult {
     let root = temp_root("voice_call")?;
     let rf = actors::binary().await?;
     let sockets = [
         PathBuf::from(format!("/tmp/rf-call01-a-{}.sock", std::process::id())),
         PathBuf::from(format!("/tmp/rf-call01-b-{}.sock", std::process::id())),
     ];
+    let profiles = root.join("native-nodes.json");
+    if matches!(mode, AccountMode::Native) {
+        std::fs::write(
+            &profiles,
+            serde_json::to_vec(&[native_node_profile(node, S73_RELAY_QUIC)?])?,
+        )?;
+    }
     let mut children = Vec::new();
     for (id, socket) in ["alice", "bob"].iter().zip(&sockets) {
-        children.push(
-            client_directory_daemon_command(&rf, socket, &root.join(id), &node.ca_cert, None)
-                .arg("--itest-memory-vault")
-                .spawn()?,
-        );
+        let mut command = match mode {
+            AccountMode::Native => native_client_directory_daemon_command(
+                &rf,
+                socket,
+                &root.join(id),
+                &node.ca_cert,
+                None,
+            ),
+            AccountMode::Legacy => {
+                client_directory_daemon_command(&rf, socket, &root.join(id), &node.ca_cert, None)
+            }
+        };
+        if matches!(mode, AccountMode::Native) {
+            command.arg("--builtin-nodes").arg(&profiles);
+        }
+        children.push(command.spawn()?);
     }
-    let result = tokio::time::timeout(Duration::from_mins(3), flow(node, &rf, &sockets)).await;
+    let result =
+        tokio::time::timeout(Duration::from_mins(3), flow(node, &rf, &sockets, mode)).await;
     for child in &mut children {
         let _ = child.start_kill();
         let _ = child.wait().await;
@@ -72,17 +105,21 @@ async fn run(node: &S8RealnetNode) -> VoiceResult {
     result??;
     Ok(())
 }
-async fn flow(node: &S8RealnetNode, rf: &Path, sockets: &[PathBuf; 2]) -> VoiceResult {
+async fn flow(
+    node: &S8RealnetNode,
+    rf: &Path,
+    sockets: &[PathBuf; 2],
+    mode: AccountMode,
+) -> VoiceResult {
     for socket in sockets {
         mvp_s4_wait_for_socket(socket).await?;
     }
     let mut alice = ramflux_sdk::LocalBusClient::connect(&sockets[0]).await?;
     let mut bob = ramflux_sdk::LocalBusClient::connect(&sockets[1]).await?;
-    let a = actors::create(&mut alice, &sockets[0], node, "Alice Call Fixture").await?;
-    let b = actors::create(&mut bob, &sockets[1], node, "Bob Call Fixture").await?;
+    let (a, b) = create_accounts(node, sockets, &mut alice, &mut bob, mode).await?;
     let alice_id = a["local_account_id"].as_str().ok_or("missing alice account id")?;
     let bob_id = b["local_account_id"].as_str().ok_or("missing bob account id")?;
-    establish_native_contacts(&mut alice, alice_id, &a, &mut bob, bob_id, &b).await?;
+    establish_contacts(&mut alice, alice_id, &a, &mut bob, bob_id, &b, mode).await?;
     for (bus, id) in [(&mut alice, alice_id), (&mut bob, bob_id)] {
         actors::call(bus, id, "bus.subscribe", json!({"topics":["call.changed"]})).await?;
     }
@@ -126,7 +163,7 @@ async fn flow(node: &S8RealnetNode, rf: &Path, sockets: &[PathBuf; 2]) -> VoiceR
         actors::call(&mut alice, alice_id, "call.media.session", json!({"call_id":id}))
             .await
             .is_err(),
-        "native engines must never reacquire a used key"
+        "voice engines must never reacquire a used key"
     );
     media::round_trip(&own, &peer).await?;
     for bus in [&mut alice, &mut bob] {
@@ -169,14 +206,64 @@ async fn flow(node: &S8RealnetNode, rf: &Path, sockets: &[PathBuf; 2]) -> VoiceR
     Ok(())
 }
 
-async fn establish_native_contacts(
+async fn create_accounts(
+    node: &S8RealnetNode,
+    sockets: &[PathBuf; 2],
+    alice: &mut ramflux_sdk::LocalBusClient,
+    bob: &mut ramflux_sdk::LocalBusClient,
+    mode: AccountMode,
+) -> VoiceResult<(Value, Value)> {
+    match mode {
+        AccountMode::Native => {
+            select_native_node(alice, &node.node_id).await?;
+            select_native_node(bob, &node.node_id).await?;
+            let alice_account = create_native_account(&sockets[0], "Alice Call Fixture").await?;
+            let bob_account = create_native_account(&sockets[1], "Bob Call Fixture").await?;
+            Ok((native_account_value(&alice_account), native_account_value(&bob_account)))
+        }
+        AccountMode::Legacy => Ok((
+            actors::create_legacy(alice, node, "alice", [0xc1; 32], [0xc2; 32]).await?,
+            actors::create_legacy(bob, node, "bob", [0xc3; 32], [0xc4; 32]).await?,
+        )),
+    }
+}
+
+fn native_account_value(account: &NativeAccount) -> Value {
+    json!({
+        "local_account_id": account.account_id,
+        "principal_id": account.principal_id,
+        "device_id": account.device_id,
+        "target_delivery_id": account.delivery_id,
+        "principal_commitment": account.anchor,
+    })
+}
+
+async fn establish_contacts(
     alice: &mut ramflux_sdk::LocalBusClient,
     alice_id: &str,
     a: &Value,
     bob: &mut ramflux_sdk::LocalBusClient,
     bob_id: &str,
     b: &Value,
+    mode: AccountMode,
 ) -> VoiceResult {
+    if matches!(mode, AccountMode::Legacy) {
+        for (bus, id, own, peer) in [(alice, alice_id, a, b), (bob, bob_id, b, a)] {
+            let accepted = actors::call(
+                bus,
+                id,
+                "contact.add",
+                json!({
+                    "link_id":format!("call01-{id}"),
+                    "requester_id":own["principal_commitment"],
+                    "target_id":peer["principal_commitment"],
+                }),
+            )
+            .await?;
+            assert_eq!(accepted["state"], "accepted");
+        }
+        return Ok(());
+    }
     actors::call(alice, alice_id, "contact.add", json!({"principal_id":b["principal_id"]})).await?;
     let request = actors::wait_inbound_contact_request(
         bob,
