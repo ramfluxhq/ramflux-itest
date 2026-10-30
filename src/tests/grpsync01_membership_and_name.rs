@@ -313,25 +313,50 @@ async fn wait_state(
     name: &str,
     members: &[Value],
 ) -> TestResult<Value> {
+    let started = std::time::Instant::now();
+    eprintln!(
+        "STEP: grpsync01 timestamp={} phase=wait_state account={account} epoch={epoch} name={name:?} members={members:?} max_polls=100 retry_ms=100",
+        realnet_now_i64()
+    );
     let mut observed = Value::Null;
-    for _ in 0..100 {
+    for poll in 1..=100 {
         call(bus, account, "message.receive", json!({"limit":32})).await?;
-        if let Ok(state) = call(bus, account, "group.members", json!({"group_id":GROUP})).await {
-            observed = state;
-            if observed["group_epoch"] == epoch
-                && observed["name"] == name
-                && observed["members"].as_array().is_some_and(|actual| {
-                    actual.len() == members.len()
-                        && members.iter().all(|member| actual.contains(member))
-                })
-            {
-                return Ok(observed);
+        match call(bus, account, "group.members", json!({"group_id":GROUP})).await {
+            Ok(state) => observed = state,
+            Err(error) => {
+                eprintln!(
+                    "STEP: grpsync01 timestamp={} phase=state_poll account={account} poll={poll} elapsed_ms={} error={error}",
+                    realnet_now_i64(),
+                    started.elapsed().as_millis()
+                );
+                tokio::time::sleep(Duration::from_millis(100)).await;
+                continue;
             }
+        }
+        eprintln!(
+            "STEP: grpsync01 timestamp={} phase=state_poll account={account} poll={poll} elapsed_ms={} observed={observed}",
+            realnet_now_i64(),
+            started.elapsed().as_millis()
+        );
+        if observed["group_epoch"] == epoch
+            && observed["name"] == name
+            && observed["members"].as_array().is_some_and(|actual| {
+                actual.len() == members.len()
+                    && members.iter().all(|member| actual.contains(member))
+            })
+        {
+            eprintln!(
+                "STEP: grpsync01 timestamp={} phase=state_converged account={account} epoch={epoch} poll={poll} elapsed_ms={}",
+                realnet_now_i64(),
+                started.elapsed().as_millis()
+            );
+            return Ok(observed);
         }
         tokio::time::sleep(Duration::from_millis(100)).await;
     }
     Err(format!(
-        "group state did not converge: account={account} epoch={epoch} observed={observed}"
+        "group state did not converge: account={account} epoch={epoch} elapsed_ms={} polls=100 observed={observed}",
+        started.elapsed().as_millis()
     )
     .into())
 }
