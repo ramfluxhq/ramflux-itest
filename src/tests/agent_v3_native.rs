@@ -1,12 +1,14 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (c) 2026 Span Brain
 
-//! Native Part A acceptance for headless provisioning, DM replies, surfaces and one-device tasks.
+//! Native acceptance for provisioning, direct and group replies, surfaces and one-device tasks.
 #![cfg(feature = "realnet")]
 use super::*;
 use serde_json::{Value, json};
 use std::os::unix::fs::PermissionsExt;
 type TestResult<T = ()> = Result<T, Box<dyn std::error::Error>>;
+#[path = "agent_v3_native/group.rs"]
+mod group;
 #[path = "agent_v3_native/receiver_probe.rs"]
 mod receiver_probe;
 
@@ -16,6 +18,7 @@ enum Case {
     AgentSurface,
     Surface,
     Task,
+    Group,
 }
 
 #[test]
@@ -38,6 +41,11 @@ fn k3b_native_realnet_single_device_needs_me_approval() -> TestResult {
     scenario(Case::Task)
 }
 
+#[test]
+fn k5a_native_realnet_group_reply_restart_and_removal() -> TestResult {
+    scenario(Case::Group)
+}
+
 fn scenario(case: Case) -> TestResult {
     if std::env::var("RAMFLUX_ITEST_REALNET").as_deref() != Ok("1") {
         eprintln!("skipping native agent-v3 slice: set RAMFLUX_ITEST_REALNET=1");
@@ -53,6 +61,7 @@ fn scenario(case: Case) -> TestResult {
         Case::AgentSurface => ("ramflux-k5a2-native-agent-surface", 64400),
         Case::Surface => ("ramflux-k2b-native-surface", 64200),
         Case::Task => ("ramflux-k3b-native-task", 64300),
+        Case::Group => ("ramflux-k5a-native-group", 64500),
     };
     let relay_quic = format!("127.0.0.1:{}", base + 47);
     let gateway_b_quic = format!("127.0.0.1:{}", base + 89);
@@ -62,7 +71,7 @@ fn scenario(case: Case) -> TestResult {
         ("RAMFLUX_ITEST_GATEWAY_B_QUIC_PORT".to_owned(), (base + 89).to_string()),
         ("RAMFLUX_ITEST_GATEWAY_B_TCP_PORT".to_owned(), (base + 89).to_string()),
     ];
-    let mut stack = start_client_directory_stack_named(
+    let mut stack = start_client_directory_stack_with_issuer(
         name,
         S8ComposePorts {
             gateway_http: base + 1,
@@ -79,6 +88,8 @@ fn scenario(case: Case) -> TestResult {
             retention_http: base + 7,
         },
         &extra_env,
+        "node_a.realnet",
+        "gw-a",
     )?;
     tokio::runtime::Builder::new_current_thread().enable_all().build()?.block_on(run(
         &stack.node,
@@ -133,6 +144,7 @@ async fn run(
                 seed_dm(&mut bus, &human, &agent, "agent-v3-seed", "@agent ping").await?;
                 task_case(&mut bus, &human, &agent).await?;
             }
+            Case::Group => group::run(&mut bus, &root, &bundle, &human, &agent).await?,
         }
         Ok::<(), Box<dyn std::error::Error>>(())
     };
