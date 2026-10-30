@@ -507,9 +507,18 @@ fn assert_gateway_has_no_private_material(
     let phrase = ramflux_crypto::custody::RecoveryPhrase::parse(alice.recovery_phrase())?;
     let entropy = phrase.entropy();
     let mut master_seed = zeroize::Zeroizing::new([0_u8; 32]);
+    // Mirrors ramflux_crypto::custody::MasterKey::from_phrase; cross-check its public key below.
     Hkdf::<Sha256>::new(Some(&[0_u8; 32]), &entropy)
         .expand(ramflux_protocol::domain::CUSTODY_MASTER_SEED.as_bytes(), &mut *master_seed)
         .map_err(|_| "S47 master seed derivation failed")?;
+    assert_eq!(
+        ed25519_dalek::SigningKey::from_bytes(&master_seed).verifying_key().to_bytes(),
+        ramflux_protocol::decode_base64url(
+            &ramflux_crypto::custody::MasterKey::from_phrase(&phrase)?.public_key(),
+        )?
+        .as_slice(),
+        "itest master-seed derivation drifted from product"
+    );
     let mut secrets = vec![
         zeroize::Zeroizing::new(alice.recovery_phrase().as_bytes().to_vec()),
         zeroize::Zeroizing::new(NATIVE_DATA_PASSPHRASE.as_bytes().to_vec()),
