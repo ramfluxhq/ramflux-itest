@@ -269,6 +269,9 @@ jobs:
       max-parallel: 4
       matrix:
         include:
+          - slice: network
+            plain: "1"
+            tests: harness::realnet_compose_stun::compose_network::realnet::realnet_two_projects_share_ready_network_and_teardown_preserves_the_other
           - slice: grpsync01
             tests: tests::grpsync01_membership_and_name::grpsync01_realnet_membership_and_name
           - slice: contact01
