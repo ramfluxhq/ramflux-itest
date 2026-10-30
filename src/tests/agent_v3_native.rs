@@ -462,7 +462,7 @@ async fn surface_security_case(
     let stale = surface_action_wire(1, current["surface_hash"].as_str().ok_or("surface hash")?)?;
     let stale_result=call(bus,&human.account_id,"surface.action",json!({"conversation_id":"dm_agent_v3","message_id":"native-action-stale","wire_base64":ramflux_protocol::encode_base64url(&stale)})).await?;
     assert_eq!(stale_result["accepted"], false);
-    receiver_probe::reject_at_author(bus, socket, human, agent, vault, "action", &stale).await?;
+    receiver_probe::reject_at_author(bus, socket, human, agent, vault, ("action", &stale)).await?;
     receive(bus, &agent.account_id).await?;
     assert!(
         call(bus, &agent.account_id, "surface.get", json!({"surface_id":"native-surface"})).await?
@@ -483,7 +483,7 @@ async fn surface_security_case(
     let wire = serde_json::to_vec(
         &json!({"schema":"ramflux.a2ui.conversation.v2","conversationId":"dm_agent_v3","version":3,"command":unauthorized}),
     )?;
-    receiver_probe::reject_at_author(bus, socket, human, agent, vault, "event", &wire).await?;
+    receiver_probe::reject_at_author(bus, socket, human, agent, vault, ("event", &wire)).await?;
     assert!(call(bus,&human.account_id,"surface.send",json!({"conversation_id":"dm_agent_v3","message_id":"native-foreign-patch","wire_base64":ramflux_protocol::encode_base64url(wire)})).await.is_err());
 
     let mut watcher = ramflux_sdk::LocalBusClient::connect(socket).await?;
