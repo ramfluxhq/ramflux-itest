@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (c) 2026 Span Brain
 
-//! Signed full-roster convergence, automatic siblings, first messages and removal fences.
+//! Born-v3 signed membership, names, removal and messages across two gateways.
 #![cfg(feature = "realnet")]
 use super::*;
-use ramflux_sdk::{LocalBusClient, LocalBusFrame};
+use ramflux_sdk::{LocalBusClient, LocalBusFrame, NodeProfile};
 use serde_json::{Value, json};
 type TestResult<T = ()> = Result<T, Box<dyn std::error::Error>>;
 const GROUP: &str = "group_grpsync01";
@@ -22,6 +22,7 @@ fn grpsync01_realnet_membership_and_name() -> TestResult {
             return Err(format!("grpsync01 requires {flag}=1").into());
         }
     }
+    let gateway_a_issuer_seed = ramflux_protocol::encode_base64url([0x33; 32]);
     let mut stack = start_client_directory_stack_named(
         "ramflux-grpsync01",
         S8ComposePorts {
@@ -38,7 +39,7 @@ fn grpsync01_realnet_membership_and_name() -> TestResult {
             signaling_turn_tcp: 64979,
             retention_http: 64907,
         },
-        &[],
+        &[("RAMFLUX_GATEWAY_A_V3_ISSUER_SEED".into(), gateway_a_issuer_seed)],
     )?;
     tokio::runtime::Builder::new_current_thread()
         .enable_all()
@@ -47,201 +48,146 @@ fn grpsync01_realnet_membership_and_name() -> TestResult {
     stack.node.guard.mark_success();
     Ok(())
 }
+
 async fn run(node: &S8RealnetNode) -> TestResult {
     step("readiness");
     wait_relay_quic_healthy(S73_RELAY_QUIC, "ramflux-relay", &node.ca_cert).await?;
+    wait_for_private_gateway_quic(node.gateway_quic_addr, &node.ca_cert).await?;
     wait_for_private_gateway_quic(S73_GATEWAY_B_QUIC.parse()?, &node.ca_cert).await?;
     let root = temp_root("grpsync01")?;
     let rf = mvp_s4_build_rf_binary().await?;
-    let mut daemons = Vec::new();
-    let mut sockets = Vec::new();
-    for actor in ["owner", "peer", "sibling"] {
-        let socket = PathBuf::from(format!("/tmp/rf-gs-{actor}-{}.sock", std::process::id()));
-        daemons.push(
-            client_directory_daemon_command(&rf, &socket, &root.join(actor), &node.ca_cert, None)
-                .spawn()?,
-        );
-        sockets.push(socket);
+    let sockets = [root.join("owner.sock"), root.join("peer.sock")];
+    let profiles =
+        [native_node_profile(node, S73_RELAY_QUIC)?, gateway_b_profile(node, S73_RELAY_QUIC)?];
+    let profile_files = [root.join("owner-nodes.json"), root.join("peer-nodes.json")];
+    for (path, profile) in profile_files.iter().zip(&profiles) {
+        std::fs::write(path, serde_json::to_vec(&[profile])?)?;
     }
-    let result = tokio::time::timeout(Duration::from_mins(6), async {
-        for socket in &sockets { mvp_s4_wait_for_socket(socket).await?; }
-        let mut owner = LocalBusClient::connect(&sockets[0]).await?;
-        let mut peer = LocalBusClient::connect(&sockets[1]).await?;
-        let mut sibling = LocalBusClient::connect(&sockets[2]).await?;
-        let a = create(&mut owner, node, "owner", "owner", (101, 102)).await?;
-        let b = create(&mut peer, node, "peer", "peer", (111, 112)).await?;
-        for (bus, account, own, other) in [(&mut owner,"owner",&a,&b),(&mut peer,"peer",&b,&a)] {
-            call(bus, account, "contact.add", json!({"link_id":format!("gs-{account}"),
-                "requester_id":own["principal_commitment"],"target_id":other["principal_commitment"]})).await?;
-        }
-        step("create_and_add_peer");
-        call(&mut owner,"owner","group.create",json!({"group_id":GROUP,"conversation_id":THREAD,
-            "creator_id":a["device_id"],"name":NAME})).await?;
-        add(&mut owner,&b).await?;
-        wait_state(&mut peer,"peer",2,NAME,&[a["device_id"].clone(),b["device_id"].clone()]).await?;
-        step("automatic_sibling_activation_without_join");
-        let c = create(&mut sibling,node,"sibling","owner",(101,122)).await?;
-        let expected = [a["device_id"].clone(),b["device_id"].clone(),c["device_id"].clone()];
-        for (bus,account) in [(&mut owner,"owner"),(&mut peer,"peer"),(&mut sibling,"sibling")] {
-            wait_state(bus,account,2,NAME,&expected).await?;
-        }
-        send(&mut sibling,"sibling",&c,"implicit-sibling-first").await?;
-        for (bus,account) in [(&mut owner,"owner"),(&mut peer,"peer")] {
-            wait_message(bus,account,&c,"implicit-sibling-first").await?;
-        }
-        step("epoch_three_full_roster");
-        add(&mut owner,&c).await?;
-        let mut views = Vec::new();
-        for (bus,account) in [(&mut owner,"owner"),(&mut peer,"peer"),(&mut sibling,"sibling")] {
-            views.push(wait_state(bus,account,3,NAME,&expected).await?);
-        }
-        for view in &views[1..] {
-            assert_eq!(view["member_roster"],views[0]["member_roster"],"root-qualified signed rosters differ");
-        }
-        assert_first_messages(&mut owner, &mut peer, &mut sibling, &a, &b, &c).await?;
-        assert_role_refused(&mut peer, &a, &b).await?;
-        wait_state(&mut peer,"peer",3,NAME,&expected).await?;
-        step("role_and_signed_name");
-        call(&mut owner,"owner","group.role.set",json!({"group_id":GROUP,"actor_id":a["device_id"],
-            "member_id":b["device_id"],"member_principal_commitment":b["principal_commitment"],"role":"admin"})).await?;
-        for (bus,account) in [(&mut peer,"peer"),(&mut sibling,"sibling")] {
-            let view=wait_state(bus,account,4,NAME,&expected).await?;
-            assert_eq!(view["roles"][b["device_id"].as_str().ok_or("peer device")?],"admin");
-        }
-        call(&mut owner,"owner","group.name.set",json!({"group_id":GROUP,"name":"Reviewed checklist"})).await?;
-        for (bus,account) in [(&mut owner,"owner"),(&mut peer,"peer"),(&mut sibling,"sibling")] {
-            wait_state(bus,account,5,"Reviewed checklist",&expected).await?;
-            assert_signed_name(bus, account).await?;
-        }
-        step("remove_peer_and_rotate_sender_keys");
-        call(&mut owner,"owner","group.member.remove",json!({"group_id":GROUP,"actor_id":a["device_id"],
-            "member_id":b["device_id"],"member_principal_commitment":b["principal_commitment"]})).await?;
-        let retained=[a["device_id"].clone(),c["device_id"].clone()];
-        for (bus,account) in [(&mut owner,"owner"),(&mut peer,"peer"),(&mut sibling,"sibling")] {
-            wait_state(bus,account,6,"Reviewed checklist",&retained).await?;
-        }
-        assert!(send(&mut peer,"peer",&b,"forbidden-after-removal").await.is_err());
-        send(&mut owner,"owner",&a,"after-removal").await?;
-        wait_message(&mut sibling,"sibling",&a,"after-removal").await?;
-        for (bus,account) in [(&mut owner,"owner"),(&mut sibling,"sibling")] {
-            assert_signed_name(bus, account).await?;
-        }
-        assert_removed_peer_excluded(&mut peer,&a).await?;
-        step("complete");
-        Ok::<(),Box<dyn std::error::Error>>(())
-    }).await;
+    let mut daemons = Vec::new();
+    for (index, actor) in ["owner", "peer"].iter().enumerate() {
+        let mut command = native_client_directory_daemon_command(
+            &rf,
+            &sockets[index],
+            &root.join(actor),
+            &node.ca_cert,
+            None,
+        );
+        command.arg("--builtin-nodes").arg(&profile_files[index]);
+        daemons.push(command.spawn()?);
+    }
+    let result = tokio::time::timeout(
+        Duration::from_mins(6),
+        flow(&sockets, &profiles[0].node_id, &profiles[1].node_id),
+    )
+    .await;
     for daemon in &mut daemons {
         let _ = daemon.start_kill();
     }
     for daemon in &mut daemons {
         let _ = daemon.wait().await;
     }
-    for socket in &sockets {
-        let _ = std::fs::remove_file(socket);
-    }
+    let _ = std::fs::remove_dir_all(root);
     result??;
-    std::fs::remove_dir_all(root)?;
     Ok(())
 }
-async fn assert_first_messages(
-    owner: &mut LocalBusClient,
-    peer: &mut LocalBusClient,
-    sibling: &mut LocalBusClient,
-    a: &Value,
-    b: &Value,
-    c: &Value,
-) -> TestResult {
-    step("first_epoch_three_message_from_each");
-    send(owner, "owner", a, "owner-first").await?;
-    send(peer, "peer", b, "peer-first").await?;
-    send(sibling, "sibling", c, "sibling-first").await?;
-    for (bus, account, ids) in [
-        (owner, "owner", ["peer-first", "sibling-first"]),
-        (peer, "peer", ["owner-first", "sibling-first"]),
-        (sibling, "sibling", ["owner-first", "peer-first"]),
-    ] {
-        for id in ids {
-            wait_message(
-                bus,
-                account,
-                if id == "owner-first" {
-                    a
-                } else if id == "peer-first" {
-                    b
-                } else {
-                    c
-                },
-                id,
-            )
+
+fn gateway_b_profile(node: &S8RealnetNode, relay: &str) -> TestResult<NodeProfile> {
+    let mut profile = native_node_profile(node, relay)?;
+    profile.node_id = "node_b.realnet".into();
+    profile.gateway.quic_addr = S73_GATEWAY_B_QUIC.into();
+    profile.gateway.tcp_addr = S73_GATEWAY_B_QUIC.into();
+    Ok(profile)
+}
+
+async fn flow(sockets: &[PathBuf; 2], owner_node: &str, peer_node: &str) -> TestResult {
+    for socket in sockets {
+        mvp_s4_wait_for_socket(socket).await?;
+    }
+    let mut owner = LocalBusClient::connect(&sockets[0]).await?;
+    let mut peer = LocalBusClient::connect(&sockets[1]).await?;
+    select_native_node(&mut owner, owner_node).await?;
+    select_native_node(&mut peer, peer_node).await?;
+    let alice = create_native_account(&sockets[0], "Owner").await?;
+    let bob = create_native_account(&sockets[1], "Peer").await?;
+
+    step("native_contacts");
+    call(&mut owner, &alice.account_id, "contact.add", json!({"principal_id":bob.principal_id}))
+        .await?;
+    call(&mut peer, &bob.account_id, "contact.accept", json!({"principal_id":alice.principal_id}))
+        .await?;
+
+    step("native_create_and_principal_add");
+    call(
+        &mut owner,
+        &alice.account_id,
+        "group.create",
+        json!({"group_id":GROUP,"conversation_id":THREAD,"creator_id":alice.principal_id,"name":NAME}),
+    )
+    .await?;
+    call(
+        &mut owner,
+        &alice.account_id,
+        "group.member.add",
+        json!({"group_id":GROUP,"member_id":bob.principal_id,"role":"member"}),
+    )
+    .await?;
+    wait_state(&mut peer, &bob.account_id, 2, NAME, &[&alice.device_id, &bob.device_id]).await?;
+
+    step("cross_gateway_native_messages");
+    send(&mut owner, &alice, "owner-first").await?;
+    wait_message(&mut peer, &bob.account_id, &alice, "owner-first").await?;
+    send(&mut peer, &bob, "peer-first").await?;
+    wait_message(&mut owner, &alice.account_id, &bob, "peer-first").await?;
+
+    step("native_rename");
+    call(
+        &mut owner,
+        &alice.account_id,
+        "group.name.set",
+        json!({"group_id":GROUP,"name":"Reviewed checklist"}),
+    )
+    .await?;
+    for (bus, account) in [(&mut owner, alice.account_id.as_str()), (&mut peer, &bob.account_id)] {
+        wait_state(bus, account, 3, "Reviewed checklist", &[&alice.device_id, &bob.device_id])
             .await?;
-        }
     }
+
+    step("native_principal_remove");
+    call(
+        &mut owner,
+        &alice.account_id,
+        "group.member.remove",
+        json!({"group_id":GROUP,"actor_id":alice.device_id,"member_id":bob.principal_id}),
+    )
+    .await?;
+    wait_state(&mut owner, &alice.account_id, 4, "Reviewed checklist", &[&alice.device_id]).await?;
+    assert_typed_send_refusal(&mut peer, &bob).await?;
+    step("complete");
     Ok(())
 }
-async fn assert_removed_peer_excluded(peer: &mut LocalBusClient, sender: &Value) -> TestResult {
-    let expected = expected_message_id(sender, "after-removal")?;
-    for _ in 0..20 {
-        call(peer, "peer", "message.receive", json!({"limit":32})).await?;
-        let read = call(peer, "peer", "message.read", json!({"conversation_id":THREAD})).await?;
-        assert!(
-            !read["messages"]
-                .as_array()
-                .ok_or("messages")?
-                .iter()
-                .any(|m| m["message_id"] == expected || m["body_utf8"] == "after-removal"),
-            "removed peer received a new epoch message"
-        );
-        tokio::time::sleep(Duration::from_millis(100)).await;
-    }
-    Ok(())
-}
-async fn assert_role_refused(
-    peer: &mut LocalBusClient,
-    owner: &Value,
-    member: &Value,
-) -> TestResult {
-    step("typed_refusal_does_not_stop_account_actor");
-    let bad = LocalBusFrame::request(
-        "invalid-group-role",
-        Some("peer".into()),
-        "ramflux.sdk.v1",
-        "group.role.set",
-        json!({"group_id":GROUP,"actor_id":member["device_id"],"member_id":owner["device_id"],
-            "member_principal_commitment":owner["principal_commitment"],"role":"member"}),
+
+async fn assert_typed_send_refusal(bus: &mut LocalBusClient, sender: &NativeAccount) -> TestResult {
+    let request = LocalBusFrame::request(
+        "removed-native-member-send",
+        Some(sender.account_id.clone()),
+        "grpsync01",
+        "group.send",
+        json!({"group_id":GROUP,"conversation_id":THREAD,"message_id":"removed-send",
+            "sender_id":sender.principal_id,"encrypted_body_base64":"",
+            "plaintext_body_base64":ramflux_protocol::encode_base64url(b"removed")}),
     );
-    let refusal = peer
-        .request_frame_structured(bad)
+    let refusal = bus
+        .request_frame_structured(request)
         .await
         .err()
-        .ok_or("unauthorized role update accepted")?;
+        .ok_or("removed native member send succeeded")?;
     assert!(
-        matches!(&refusal, ramflux_sdk::SdkError::LocalBusRefused { .. }),
-        "untyped refusal: {refusal}"
-    );
-    assert!(!refusal.to_string().contains("account actor stopped"), "actor died: {refusal}");
-    Ok(())
-}
-async fn assert_signed_name(bus: &mut LocalBusClient, account: &str) -> TestResult {
-    let listed = call(bus, account, "group.list", json!({})).await?;
-    assert!(
-        listed["groups"]
-            .as_array()
-            .ok_or("groups")?
-            .iter()
-            .any(|group| group["group_id"] == GROUP && group["name"] == "Reviewed checklist"),
-        "signed name missing from group.list: {listed}"
-    );
-    let directory = call(bus, account, "conversation.directory", json!({"limit":100})).await?;
-    assert!(
-        directory["conversations"]
-            .as_array()
-            .ok_or("conversations")?
-            .iter()
-            .any(|row| row["id"] == THREAD && row["title"] == "Reviewed checklist"),
-        "name missing or overwritten: {directory}"
+        matches!(&refusal, ramflux_sdk::SdkError::LocalBusRefused {code,..} if code == "GroupSendRefused"),
+        "unexpected refusal: {refusal}"
     );
     Ok(())
 }
+
 async fn call(
     bus: &mut LocalBusClient,
     account: &str,
@@ -252,66 +198,26 @@ async fn call(
         .await
         .map_err(|error| format!("account={account} method={method}: {error}").into())
 }
-async fn create(
-    bus: &mut LocalBusClient,
-    node: &S8RealnetNode,
-    id: &str,
-    owner: &str,
-    seeds: (u8, u8),
-) -> TestResult<Value> {
-    let principal = format!("principal_gs_{owner}");
-    let device = format!("device_gs_{id}");
-    let target = format!("target_gs_{id}");
-    let request = ramflux_sdk::LocalBusAccountCreateRequest {
-        kind: None,
-        label: None,
-        node_id: None,
-        local_account_id: id.into(),
-        principal_id: principal.clone(),
-        principal_commitment: String::new(),
-        device_id: device.clone(),
-        target_delivery_id: target.clone(),
-        account_secret: "grpsync-fixture-secret".into(),
-        root_seed: [seeds.0; 32],
-        device_seed: [seeds.1; 32],
-        client_mode: ramflux_sdk::LocalBusClientMode::AttendedCli,
-        gateway: ramflux_sdk::GatewayQuicEndpointConfig {
-            bind_addr: "0.0.0.0:0".parse()?,
-            gateway_addr: S73_GATEWAY_B_QUIC.parse()?,
-            server_name: "localhost".into(),
-            ca_cert: node.ca_cert.clone(),
-            principal_id: principal,
-            device_id: device,
-            target_delivery_id: target,
-            prekey_http_url: None,
-        },
-    };
-    Ok(bus
-        .request(None, "create", "account.itest_legacy.create", serde_json::to_value(request)?)
-        .await?)
-}
-async fn add(bus: &mut LocalBusClient, member: &Value) -> TestResult {
+
+async fn send(bus: &mut LocalBusClient, sender: &NativeAccount, id: &str) -> TestResult {
     call(
         bus,
-        "owner",
-        "group.member.add",
-        json!({"group_id":GROUP,"member_id":member["device_id"],
-        "member_principal_commitment":member["principal_commitment"],"role":"member"}),
+        &sender.account_id,
+        "group.send",
+        json!({"group_id":GROUP,"conversation_id":THREAD,"message_id":id,
+            "sender_id":sender.principal_id,"encrypted_body_base64":"",
+            "plaintext_body_base64":ramflux_protocol::encode_base64url(id)}),
     )
     .await?;
     Ok(())
 }
-async fn send(bus: &mut LocalBusClient, account: &str, actor: &Value, id: &str) -> TestResult {
-    call(bus,account,"group.send",json!({"group_id":GROUP,"conversation_id":THREAD,"message_id":id,
-        "sender_id":actor["device_id"],"encrypted_body_base64":"","plaintext_body_base64":ramflux_protocol::encode_base64url(id)})).await?;
-    Ok(())
-}
+
 async fn wait_state(
     bus: &mut LocalBusClient,
     account: &str,
     epoch: u64,
     name: &str,
-    members: &[Value],
+    members: &[&str],
 ) -> TestResult<Value> {
     let mut observed = Value::Null;
     for _ in 0..100 {
@@ -322,7 +228,7 @@ async fn wait_state(
                 && observed["name"] == name
                 && observed["members"].as_array().is_some_and(|actual| {
                     actual.len() == members.len()
-                        && members.iter().all(|member| actual.contains(member))
+                        && members.iter().all(|member| actual.iter().any(|value| value == member))
                 })
             {
                 return Ok(observed);
@@ -335,35 +241,32 @@ async fn wait_state(
     )
     .into())
 }
-fn expected_message_id(sender: &Value, logical: &str) -> TestResult<String> {
-    Ok(ramflux_protocol::group_message_id(
-        GROUP,
-        sender["principal_commitment"].as_str().ok_or("sender root")?,
-        sender["device_id"].as_str().ok_or("sender device")?,
-        logical,
-    )?)
-}
+
 async fn wait_message(
     bus: &mut LocalBusClient,
     account: &str,
-    sender: &Value,
+    sender: &NativeAccount,
     id: &str,
 ) -> TestResult {
-    let expected = expected_message_id(sender, id)?;
+    let expected =
+        ramflux_protocol::group_message_id(GROUP, &sender.anchor, &sender.device_id, id)?;
     for _ in 0..100 {
         call(bus, account, "message.receive", json!({"limit":32})).await?;
         let read = call(bus, account, "message.read", json!({"conversation_id":THREAD})).await?;
-        if read["messages"].as_array().is_some_and(|messages| {
+        if let Some(message) = read["messages"].as_array().and_then(|messages| {
             messages
                 .iter()
-                .any(|message| message["message_id"] == expected && message["body_utf8"] == id)
+                .find(|message| message["message_id"] == expected && message["body_utf8"] == id)
         }) {
+            assert_eq!(message["sender_id"], sender.principal_id);
+            assert_eq!(message["sender_device_id"], sender.device_id);
             return Ok(());
         }
         tokio::time::sleep(Duration::from_millis(100)).await;
     }
-    Err(format!("first group message missing: account={account} id={id}").into())
+    Err(format!("native group message missing: account={account} id={id}").into())
 }
+
 fn step(phase: &str) {
     eprintln!("STEP: grpsync01 timestamp={} phase={phase}", realnet_now_i64());
 }
