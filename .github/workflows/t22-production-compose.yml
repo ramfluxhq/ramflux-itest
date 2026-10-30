@@ -23,7 +23,7 @@ jobs:
       # The test resolves the product deploy dir as <parent>/ramflux/deploy,
       # so checkout the product and itest repos as siblings.
       - name: Checkout ramflux (product, pinned)
-        uses: actions/checkout@b9e0990d219a03df7633c93f6f005a8fecbcab22
+        uses: actions/checkout@f548e57e544e1ff5a4c46bf1e1b8685f8e4a348a
         with:
           repository: ramfluxhq/ramflux
           ref: 629e6ec6c0cca1973c4e23e119f87a789eebe8e9
@@ -31,14 +31,14 @@ jobs:
           persist-credentials: false
 
       - name: Checkout ramflux-itest (this repo)
-        uses: actions/checkout@b9e0990d219a03df7633c93f6f005a8fecbcab22
+        uses: actions/checkout@f548e57e544e1ff5a4c46bf1e1b8685f8e4a348a
         with:
           ref: ${{ github.sha }}
           path: ramflux-itest
           persist-credentials: false
 
       - name: Cache
-        uses: Swatinem/rust-cache@baf1a810e98b6a3001d0d7234864ed75a17c42fb
+        uses: Swatinem/rust-cache@c8037a86dde8214a8310e9f54a8fc61ab362aa31
         with:
           workspaces: |
             ramflux-itest
