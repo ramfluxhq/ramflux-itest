@@ -177,23 +177,22 @@ async fn establish_native_contacts(
     bob_id: &str,
     b: &Value,
 ) -> VoiceResult {
-    actors::call(&mut alice, alice_id, "contact.add", json!({"principal_id":b["principal_id"]}))
-        .await?;
+    actors::call(alice, alice_id, "contact.add", json!({"principal_id":b["principal_id"]})).await?;
     let request = actors::wait_inbound_contact_request(
-        &mut bob,
+        bob,
         bob_id,
         a["principal_id"].as_str().ok_or("missing alice principal")?,
     )
     .await?;
-    actors::call(&mut bob, bob_id, "contact.accept", json!({"request_id":request})).await?;
+    actors::call(bob, bob_id, "contact.accept", json!({"request_id":request})).await?;
     actors::wait_accepted_contact(
-        &mut alice,
+        alice,
         alice_id,
         b["principal_id"].as_str().ok_or("missing bob principal")?,
     )
     .await?;
     actors::wait_accepted_contact(
-        &mut bob,
+        bob,
         bob_id,
         a["principal_id"].as_str().ok_or("missing alice principal")?,
     )
