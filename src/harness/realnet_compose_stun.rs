@@ -27,6 +27,8 @@ mod compose_input_aliases;
 mod security_inputs;
 #[cfg(all(test, feature = "realnet"))]
 pub(crate) use compose_input_aliases::itest_admin_token;
+#[cfg(all(test, feature = "realnet"))]
+pub(crate) use security_inputs::gateway_issuer_seed;
 
 /// `compose down` shutdown-grace timeout (seconds). Default "2" (fast teardown for normal tests).
 /// CTRL-089 DIAGNOSTIC: a heap-profiler relay build dumps its dhat json on SIGTERM, and symbolizing

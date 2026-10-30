@@ -142,11 +142,87 @@ pub(crate) async fn select_native_node(bus: &mut LocalBusClient, node: &str) -> 
     Ok(())
 }
 
+pub(crate) async fn connect_native_bus(socket: &Path) -> Result<LocalBusClient> {
+    crate::realnet_step("connect native local bus", format!("socket={}", socket.display()));
+    for attempt in 1..=100 {
+        match LocalBusClient::connect(socket).await {
+            Ok(bus) => return Ok(bus),
+            Err(SdkError::Io(error))
+                if matches!(
+                    error.kind(),
+                    std::io::ErrorKind::NotFound | std::io::ErrorKind::ConnectionRefused
+                ) =>
+            {
+                crate::realnet_step(
+                    "native local bus not listening yet",
+                    format!("socket={} attempt={attempt}/100 error={error:?}", socket.display()),
+                );
+                if attempt == 100 {
+                    return Err(format!(
+                        "native local bus readiness failed socket={}: {error:?}",
+                        socket.display()
+                    )
+                    .into());
+                }
+                tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+            }
+            Err(error) => return Err(error.into()),
+        }
+    }
+    Err("native local bus readiness attempts exhausted".into())
+}
+
+#[tokio::test]
+async fn native_bus_readiness_waits_for_listen_after_socket_path_is_bound() -> Result<()> {
+    use tokio::io::{AsyncBufReadExt, AsyncWriteExt};
+
+    let root = crate::temp_root("native_bus_bound_not_listening")?;
+    let socket = root.join("bus.sock");
+    // Reproduce the bind-to-listen gap in UnixListener::bind without relying on scheduling luck.
+    let mut child = tokio::process::Command::new("python3")
+        .args([
+            "-I",
+            "-c",
+            "import socket,sys; s=socket.socket(socket.AF_UNIX); s.bind(sys.argv[1]); print('bound',flush=True); sys.stdin.readline(); s.listen(); print('listening',flush=True); sys.stdin.readline()",
+        ])
+        .arg(&socket)
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .kill_on_drop(true)
+        .spawn()?;
+    let mut lines = tokio::io::BufReader::new(child.stdout.take().ok_or("child stdout")?).lines();
+    assert_eq!(lines.next_line().await?.as_deref(), Some("bound"));
+    assert!(socket.exists());
+    // The former readiness check reports success here, but connecting returns ConnectionRefused.
+    crate::mvp_s4_wait_for_socket(&socket).await?;
+    assert!(matches!(
+        LocalBusClient::connect(&socket).await,
+        Err(SdkError::Io(error)) if error.kind() == std::io::ErrorKind::ConnectionRefused
+    ));
+    let connecting = connect_native_bus(&socket);
+    tokio::pin!(connecting);
+    tokio::select! {
+        _ = &mut connecting => return Err("native readiness accepted a non-listening socket".into()),
+        () = tokio::time::sleep(std::time::Duration::from_millis(150)) => {}
+    }
+    child.stdin.as_mut().ok_or("child stdin")?.write_all(b"\n").await?;
+    assert_eq!(lines.next_line().await?.as_deref(), Some("listening"));
+    let bus = connecting.await?;
+    drop(bus);
+    child.kill().await?;
+    child.wait().await?;
+    std::fs::remove_dir_all(root)?;
+    Ok(())
+}
+
 pub(crate) async fn create_native_account(
     socket: &Path,
     display_name: &str,
 ) -> Result<NativeAccount> {
-    let mut ceremony = LocalBusCreationClient::connect(socket).await?;
+    crate::realnet_step("connect native creation ceremony", format!("socket={}", socket.display()));
+    let mut ceremony = LocalBusCreationClient::connect(socket).await.map_err(|error| {
+        format!("native creation connect failed socket={}: {error:?}", socket.display())
+    })?;
     ceremony.begin(display_name, ramflux_protocol::PrincipalKind::Human).await?;
     // This buffer represents the test user's saved recovery artifact, never daemon state.
     let phrase = ceremony.show_once().await?;
