@@ -105,6 +105,62 @@ pub(crate) async fn create_native_account(
     })
 }
 
+/// Create a native externally-custodied participant and export its one-use local data credential.
+pub(crate) async fn create_native_agent_account(
+    socket: &Path,
+    display_name: &str,
+    owner: &NativeAccount,
+    bundle_path: &Path,
+) -> Result<NativeAccount> {
+    let mut ceremony = LocalBusCreationClient::connect(socket).await?;
+    ceremony.begin_headless(display_name, &owner.account_id).await?;
+    let phrase = ceremony.show_once().await?;
+    let positions = ceremony.hidden_challenge().await?;
+    let saved_words: Vec<_> = phrase.split_whitespace().collect();
+    let words = std::array::from_fn(|index| {
+        Zeroizing::new(saved_words[usize::from(positions[index] - 1)].to_owned())
+    });
+    let account = ceremony.confirm_headless(&words).await?;
+    assert_eq!(account.networking, ramflux_sdk::custody::CreationState::Live);
+    let mut bus = LocalBusClient::connect(socket).await?;
+    bus.request(
+        Some(owner.account_id.clone()),
+        "stream",
+        "subscription.open",
+        serde_json::json!({"topics":[],"attended_frontend":true}),
+    )
+    .await?;
+    bus.request(
+        Some(owner.account_id.clone()),
+        "account",
+        "account.export_agent_credentials",
+        serde_json::json!({"account":account.account_id,"path":bundle_path}),
+    )
+    .await?;
+    let status = bus
+        .request(
+            Some(account.account_id.clone()),
+            "account",
+            "account.status",
+            serde_json::json!({}),
+        )
+        .await?;
+    let field = |name: &str| -> Result<String> {
+        Ok(status[name].as_str().ok_or("native agent status field missing")?.to_owned())
+    };
+    assert_eq!(status["networking"], "live");
+    assert_eq!(status["display_name"], display_name);
+    Ok(NativeAccount {
+        account_id: account.account_id,
+        principal_id: field("principal_id")?,
+        device_id: field("device_id")?,
+        delivery_id: field("target_delivery_id")?,
+        anchor: field("principal_commitment")?,
+        display_name: display_name.to_owned(),
+        phrase,
+    })
+}
+
 pub(crate) async fn recover_native_account(
     socket: &Path,
     account_id: &str,
