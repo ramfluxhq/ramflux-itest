@@ -8,6 +8,10 @@ use super::*;
 const MVP_S39_PRODUCER_ROOT_SEED: [u8; 32] = [0x69; 32];
 #[cfg(all(test, feature = "realnet"))]
 const MVP_S39_PRODUCER_DEVICE_SEED: [u8; 32] = [0x6A; 32];
+#[cfg(all(test, feature = "realnet"))]
+const MVP_S39_SESSION_ROOT_SEED: [u8; 32] = [0x51; 32];
+#[cfg(all(test, feature = "realnet"))]
+const MVP_S39_SESSION_DEVICE_SEED: [u8; 32] = [0x52; 32];
 
 #[cfg(feature = "realnet")]
 #[test]
@@ -68,7 +72,12 @@ async fn mvp_s39_assert_resume_rejoin(
         mvp_s1_open_quic_stream(gateway_quic_addr, ca_cert).await?;
     eprintln!("S39-STEP: initial open/auth before");
     let open = mvp_s1_open_frame(Some(initial_cookie.to_owned()), 1_760_000_001, "s39_initial");
-    let auth = mvp_s1_auth_frame(&open)?;
+    let auth = mvp_s39_rooted_auth(
+        &open,
+        "principal_s1_realnet",
+        MVP_S39_SESSION_ROOT_SEED,
+        MVP_S39_SESSION_DEVICE_SEED,
+    )?;
     mvp_s1_write_client_frame(
         &mut send,
         &ramflux_node_core::GatewayClientFrame::Open { open: open.clone() },
@@ -305,16 +314,20 @@ async fn mvp_s39_submit_offline_resume_candidate(
             principal_id: "principal_s39_producer",
             device_id: "device_s39_producer",
             target_delivery_id: "target_s39_producer",
+            root_seed: MVP_S39_PRODUCER_ROOT_SEED,
             device_seed: MVP_S39_PRODUCER_DEVICE_SEED,
-            device_epoch: 1,
             nonce_suffix: "producer_offline_submit",
         },
     )
     .await?;
     eprintln!("S39-STEP: producer session_established after");
-    let submit = mvp_s1_submit_frame(
+    let submit = mvp_s39_rooted_submit(
         &producer.open,
         itest_envelope("env_s39_offline_resume", "target_s1_gateway_session"),
+        "principal_s39_producer",
+        "device_s39_producer",
+        MVP_S39_PRODUCER_ROOT_SEED,
+        MVP_S39_PRODUCER_DEVICE_SEED,
     )?;
     mvp_s1_write_client_frame(
         &mut producer.send,
@@ -337,9 +350,13 @@ async fn mvp_s39_submit_acknowledged(
     recv: &mut quinn::RecvStream,
     open: &ramflux_node_core::GatewayOpenFrame,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let submit = mvp_s1_submit_frame(
+    let submit = mvp_s39_rooted_submit(
         open,
         itest_envelope("env_s39_acknowledged_before_resume", "target_s1_gateway_session"),
+        "principal_s1_realnet",
+        "device_s1_realnet",
+        MVP_S39_SESSION_ROOT_SEED,
+        MVP_S39_SESSION_DEVICE_SEED,
     )?;
     mvp_s1_write_client_frame(send, &ramflux_node_core::GatewayClientFrame::Submit { submit })
         .await?;
@@ -373,8 +390,8 @@ struct S39RegisteredDevice<'a> {
     principal_id: &'a str,
     device_id: &'a str,
     target_delivery_id: &'a str,
+    root_seed: [u8; 32],
     device_seed: [u8; 32],
-    device_epoch: u64,
     nonce_suffix: &'a str,
 }
 
@@ -392,12 +409,8 @@ async fn mvp_s39_open_registered_device(
     open.device_id = device.device_id.to_owned();
     open.target_delivery_id = device.target_delivery_id.to_owned();
     open.stream_nonce = format!("nonce_s39_{}", device.nonce_suffix);
-    let auth = mvp_s1_auth_frame_for_registered_device(
-        &open,
-        device.principal_id,
-        device.device_epoch,
-        device.device_seed,
-    )?;
+    let auth =
+        mvp_s39_rooted_auth(&open, device.principal_id, device.root_seed, device.device_seed)?;
     mvp_s1_write_client_frame(
         &mut send,
         &ramflux_node_core::GatewayClientFrame::Open { open: open.clone() },
@@ -425,7 +438,12 @@ async fn mvp_s39_open_with_resume(
         open.resume_token_hash = Some(ramflux_node_core::gateway_resume_token_hash(resume_token));
         open.last_seen_inbox_seq = Some(last_seen_inbox_seq);
     }
-    let auth = mvp_s1_auth_frame(&open)?;
+    let auth = mvp_s39_rooted_auth(
+        &open,
+        "principal_s1_realnet",
+        MVP_S39_SESSION_ROOT_SEED,
+        MVP_S39_SESSION_DEVICE_SEED,
+    )?;
     mvp_s1_write_client_frame(
         &mut send,
         &ramflux_node_core::GatewayClientFrame::Open { open: open.clone() },
@@ -452,7 +470,12 @@ async fn mvp_s39_open_with_forged_resume(
     open.previous_session_id = Some(previous_session_id.to_owned());
     open.resume_token_hash = Some(resume_token_hash.to_owned());
     open.last_seen_inbox_seq = Some(1);
-    let auth = mvp_s1_auth_frame(&open)?;
+    let auth = mvp_s39_rooted_auth(
+        &open,
+        "principal_s1_realnet",
+        MVP_S39_SESSION_ROOT_SEED,
+        MVP_S39_SESSION_DEVICE_SEED,
+    )?;
     mvp_s1_write_client_frame(
         &mut send,
         &ramflux_node_core::GatewayClientFrame::Open { open: open.clone() },
@@ -462,4 +485,52 @@ async fn mvp_s39_open_with_forged_resume(
         .await?;
     let session = mvp_s1_expect_session_established(&mut recv).await?;
     Ok(S39GatewaySession { _endpoint: endpoint, connection, send, recv, open, session })
+}
+
+#[cfg(all(test, feature = "realnet"))]
+fn mvp_s39_rooted_auth(
+    open: &ramflux_node_core::GatewayOpenFrame,
+    principal: &str,
+    root_seed: [u8; 32],
+    device_seed: [u8; 32],
+) -> Result<ramflux_node_core::GatewayAuthFrame, Box<dyn std::error::Error>> {
+    let root = ramflux_crypto::create_identity_root(principal, root_seed);
+    let root = ramflux_crypto::identity_root_commitment(&root.signing_key.verifying_key());
+    let mut auth = mvp_s1_auth_frame_for_registered_device(open, principal, 1, device_seed)?;
+    auth.device_proof.ext.ext.insert("source_root_commitment".into(), serde_json::json!(root));
+    auth.device_proof.signed.signature =
+        ramflux_crypto::sign_protocol_object_with_seed(&auth.device_proof, device_seed)?;
+    auth.signed_request.device_proof_hash = ramflux_crypto::blake3_256_base64url(
+        ramflux_node_core::GATEWAY_DEVICE_PROOF_HASH_DOMAIN,
+        &ramflux_protocol::canonical_json_bytes(&auth.device_proof)?,
+    );
+    auth.signed_request.signed.signature =
+        ramflux_crypto::sign_protocol_object_with_seed(&auth.signed_request, device_seed)?;
+    Ok(auth)
+}
+
+#[cfg(all(test, feature = "realnet"))]
+fn mvp_s39_rooted_submit(
+    open: &ramflux_node_core::GatewayOpenFrame,
+    mut envelope: ramflux_protocol::Envelope,
+    principal: &str,
+    device: &str,
+    root_seed: [u8; 32],
+    device_seed: [u8; 32],
+) -> Result<ramflux_node_core::GatewaySubmitFrame, Box<dyn std::error::Error>> {
+    let root = ramflux_crypto::create_identity_root(principal, root_seed);
+    let root = ramflux_crypto::identity_root_commitment(&root.signing_key.verifying_key());
+    envelope.source_principal_id = principal.into();
+    envelope.source_device_id = device.into();
+    envelope.ext.ext.insert("source_root_commitment".into(), serde_json::json!(root));
+    envelope.signed.signing_key_id = format!("device:{device}");
+    envelope.signed.signature = ramflux_crypto::sign_canonical_bytes_with_seed(
+        &ramflux_protocol::envelope_sender_signed_bytes(&envelope)?,
+        device_seed,
+    );
+    let mut submit = mvp_s1_submit_frame(open, envelope)?;
+    submit.signed_request.signed.signing_key_id = format!("device:{device}");
+    submit.signed_request.signed.signature =
+        ramflux_crypto::sign_protocol_object_with_seed(&submit.signed_request, device_seed)?;
+    Ok(submit)
 }
