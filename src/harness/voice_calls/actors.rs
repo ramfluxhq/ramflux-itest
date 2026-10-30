@@ -28,55 +28,43 @@ pub(super) async fn binary() -> VoiceResult<PathBuf> {
     }
     Ok(target.join("debug/rf"))
 }
-pub(super) async fn create(
+pub(super) async fn create_legacy(
     bus: &mut ramflux_sdk::LocalBusClient,
-    socket: &Path,
     node: &S8RealnetNode,
-    display_name: &str,
+    id: &str,
+    root_seed: [u8; 32],
+    device_seed: [u8; 32],
 ) -> VoiceResult<Value> {
-    let added = bus.request(None, "node", "node.add", json!({"url":node.federation_url})).await?;
-    assert_eq!(added["node"]["node_id"], node.node_id);
-    bus.request(
-        None,
-        "node",
-        "node.confirm",
-        json!({
-            "node_id":node.node_id,
-            "pin_source":"operator",
-            "expected_public_key":node.federation_node_public_key,
-        }),
-    )
-    .await?;
-    bus.request(None, "node", "node.set_default", json!({"node_id":node.node_id})).await?;
-
-    let mut ceremony = ramflux_sdk::LocalBusCreationClient::connect(socket).await?;
-    ceremony.begin(display_name, ramflux_protocol::PrincipalKind::Human).await?;
-    let phrase = ceremony.show_once().await?;
-    let remembered = phrase
-        .split_whitespace()
-        .map(|word| zeroize::Zeroizing::new(word.to_owned()))
-        .collect::<Vec<_>>();
-    if remembered.len() != 24 {
-        return Err("native voice fixture received an invalid recovery phrase".into());
-    }
-    drop(phrase);
-    let positions = ceremony.hidden_challenge().await?;
-    let answers =
-        std::array::from_fn(|index| remembered[usize::from(positions[index] - 1)].clone());
-    drop(remembered);
-    let created = ceremony
-        .confirm(&answers, &zeroize::Zeroizing::new("voice fixture data passphrase".into()))
-        .await?;
-    let account = created.account_id;
-    for _ in 0..300 {
-        let status =
-            bus.request(Some(account.clone()), "account", "account.status", json!({})).await?;
-        if status["networking"] == "live" && status["session_id"].is_string() {
-            return Ok(status);
-        }
-        tokio::time::sleep(Duration::from_millis(100)).await;
-    }
-    Err(format!("native voice account {account} did not become live").into())
+    let principal = format!("principal_call01_{id}");
+    let device = format!("device_call01_{id}");
+    let target = format!("target_call01_{id}");
+    let request = ramflux_sdk::LocalBusAccountCreateRequest {
+        node_id: None,
+        kind: Some(ramflux_protocol::PrincipalKind::Human),
+        label: None,
+        local_account_id: id.into(),
+        principal_id: principal.clone(),
+        principal_commitment: String::new(),
+        device_id: device.clone(),
+        target_delivery_id: target.clone(),
+        account_secret: "voice-fixture-secret".into(),
+        root_seed,
+        device_seed,
+        client_mode: ramflux_sdk::LocalBusClientMode::AttendedCli,
+        gateway: ramflux_sdk::GatewayQuicEndpointConfig {
+            bind_addr: "0.0.0.0:0".parse()?,
+            gateway_addr: node.gateway_quic_addr,
+            server_name: "localhost".into(),
+            ca_cert: node.ca_cert.clone(),
+            principal_id: principal,
+            device_id: device,
+            target_delivery_id: target,
+            prekey_http_url: None,
+        },
+    };
+    Ok(bus
+        .request(None, "account", "account.itest_legacy.create", serde_json::to_value(request)?)
+        .await?)
 }
 pub(super) async fn call(
     bus: &mut ramflux_sdk::LocalBusClient,

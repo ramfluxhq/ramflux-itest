@@ -311,6 +311,10 @@ jobs:
           - slice: call01
             tests: tests::call01_voice::call01_realnet_voice_round_trip
             voice: "1"
+          # Keep one legacy voice slice until the ID-02-IMPL-4 migration gate removes it.
+          - slice: call01-legacy
+            tests: tests::call01_voice::call01_realnet_legacy_voice_round_trip
+            voice: "1"
           # s15 is a plain single-mesh slice: the object-v3 overlay would need
           # provider-keyring material it does not supply, so it runs without
           # RAMFLUX_OBJECT_V3 / RAMFLUX_CROSS_GATEWAY. Its call-signaling test
