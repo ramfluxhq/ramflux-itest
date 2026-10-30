@@ -30,6 +30,10 @@ pub(crate) use compose_input_aliases::itest_admin_token;
 #[cfg(all(test, feature = "realnet"))]
 pub(crate) use security_inputs::gateway_issuer_seed;
 
+#[cfg(all(test, feature = "realnet"))]
+#[path = "compose_network.rs"]
+mod compose_network;
+
 /// `compose down` shutdown-grace timeout (seconds). Default "2" (fast teardown for normal tests).
 /// CTRL-089 DIAGNOSTIC: a heap-profiler relay build dumps its dhat json on SIGTERM, and symbolizing
 /// the (unstripped) binary's backtraces at drop can exceed 2s → SIGKILL truncates the dump. The
@@ -124,9 +128,9 @@ pub(crate) fn run_docker_compose_with_env_and_overrides(
     notify_compio: bool,
     notify_tokio_concurrent: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    ensure_itest_shared_network()?;
     let compose_env = compose_env_with_required_defaults(env)?;
     if args.contains(&"up") {
+        compose_network::ensure_itest_shared_network(&compose_env)?;
         super::server_secrets::write_discovery_secret(deploy_root, &compose_env)?;
     }
     let mut command = std::process::Command::new(container_runtime()?);
@@ -481,9 +485,9 @@ pub(crate) fn run_docker_compose_project_with_overrides(
     args: &[&str],
     overrides: ItestComposeOverrides,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    ensure_itest_shared_network()?;
     let compose_env = compose_env_with_required_defaults(env)?;
     if args.contains(&"up") {
+        compose_network::ensure_itest_shared_network(&compose_env)?;
         super::server_secrets::write_discovery_secret(deploy_root, &compose_env)?;
     }
     let mut command = std::process::Command::new(container_runtime()?);
@@ -557,6 +561,7 @@ pub(crate) fn compose_env_with_required_defaults(
     env: &[(String, String)],
 ) -> Result<Vec<(String, String)>, Box<dyn std::error::Error>> {
     let mut compose_env = env.to_vec();
+    compose_network::supply_network_name(&mut compose_env)?;
     ensure_itest_node_service_signing_seed_env(&mut compose_env);
     ensure_compose_default_env(&mut compose_env, "RAMFLUX_VERSION", "dev");
     // Production services drop every capability and read the 0640 node secrets through the
@@ -811,30 +816,6 @@ fn compose_bool_env(name: &str) -> bool {
     std::env::var(name).is_ok_and(|value| {
         matches!(value.trim().to_ascii_lowercase().as_str(), "1" | "true" | "yes" | "on")
     })
-}
-
-#[cfg(all(test, feature = "realnet"))]
-pub(crate) fn ensure_itest_shared_network() -> Result<(), Box<dyn std::error::Error>> {
-    let network = std::env::var("RAMFLUX_ITEST_SHARED_NETWORK")
-        .unwrap_or_else(|_| "ramflux-itest-mesh".to_owned());
-    let inspect = std::process::Command::new(container_runtime()?)
-        .arg("network")
-        .arg("inspect")
-        .arg(&network)
-        .status()?;
-    if inspect.success() {
-        return Ok(());
-    }
-    let create = std::process::Command::new(container_runtime()?)
-        .arg("network")
-        .arg("create")
-        .arg(&network)
-        .status()?;
-    if create.success() {
-        Ok(())
-    } else {
-        Err(format!("docker network create {network} failed with {create}").into())
-    }
 }
 
 #[cfg(all(test, feature = "realnet"))]
