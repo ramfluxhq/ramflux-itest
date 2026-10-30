@@ -9,6 +9,8 @@ use serde_json::{Value, json};
 mod actors;
 #[path = "k2b_surface_round_trip/raw_probe.rs"]
 mod raw_probe;
+#[path = "k2b_surface_round_trip/startup.rs"]
+mod startup;
 #[path = "k2b_surface_round_trip/waits.rs"]
 mod waits;
 use actors::*;
@@ -83,12 +85,10 @@ async fn run(node: &S8RealnetNode, budget: waits::WaitBudget) -> TestResult {
     )
     .spawn()?;
     let result=budget.run(async {
-        mvp_s4_wait_for_socket(&a_socket).await?;mvp_s4_wait_for_socket(&b_socket).await?;
-        let mut human=ramflux_sdk::LocalBusClient::connect(&a_socket).await?;let mut agent=ramflux_sdk::LocalBusClient::connect(&b_socket).await?;
+        let mut human=startup::connect(&a_socket,&mut a).await?;let mut agent=startup::connect(&b_socket,&mut b).await?;
         let own=create(&mut human,node,"human",41,false).await?;let peer=create(&mut agent,node,"agent",45,true).await?;
-        mvp_s4_wait_for_socket(&human_sibling_socket).await?;mvp_s4_wait_for_socket(&agent_sibling_socket).await?;
-        let mut human2=ramflux_sdk::LocalBusClient::connect(&human_sibling_socket).await?;
-        let mut agent2=ramflux_sdk::LocalBusClient::connect(&agent_sibling_socket).await?;
+        let mut human2=startup::connect(&human_sibling_socket,&mut a2).await?;
+        let mut agent2=startup::connect(&agent_sibling_socket,&mut b2).await?;
         create_terminal(&mut human2,node,"human2","human",(41,43),false).await?;
         create_terminal(&mut agent2,node,"agent2","agent",(45,47),true).await?;
         step("contacts", "dm_k2b");
@@ -107,8 +107,8 @@ async fn run(node: &S8RealnetNode, budget: waits::WaitBudget) -> TestResult {
         step("group_restart", "group_thread_k2b");
         let before=call(&mut human,"human","surface.get",json!({"surface_id":"surface-group"})).await?;
         drop(human);a.start_kill()?;a.wait().await?;let _=std::fs::remove_file(&a_socket);
-        a=client_directory_daemon_command(&rf,&a_socket,&root.join("human"),&node.ca_cert,None).spawn()?;mvp_s4_wait_for_socket(&a_socket).await?;
-        let mut human=ramflux_sdk::LocalBusClient::connect(&a_socket).await?;
+        a=client_directory_daemon_command(&rf,&a_socket,&root.join("human"),&node.ca_cert,None).spawn()?;
+        let mut human=startup::connect(&a_socket,&mut a).await?;
         assert_eq!(call(&mut human,"human","surface.get",json!({"surface_id":"surface-group"})).await?,before,"surface snapshot/history/finality must survive rfd restart");
         let messages=call(&mut human,"human","message.read",json!({"conversation_id":"group_thread_k2b"})).await?;
         assert!(messages["messages"].as_array().ok_or("messages")?.iter().any(|row|row["content_type"]=="surface" && row["body_utf8"]=="Surface author=\"principal_k2b_agent\" fallback_text=\"Completed result\""));
