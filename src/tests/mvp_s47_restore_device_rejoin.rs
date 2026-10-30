@@ -552,12 +552,9 @@ fn assert_gateway_has_no_private_material(
 }
 
 fn s47_service_file(service: &str, path: &str) -> TestResult<Vec<u8>> {
-    let (mut command, _env_file) = checked_itest_compose_command("s47-read-service-file")?;
+    let (mut command, _env_file) =
+        checked_itest_compose_command("s47-read-service-file", Some(S47_COMPOSE_PROJECT))?;
     let output = command
-        .arg("-p")
-        .arg(S47_COMPOSE_PROJECT)
-        .arg("-f")
-        .arg("docker-compose.itest.yml")
         .arg("exec")
         .arg("-T")
         .arg(service)
