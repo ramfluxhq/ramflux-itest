@@ -116,13 +116,13 @@ async fn run(node: &S8RealnetNode, case: Case) -> TestResult {
         }
         Ok::<(), Box<dyn std::error::Error>>(())
     };
-    let (server_result, flow_result) = tokio::time::timeout(Duration::from_mins(6), async {
-        let flow_result = flow.await;
+    let flow = async {
+        let result = flow.await;
         let _ = stop.send(true);
-        let server_result = server.await;
-        (server_result, flow_result)
-    })
-    .await?;
+        result
+    };
+    let (server_result, flow_result) =
+        tokio::time::timeout(Duration::from_mins(6), async { tokio::join!(server, flow) }).await?;
     server_result?;
     flow_result?;
     std::fs::remove_dir_all(root)?;
