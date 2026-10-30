@@ -307,6 +307,7 @@ async fn assert_foreign_registration_refused(
     };
 
     let before = fetch_s47_manifest(&node.gateway_url, &alice.anchor)?;
+    ramflux_sdk::RamfluxClient::verify_device_manifest_json(before.clone(), &alice.anchor)?;
     let before_manifest = ramflux_protocol::canonical_json_bytes(&before)?;
     let before_device_set = ramflux_protocol::canonical_json_bytes(
         before
