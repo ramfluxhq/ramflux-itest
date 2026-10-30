@@ -47,7 +47,7 @@ fn scenario(case: Case) -> TestResult {
         return Err("native agent-v3 slices require object-v3 and cross-gateway".into());
     }
     let (name, base) = match case {
-        Case::AgentHost => ("ramflux-k5a-native-agent", 64100),
+        Case::AgentHost => ("ramflux-k5a-native-agent", 64900),
         Case::AgentSurface => ("ramflux-k5a2-native-agent-surface", 64400),
         Case::Surface => ("ramflux-k2b-native-surface", 64200),
         Case::Task => ("ramflux-k3b-native-task", 64300),
