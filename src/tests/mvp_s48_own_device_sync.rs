@@ -74,6 +74,12 @@ fn mvp_s48_realnet_own_device_history_group_key_sync() -> Result<(), Box<dyn std
         .envs(client_directory_relay_environment(&node.ca_cert))
         .status()?;
     assert!(status.success(), "s48 configured client child failed: {status}");
+    let runtime = tokio::runtime::Builder::new_current_thread().enable_all().build()?;
+    runtime.block_on(assert_native_replacement_lifecycle(
+        node,
+        S73_RELAY_QUIC,
+        "s48_native_replacement",
+    ))?;
     stack.node.guard.mark_success();
     Ok(())
 }

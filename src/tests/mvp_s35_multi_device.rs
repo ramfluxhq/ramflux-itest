@@ -56,6 +56,8 @@ fn mvp_s35_realnet_multi_device_activation_fanout() -> Result<(), Box<dyn std::e
         wait_for_private_gateway_quic(node.gateway_quic_addr, &node.ca_cert).await?;
         Box::pin(mvp_s35_assert_multi_device_activation(node.gateway_quic_addr, &node.ca_cert))
             .await?;
+        assert_native_replacement_lifecycle(node, "127.0.0.1:63365", "s35_native_replacement")
+            .await?;
         Ok::<(), Box<dyn std::error::Error>>(())
     })?;
     stack.node.guard.mark_success();

@@ -10,9 +10,13 @@ mod native_accounts;
 #[cfg(all(test, feature = "realnet"))]
 mod native_backup;
 #[cfg(all(test, feature = "realnet"))]
+mod native_replacement;
+#[cfg(all(test, feature = "realnet"))]
 pub(crate) use native_accounts::*;
 #[cfg(all(test, feature = "realnet"))]
 pub(crate) use native_backup::*;
+#[cfg(all(test, feature = "realnet"))]
+pub(crate) use native_replacement::*;
 mod node_prebuild;
 #[path = "rooted_registration.rs"]
 pub(crate) mod rooted_registration;

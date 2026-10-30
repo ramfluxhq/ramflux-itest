@@ -1,730 +1,267 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (c) 2026 Span Brain
 
-#![allow(unused_imports)]
+//! A fresh native restore remains local-only until explicit phrase recovery promotes its branch.
+#![cfg(feature = "realnet")]
 use super::*;
-#[cfg(feature = "realnet")]
-use std::io::Write;
+use serde_json::{Value, json};
 
-#[cfg(feature = "realnet")]
+type TestResult<T = ()> = Result<T, Box<dyn std::error::Error>>;
+
 #[test]
-fn mvp_s47_realnet_restore_device_rejoin_manifest_gate() -> Result<(), Box<dyn std::error::Error>> {
+fn mvp_s47_realnet_restore_device_rejoin_manifest_gate() -> TestResult {
     if std::env::var("RAMFLUX_ITEST_REALNET").as_deref() != Ok("1") {
         eprintln!("skipping realnet full test; set RAMFLUX_ITEST_REALNET=1");
         return Ok(());
     }
-
     crate::harness::sdk_receive_diagnostics::install();
-    crate::realnet_step("s47 start", "restore-device-rejoin");
-    let ports = S8ComposePorts {
-        gateway_http: 64_761,
-        gateway_quic: 64_621,
-        router_http: 64_760,
-        router_mesh: 64_622,
-        notify_http: 64_763,
-        federation_http: 64_762,
-        federation_mesh: 64_623,
-        relay_http: 64_764,
-        relay_media_udp: 64_171,
-        signaling_turn_udp: 64_640,
-        signaling_turn_tcp: 64_641,
-        retention_http: 64_767,
-    };
-    let gateway_capture = "/tmp/ramflux-gateway-itest-capture-s47.jsonl";
-    let node = start_s8_realnet_compose_project_with_env(
+    let mut stack = start_client_directory_stack_named(
         "ramflux-s47-restore-device",
-        ports,
-        &[
-            ("RAMFLUX_GATEWAY_ITEST_CAPTURE_JSON".to_owned(), gateway_capture.to_owned()),
-            (
-                "RAMFLUX_ITEST_FAILURE_LOG_SERVICES".to_owned(),
-                "ramflux-gateway,ramflux-gateway-b,ramflux-router".to_owned(),
-            ),
-        ],
+        S8ComposePorts {
+            gateway_http: 64_761,
+            gateway_quic: 64_621,
+            router_http: 64_760,
+            router_mesh: 64_622,
+            notify_http: 64_763,
+            federation_http: 64_762,
+            federation_mesh: 64_623,
+            relay_http: 64_764,
+            relay_media_udp: 64_171,
+            signaling_turn_udp: 64_640,
+            signaling_turn_tcp: 64_641,
+            retention_http: 64_767,
+        },
+        &[("RAMFLUX_ITEST_RELAY_CLIENT_QUIC_PORT".into(), "64765".into())],
     )?;
     let runtime = tokio::runtime::Builder::new_current_thread().enable_all().build()?;
-    runtime.block_on(async {
-        wait_for_private_gateway_quic(node.gateway_quic_addr, &node.ca_cert).await?;
-        Box::pin(mvp_s47_assert_restore_device_rejoin(
-            &node,
-            gateway_capture,
-            "ramflux-s47-restore-device",
+    runtime.block_on(run(&stack.node))?;
+    stack.node.guard.mark_success();
+    Ok(())
+}
+
+async fn run(node: &S8RealnetNode) -> TestResult {
+    wait_relay_quic_healthy("127.0.0.1:64765", "ramflux-relay", &node.ca_cert).await?;
+    wait_for_private_gateway_quic(node.gateway_quic_addr, &node.ca_cert).await?;
+    let root = temp_root("s47_native_restore")?;
+    let sockets = [root.join("alice.sock"), root.join("replacement.sock"), root.join("bob.sock")];
+    let profiles = root.join("native-nodes.json");
+    std::fs::write(
+        &profiles,
+        serde_json::to_vec(&[native_node_profile(node, "127.0.0.1:64765")?])?,
+    )?;
+    let binary = mvp_s4_build_rf_binary().await?;
+    let mut children = Vec::new();
+    for (index, socket) in sockets.iter().enumerate() {
+        let mut command = native_client_directory_daemon_command(
+            &binary,
+            socket,
+            &root.join(format!("account-{index}")),
+            &node.ca_cert,
+            None,
+        );
+        command
+            .arg("--builtin-nodes")
+            .arg(&profiles)
+            .env("RAMFLUX_SDK_RELAY_QUIC_ADDR", "127.0.0.1:64765");
+        children.push(command.spawn()?);
+    }
+    let result = tokio::time::timeout(Duration::from_mins(4), flow(node, &sockets, &root)).await;
+    for child in &mut children {
+        let _ = child.start_kill();
+        let _ = child.wait().await;
+    }
+    let _ = std::fs::remove_dir_all(&root);
+    result??;
+    Ok(())
+}
+
+async fn flow(node: &S8RealnetNode, sockets: &[PathBuf; 3], root: &Path) -> TestResult {
+    for socket in sockets {
+        mvp_s4_wait_for_socket(socket).await?;
+    }
+    let mut alice = ramflux_sdk::LocalBusClient::connect(&sockets[0]).await?;
+    let mut replacement = ramflux_sdk::LocalBusClient::connect(&sockets[1]).await?;
+    let mut bob = ramflux_sdk::LocalBusClient::connect(&sockets[2]).await?;
+    for bus in [&mut alice, &mut replacement, &mut bob] {
+        select_native_node(bus, &node.node_id).await?;
+    }
+    let alice_account = create_native_account(&sockets[0], "Alice").await?;
+    let bob_account = create_native_account(&sockets[2], "Bob").await?;
+    call(
+        &mut alice,
+        &alice_account.account_id,
+        "contact.add",
+        json!({"principal_id":bob_account.principal_id}),
+    )
+    .await?;
+    call(
+        &mut bob,
+        &bob_account.account_id,
+        "contact.accept",
+        json!({"principal_id":alice_account.principal_id}),
+    )
+    .await?;
+    send(
+        &mut bob,
+        &bob_account,
+        &alice_account.anchor,
+        &alice_account.device_id,
+        &alice_account.delivery_id,
+        "s47-before-restore",
+    )
+    .await?;
+    wait_for_message(&mut alice, &alice_account.account_id, "s47-before-restore").await?;
+
+    let archive = root.join("alice.rfbackup");
+    create_native_backup(&mut alice, &alice_account.account_id, &archive).await?;
+    let restored_id = restore_native_backup(&mut replacement, &archive, true).await?;
+    call(
+        &mut replacement,
+        &restored_id,
+        "account.unlock",
+        json!({"passphrase":NATIVE_RESTORED_PASSPHRASE}),
+    )
+    .await?;
+    let pending = call(&mut replacement, &restored_id, "account.status", json!({})).await?;
+    crate::harness::sdk_receive_diagnostics::response("s47 pending restore", &pending);
+    assert_eq!(pending["networking"], "networking_pending");
+    assert_ne!(pending["device_id"], alice_account.device_id);
+    wait_for_message(&mut replacement, &restored_id, "s47-before-restore").await?;
+    let refusal = replacement
+        .request_frame_response(ramflux_sdk::LocalBusFrame::request(
+            "s47-pending-receive",
+            Some(restored_id.clone()),
+            "message",
+            "message.receive",
+            json!({"limit":1,"conversation_id":null,"auto_fetch_attachments":false}),
         ))
         .await?;
-        Ok::<(), Box<dyn std::error::Error>>(())
-    })?;
-    drop(node);
-    Ok(())
+    assert_eq!(refusal.error.as_ref().map(|error| error.code.as_str()), Some("NetworkingPending"));
+    crate::harness::sdk_receive_diagnostics::failure_state(&mut replacement, &restored_id).await;
+    promote_and_verify(
+        &sockets[1],
+        &restored_id,
+        &alice_account,
+        &bob_account,
+        &mut replacement,
+        &mut bob,
+    )
+    .await
 }
 
-#[cfg(all(test, feature = "realnet"))]
-#[allow(clippy::too_many_lines)]
-async fn mvp_s47_assert_restore_device_rejoin(
-    node: &S8RealnetNode,
-    gateway_capture: &str,
-    compose_project: &str,
-) -> Result<(), Box<dyn std::error::Error>> {
-    let temp_root = temp_root("s47_restore_device_rejoin")?;
-    crate::realnet_step("s47 daemon setup", format!("root={}", temp_root.display()));
-    let alice_primary_socket = temp_root.join("alice_a/rfd.sock");
-    let alice_restored_socket = temp_root.join("alice_b/rfd.sock");
-    let bob_socket = temp_root.join("bob/rfd.sock");
-    let backup_path = temp_root.join("alice-root-backup.ramflux.json");
-    let (alice_primary_tx, alice_primary_rx) = tokio::sync::watch::channel(false);
-    let (alice_restored_tx, alice_restored_rx) = tokio::sync::watch::channel(false);
-    let (bob_tx, bob_rx) = tokio::sync::watch::channel(false);
-    let alice_primary_server = ramflux_sdk::serve_local_bus_until(
-        crate::harness::legacy_accounts::config(
-            &alice_primary_socket,
-            temp_root.join("alice_a/data"),
-        ),
-        alice_primary_rx,
+async fn promote_and_verify(
+    replacement_socket: &Path,
+    restored_id: &str,
+    alice_account: &NativeAccount,
+    bob_account: &NativeAccount,
+    replacement: &mut ramflux_sdk::LocalBusClient,
+    bob: &mut ramflux_sdk::LocalBusClient,
+) -> TestResult {
+    let recovered = recover_native_account(
+        replacement_socket,
+        restored_id,
+        alice_account,
+        NATIVE_RESTORED_PASSPHRASE,
+    )
+    .await?;
+    assert_eq!(recovered.networking, ramflux_sdk::custody::CreationState::Live);
+    let current = call(replacement, restored_id, "account.status", json!({})).await?;
+    assert_eq!(current["networking"], "live");
+    let refreshed = call(
+        bob,
+        &bob_account.account_id,
+        "device.refresh",
+        json!({"principal_commitment":alice_account.anchor}),
+    )
+    .await?;
+    let devices = refreshed["devices"].as_array().ok_or("native roster missing")?;
+    assert_eq!(devices.len(), 2);
+    assert!(devices.iter().any(|device| {
+        device["device_id"] == alice_account.device_id && device["status"] == "revoked"
+    }));
+    let current_device = current["device_id"].as_str().ok_or("replacement device missing")?;
+    let current_delivery =
+        current["target_delivery_id"].as_str().ok_or("replacement delivery missing")?;
+    assert!(
+        devices.iter().any(|device| {
+            device["device_id"] == current_device && device["status"] == "active"
+        })
     );
-    let alice_restored_server = ramflux_sdk::serve_local_bus_until(
-        crate::harness::legacy_accounts::config(
-            &alice_restored_socket,
-            temp_root.join("alice_b/data"),
-        ),
-        alice_restored_rx,
-    );
-    let bob_server = ramflux_sdk::serve_local_bus_until(
-        crate::harness::legacy_accounts::config(&bob_socket, temp_root.join("bob/data")),
-        bob_rx,
-    );
-
-    let flow = async {
-        let result = async {
-            mvp_s4_wait_for_socket(&alice_primary_socket).await?;
-            mvp_s4_wait_for_socket(&alice_restored_socket).await?;
-            mvp_s4_wait_for_socket(&bob_socket).await?;
-            let mut alice_primary =
-                ramflux_sdk::LocalBusClient::connect(&alice_primary_socket).await?;
-            let mut alice_restored =
-                ramflux_sdk::LocalBusClient::connect(&alice_restored_socket).await?;
-            let mut bob = ramflux_sdk::LocalBusClient::connect(&bob_socket).await?;
-
-            crate::realnet_step("s47 phase", "create primary account");
-            let alice_commitment = mvp_s47_create_account(
-                &mut alice_primary,
-                node,
-                MvpS47AccountSpec {
-                    local_account_id: "alice_s47_account",
-                    principal_id: "principal_s47_alice",
-                    device_id: "alice_device_s47_a",
-                    target_delivery_id: "target_s47_alice_a",
-                    root_seed: [0x47; 32],
-                    device_seed: [0x48; 32],
-                },
-            )
-            .await?;
-            crate::realnet_step("s47 phase", "create peer account");
-            let bob_commitment = mvp_s47_create_account(
-                &mut bob,
-                node,
-                MvpS47AccountSpec {
-                    local_account_id: "bob_s47_account",
-                    principal_id: "principal_s47_bob",
-                    device_id: "bob_device_s47",
-                    target_delivery_id: "target_s47_bob",
-                    root_seed: [0x57; 32],
-                    device_seed: [0x58; 32],
-                },
-            )
-            .await?;
-
-            crate::realnet_step("s47 phase", "exchange contacts");
-            mvp_s47_add_contact(
-                &mut alice_primary,
-                "alice_s47_account",
-                &alice_commitment,
-                &bob_commitment,
-            )
-            .await?;
-            mvp_s47_add_contact(&mut bob, "bob_s47_account", &bob_commitment, &alice_commitment)
-                .await?;
-
-            let bob_initial_safety =
-                mvp_s47_safety(&mut bob, "bob_s47_account", &alice_commitment).await?;
-            assert_eq!(bob_initial_safety["contact_device_count"], 1);
-            let verified = bob
-                .request(
-                    Some("bob_s47_account".to_owned()),
-                    "contact",
-                    "contact.verify",
-                    serde_json::json!({ "contact_identity_commitment": alice_commitment.clone() }),
-                )
-                .await?;
-            assert_eq!(verified["verification_state"], "verified");
-
-            mvp_s47_assert_send_to_missing_device_rejected(
-                &mut bob,
-                &alice_commitment,
-                "alice_device_s47_b",
-                "target_s47_alice_b",
-                "msg_s47_before_join",
-            )
-            .await?;
-
-            crate::realnet_step("s47 phase", "export root backup");
-            alice_primary
-                .request(
-                    Some("alice_s47_account".to_owned()),
-                    "account",
-                    "account.backup.export",
-                    serde_json::to_value(ramflux_sdk::LocalBusAccountBackupExportRequest {
-                        output_path: backup_path.display().to_string(),
-                        passphrase: "s47-backup-passphrase-strong".to_owned(),
-                    })?,
-                )
-                .await?;
-            crate::realnet_step("s47 phase", "import root backup");
-            alice_restored
-                .request(
-                    None,
-                    "account",
-                    "account.backup.import",
-                    serde_json::to_value(ramflux_sdk::LocalBusAccountBackupImportRequest {
-                        input_path: backup_path.display().to_string(),
-                        passphrase: "s47-backup-passphrase-strong".to_owned(),
-                    })?,
-                )
-                .await?;
-
-            crate::realnet_step("s47 phase", "activate restored device");
-            let activated: ramflux_sdk::LocalBusDeviceActivateResponse = serde_json::from_value(
-                alice_restored
-                    .request(
-                        Some("alice_s47_account".to_owned()),
-                        "device",
-                        "device.activate",
-                        serde_json::to_value(ramflux_sdk::LocalBusDeviceActivateRequest {
-                            node_id: None,
-                            device_id: "alice_device_s47_b".to_owned(),
-                            target_delivery_id: "target_s47_alice_b".to_owned(),
-                            device_seed: [0x49; 32],
-                            device_epoch: Some(2),
-                        })?,
-                    )
-                    .await?,
-            )?;
-            assert_eq!(activated.device_id, "alice_device_s47_b");
-            assert_eq!(activated.devices.len(), 2);
-            mvp_s47_assert_manifest_devices(
-                &node.gateway_url,
-                &alice_commitment,
-                &["alice_device_s47_a", "alice_device_s47_b"],
-            )?;
-
-            crate::realnet_step("s47 phase", "refresh peer safety after activation");
-            let bob_joined_safety =
-                mvp_s47_safety(&mut bob, "bob_s47_account", &alice_commitment).await?;
-            assert_eq!(bob_joined_safety["contact_device_count"], 2);
-            assert_ne!(
-                bob_initial_safety["contact_device_set_hash"],
-                bob_joined_safety["contact_device_set_hash"]
-            );
-            let stale = bob
-                .request(
-                    Some("bob_s47_account".to_owned()),
-                    "contact",
-                    "contact.verification.status",
-                    serde_json::to_value(ramflux_sdk::LocalBusContactSafetyRequest {
-                        contact_identity_commitment: alice_commitment.clone(),
-                    })?,
-                )
-                .await?;
-            assert_eq!(stale["stored_verification_state"], "verified");
-            assert_eq!(stale["verification_state"], "verification_stale");
-
-            let reverified = bob
-                .request(
-                    Some("bob_s47_account".to_owned()),
-                    "contact",
-                    "contact.verify",
-                    serde_json::json!({ "contact_identity_commitment": alice_commitment.clone() }),
-                )
-                .await?;
-            assert_eq!(reverified["verification_state"], "verified");
-
-            crate::realnet_step("s47 phase", "reject unauthorized registration");
-            mvp_s47_assert_unauthorized_device_register_rejected(node, &alice_commitment)?;
-
-            crate::realnet_step("s47 phase", "submit first post-activation message");
-            mvp_s47_send_dm(
-                &mut bob,
-                &alice_commitment,
-                "alice_device_s47_b",
-                "target_s47_alice_b",
-                "msg_s47_after_join",
-                b"s47 new device can decrypt after join",
-            )
-            .await?;
-            crate::realnet_step("s47 phase", "receive first post-activation message");
-            let alice_b_received =
-                mvp_s47_receive(&mut alice_restored, "alice_s47_account", "conv_s47_bob_alice")
-                    .await?;
-            crate::harness::sdk_receive_diagnostics::response(
-                "first-after-activation",
-                &alice_b_received,
-            );
-            if !mvp_s47_decrypted_contains(
-                &alice_b_received,
-                b"s47 new device can decrypt after join",
-            ) {
-                crate::harness::sdk_receive_diagnostics::failure_state(
-                    &mut alice_restored,
-                    "alice_s47_account",
-                )
-                .await;
-            }
-            assert!(
-                mvp_s47_decrypted_contains(
-                    &alice_b_received,
-                    b"s47 new device can decrypt after join"
-                ),
-                "restored device cannot decrypt after join; receive response: {alice_b_received}"
-            );
-
-            crate::realnet_step("s47 phase", "revoke restored device");
-            let revoked = alice_restored
-                .request(
-                    Some("alice_s47_account".to_owned()),
-                    "device",
-                    "device.revoke",
-                    serde_json::to_value(ramflux_sdk::LocalBusDeviceRevokeRequest {
-                        device_id: "alice_device_s47_b".to_owned(),
-                    })?,
-                )
-                .await?;
-            assert_eq!(revoked["device_id"], "alice_device_s47_b");
-            assert_eq!(revoked["revoked"], true);
-            mvp_s47_assert_manifest_devices(
-                &node.gateway_url,
-                &alice_commitment,
-                &["alice_device_s47_a"],
-            )?;
-            let bob_revoked_safety =
-                mvp_s47_safety(&mut bob, "bob_s47_account", &alice_commitment).await?;
-            assert_eq!(bob_revoked_safety["contact_device_count"], 1);
-            assert_ne!(
-                bob_joined_safety["contact_device_set_hash"],
-                bob_revoked_safety["contact_device_set_hash"]
-            );
-            let stale_after_revoke = bob
-                .request(
-                    Some("bob_s47_account".to_owned()),
-                    "contact",
-                    "contact.verification.status",
-                    serde_json::to_value(ramflux_sdk::LocalBusContactSafetyRequest {
-                        contact_identity_commitment: alice_commitment.clone(),
-                    })?,
-                )
-                .await?;
-            assert_eq!(stale_after_revoke["stored_verification_state"], "verified");
-            assert_eq!(stale_after_revoke["verification_state"], "verification_stale");
-            mvp_s47_assert_send_to_missing_device_rejected(
-                &mut bob,
-                &alice_commitment,
-                "alice_device_s47_b",
-                "target_s47_alice_b",
-                "msg_s47_after_revoke",
-            )
-            .await?;
-
-            mvp_s47_assert_gateway_no_private_material(compose_project, gateway_capture)?;
-
-            drop(alice_primary);
-            drop(alice_restored);
-            drop(bob);
-            Ok::<(), Box<dyn std::error::Error>>(())
-        }
-        .await;
-        let _ = alice_primary_tx.send(true);
-        let _ = alice_restored_tx.send(true);
-        let _ = bob_tx.send(true);
-        result
-    };
-    let (alice_primary_result, alice_restored_result, bob_result, flow_result) =
-        Box::pin(tokio::time::timeout(Duration::from_mins(5), async {
-            tokio::join!(alice_primary_server, alice_restored_server, bob_server, flow)
-        }))
+    assert!(
+        send(
+            bob,
+            bob_account,
+            &alice_account.anchor,
+            &alice_account.device_id,
+            &alice_account.delivery_id,
+            "s47-revoked-target",
+        )
         .await
-        .map_err(|_elapsed| "S47 restore-device rejoin flow timed out")?;
-    for (name, result) in [
-        ("primary", &alice_primary_result),
-        ("restored", &alice_restored_result),
-        ("peer", &bob_result),
-    ] {
-        crate::realnet_step("s47 daemon exit", format!("daemon={name} result={result:?}"));
-    }
-    alice_primary_result?;
-    alice_restored_result?;
-    bob_result?;
-    flow_result?;
-    std::fs::remove_dir_all(&temp_root)?;
-    Ok(())
-}
-
-#[cfg(all(test, feature = "realnet"))]
-struct MvpS47AccountSpec<'a> {
-    local_account_id: &'a str,
-    principal_id: &'a str,
-    device_id: &'a str,
-    target_delivery_id: &'a str,
-    root_seed: [u8; 32],
-    device_seed: [u8; 32],
-}
-
-#[cfg(all(test, feature = "realnet"))]
-async fn mvp_s47_create_account(
-    bus: &mut ramflux_sdk::LocalBusClient,
-    node: &S8RealnetNode,
-    spec: MvpS47AccountSpec<'_>,
-) -> Result<String, Box<dyn std::error::Error>> {
-    let request = ramflux_sdk::LocalBusAccountCreateRequest {
-        label: None,
-        kind: None,
-        node_id: None,
-        local_account_id: spec.local_account_id.to_owned(),
-        principal_id: spec.principal_id.to_owned(),
-        principal_commitment: String::new(),
-        device_id: spec.device_id.to_owned(),
-        target_delivery_id: spec.target_delivery_id.to_owned(),
-        account_secret: "s47-bus-secret".to_owned(),
-        root_seed: spec.root_seed,
-        device_seed: spec.device_seed,
-        client_mode: ramflux_sdk::LocalBusClientMode::AttendedCli,
-        gateway: ramflux_sdk::GatewayQuicEndpointConfig {
-            bind_addr: std::net::SocketAddr::from(([0, 0, 0, 0], 0)),
-            gateway_addr: node.gateway_quic_addr,
-            server_name: "localhost".to_owned(),
-            ca_cert: node.ca_cert.clone(),
-            principal_id: spec.principal_id.to_owned(),
-            device_id: spec.device_id.to_owned(),
-            target_delivery_id: spec.target_delivery_id.to_owned(),
-            prekey_http_url: None,
-        },
-    };
-    let response: ramflux_sdk::LocalBusAccountCreateResponse = serde_json::from_value(
-        bus.request(None, "account", "account.itest_legacy.create", serde_json::to_value(request)?)
-            .await?,
-    )?;
-    let derived = ramflux_sdk::identity_root_public_key_commitment_for_seed(
-        spec.principal_id,
-        spec.root_seed,
+        .is_err()
     );
-    assert_eq!(response.principal_commitment, derived);
-    mvp_s47_assert_manifest_devices(
-        &node.gateway_url,
-        &response.principal_commitment,
-        &[spec.device_id],
-    )?;
-    Ok(response.principal_commitment)
-}
-
-#[cfg(all(test, feature = "realnet"))]
-async fn mvp_s47_add_contact(
-    bus: &mut ramflux_sdk::LocalBusClient,
-    account: &str,
-    requester: &str,
-    target: &str,
-) -> Result<(), Box<dyn std::error::Error>> {
-    let added = bus
-        .request(
-            Some(account.to_owned()),
-            "contact",
-            "contact.add",
-            serde_json::to_value(ramflux_sdk::LocalBusContactAddRequest {
-                link_id: format!("friend_link_s47_{requester}_{target}"),
-                requester_id: requester.to_owned(),
-                target_id: target.to_owned(),
-            })?,
-        )
-        .await?;
-    assert_eq!(added["state"], "accepted");
+    send(
+        bob,
+        bob_account,
+        &alice_account.anchor,
+        current_device,
+        current_delivery,
+        "s47-after-recovery",
+    )
+    .await?;
+    wait_for_message(replacement, restored_id, "s47-after-recovery").await?;
     Ok(())
 }
 
-#[cfg(all(test, feature = "realnet"))]
-async fn mvp_s47_safety(
+async fn call(
     bus: &mut ramflux_sdk::LocalBusClient,
     account: &str,
-    contact_identity_commitment: &str,
-) -> Result<serde_json::Value, Box<dyn std::error::Error>> {
+    method: &str,
+    body: Value,
+) -> TestResult<Value> {
     Ok(bus
-        .request(
-            Some(account.to_owned()),
-            "contact",
-            "contact.safety_number",
-            serde_json::to_value(ramflux_sdk::LocalBusContactSafetyRequest {
-                contact_identity_commitment: contact_identity_commitment.to_owned(),
-            })?,
-        )
+        .request(Some(account.into()), method.split('.').next().ok_or("method")?, method, body)
         .await?)
 }
 
-#[cfg(all(test, feature = "realnet"))]
-fn mvp_s47_assert_manifest_devices(
-    gateway_url: &str,
-    identity_commitment: &str,
-    expected_devices: &[&str],
-) -> Result<(), Box<dyn std::error::Error>> {
-    let manifest: serde_json::Value = ramflux_node_core::itest_http_get_json(&format!(
-        "{gateway_url}/mvp1/device-manifest/{identity_commitment}"
-    ))?;
-    ramflux_sdk::RamfluxClient::verify_device_manifest_json(manifest.clone(), identity_commitment)?;
-    let devices = manifest["devices"].as_array().ok_or("missing devices array")?;
-    let mut actual = devices
-        .iter()
-        .map(|device| device["device_id"].as_str().ok_or("missing device_id"))
-        .collect::<Result<Vec<_>, _>>()?;
-    actual.sort_unstable();
-    let mut expected = expected_devices.to_vec();
-    expected.sort_unstable();
-    assert_eq!(actual, expected);
-    Ok(())
-}
-
-#[cfg(all(test, feature = "realnet"))]
-fn mvp_s47_assert_unauthorized_device_register_rejected(
-    node: &S8RealnetNode,
-    alice_commitment: &str,
-) -> Result<(), Box<dyn std::error::Error>> {
-    let wrong_root = ramflux_crypto::create_identity_root("principal_s47_alice", [0x77; 32]);
-    let wrong_branch = ramflux_crypto::create_device_branch(
-        "principal_s47_alice",
-        "alice_device_s47_c",
-        3,
-        [0x78; 32],
-    );
-    let now = itest_now_unix_seconds();
-    let agreement = ramflux_crypto::X25519KeyPair::from_seed([0x79; 32]);
-    let proof = ramflux_crypto::authorize_device_branch_v2(
-        &wrong_root,
-        &wrong_branch,
-        ramflux_crypto::BranchAuthorization {
-            audience: "ramflux-node",
-            capability_scope: vec!["device.delivery.bind".into()],
-            issued_at: now,
-            expires_at: now + 3600,
-            principal_kind: ramflux_protocol::PrincipalKind::Human,
-            agreement_identity_public_key: agreement.public,
-        },
-    )?;
-    let keys = ramflux_crypto::device_key_commitments(
-        &ramflux_protocol::encode_base64url(wrong_branch.signing_key.verifying_key().to_bytes()),
-        &ramflux_protocol::encode_base64url(agreement.public),
-    )?;
-    let device_set = ramflux_crypto::sign_device_set(
-        &wrong_root,
-        ramflux_crypto::DeviceSetSigningInput {
-            principal_kind: ramflux_protocol::PrincipalKind::Human,
-            device_set_epoch: 1,
-            devices: vec![ramflux_protocol::SignedDeviceSetEntry {
-                device_id: wrong_branch.device_id.clone(),
-                device_epoch: wrong_branch.device_epoch,
-                signing_key_commitment: keys.0,
-                agreement_key_commitment: keys.1,
-                status: ramflux_protocol::DeviceSetStatus::Active,
-                revoked_at: None,
-            }],
-        },
-    )?;
-    let request = ramflux_node_core::IdentityRegisterRequest {
-        device_set: Some(device_set),
-        root_public_key: ramflux_protocol::encode_base64url(
-            wrong_root.signing_key.verifying_key().to_bytes(),
-        ),
-        principal_commitment: alice_commitment.to_owned(),
-        branch_public_key: ramflux_protocol::encode_base64url(
-            wrong_branch.signing_key.verifying_key().to_bytes(),
-        ),
-        proof,
-        target_delivery_id: "target_s47_alice_c".to_owned(),
-        gateway_id: "ramflux-gateway".to_owned(),
-        session_id: "s47-unauthorized-device".to_owned(),
-        push_alias_hash: Some("push_alias_s47_unauthorized".to_owned()),
-        now,
-        registration_pow: None,
-        source_ip_hash: Some("s47-unauthorized-source".to_owned()),
-    };
-    let address = node.gateway_url.strip_prefix("http://").ok_or("expected HTTP fixture")?;
-    let mut stream = std::net::TcpStream::connect(address)?;
-    stream.set_read_timeout(Some(Duration::from_secs(10)))?;
-    let body = serde_json::to_vec(&request)?;
-    write!(
-        stream,
-        "POST /mvp1/identity/register HTTP/1.1\r\nHost: {address}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
-        body.len()
-    )?;
-    stream.write_all(&body)?;
-    let response = ramflux_node_core::read_http_response_by_content_length(&mut stream)?;
-    assert!(response.status_line.starts_with("HTTP/1.1 409"), "{}", response.status_line);
-    let failure: ramflux_protocol::IdentityRegistrationFailure =
-        serde_json::from_slice(&response.body)?;
-    assert_eq!(
-        failure.error.reason_code,
-        ramflux_protocol::IdentityDirectoryReason::InvalidRegistration
-    );
-    mvp_s47_assert_manifest_devices(
-        &node.gateway_url,
-        alice_commitment,
-        &["alice_device_s47_a", "alice_device_s47_b"],
-    )?;
-    Ok(())
-}
-
-#[cfg(all(test, feature = "realnet"))]
-async fn mvp_s47_send_dm(
+async fn send(
     bus: &mut ramflux_sdk::LocalBusClient,
-    recipient_principal_commitment: &str,
-    recipient_device_id: &str,
-    target_delivery_id: &str,
-    message_id: &str,
-    plaintext: &[u8],
-) -> Result<(), Box<dyn std::error::Error>> {
-    let submitted = bus
-        .request(
-            Some("bob_s47_account".to_owned()),
-            "message",
-            "message.submit",
-            serde_json::to_value(ramflux_sdk::LocalBusMessageSubmitRequest {
-                conversation_id: "conv_s47_bob_alice".to_owned(),
-                message_id: message_id.to_owned(),
-                envelope_id: format!("env_{message_id}"),
-                source_principal_id: "principal_s47_bob".to_owned(),
-                sender_id: "bob_device_s47".to_owned(),
-                recipient_device_id: Some(recipient_device_id.to_owned()),
-                recipient_principal_commitment: Some(recipient_principal_commitment.to_owned()),
-                target_delivery_id: target_delivery_id.to_owned(),
-                encrypted_body_base64: String::new(),
-                plaintext_body_base64: Some(ramflux_protocol::encode_base64url(plaintext)),
-                created_at: itest_now_unix_seconds(),
-                ttl: 300,
-                attachments: Vec::new(),
-                federation: None,
-            })?,
-        )
-        .await?;
-    assert_eq!(submitted["envelope"]["envelope_id"], format!("env_{message_id}"));
-    Ok(())
-}
-
-#[cfg(all(test, feature = "realnet"))]
-async fn mvp_s47_assert_send_to_missing_device_rejected(
-    bus: &mut ramflux_sdk::LocalBusClient,
-    recipient_principal_commitment: &str,
-    recipient_device_id: &str,
-    target_delivery_id: &str,
-    message_id: &str,
-) -> Result<(), Box<dyn std::error::Error>> {
-    let error = match mvp_s47_send_dm(
+    owner: &NativeAccount,
+    anchor: &str,
+    device: &str,
+    delivery: &str,
+    id: &str,
+) -> TestResult<Value> {
+    call(
         bus,
-        recipient_principal_commitment,
-        recipient_device_id,
-        target_delivery_id,
-        message_id,
-        b"s47 must not fanout to absent device",
+        &owner.account_id,
+        "message.submit",
+        json!({
+            "conversation_id":"s47-thread","message_id":id,"envelope_id":id,
+            "source_principal_id":owner.principal_id,"sender_id":owner.device_id,
+            "recipient_device_id":device,"recipient_principal_commitment":anchor,
+            "target_delivery_id":delivery,"encrypted_body_base64":"",
+            "plaintext_body_base64":ramflux_protocol::encode_base64url(b"native restore traffic"),
+            "created_at":realnet_now_i64(),"ttl":600
+        }),
     )
     .await
-    {
-        Ok(()) => return Err("fanout to absent device succeeded".into()),
-        Err(error) => error.to_string(),
-    };
-    assert!(
-        error.contains("not in verified manifest") || error.contains("missing device manifest"),
-        "unexpected missing-device fanout error: {error}",
-    );
-    Ok(())
 }
 
-#[cfg(all(test, feature = "realnet"))]
-async fn mvp_s47_receive(
+async fn wait_for_message(
     bus: &mut ramflux_sdk::LocalBusClient,
     account: &str,
-    conversation_id: &str,
-) -> Result<serde_json::Value, Box<dyn std::error::Error>> {
-    let result = bus
-        .request(
-            Some(account.to_owned()),
-            "message",
-            "message.receive",
-            serde_json::to_value(ramflux_sdk::LocalBusMessageReceiveRequest {
-                limit: 10,
-                conversation_id: Some(conversation_id.to_owned()),
-                auto_fetch_attachments: false,
-                relay_service_key_base64: None,
-            })?,
-        )
-        .await;
-    if let Err(error) = &result {
-        crate::realnet_step("s47 receive error", error.to_string());
-        crate::harness::sdk_receive_diagnostics::failure_state(bus, account).await;
-    }
-    Ok(result?)
-}
-
-#[cfg(all(test, feature = "realnet"))]
-fn mvp_s47_decrypted_contains(received: &serde_json::Value, body: &[u8]) -> bool {
-    received["decrypted_messages"].as_array().into_iter().flatten().any(|message| {
-        message["plaintext_body_base64"]
-            .as_str()
-            .and_then(|encoded| ramflux_protocol::decode_base64url(encoded).ok())
-            .is_some_and(|bytes| bytes == body)
-    })
-}
-
-#[cfg(all(test, feature = "realnet"))]
-fn mvp_s47_assert_gateway_no_private_material(
-    compose_project: &str,
-    gateway_capture: &str,
-) -> Result<(), Box<dyn std::error::Error>> {
-    let capture = mvp_s47_service_file(compose_project, gateway_capture)?;
-    let redb = mvp_s47_service_file(compose_project, "/var/lib/ramflux/gateway/gateway.redb")?;
-    for haystack in [&capture, &redb] {
-        for needle in [
-            [0x47; 32].as_slice(),
-            [0x48; 32].as_slice(),
-            [0x49; 32].as_slice(),
-            [0x57; 32].as_slice(),
-            [0x58; 32].as_slice(),
-            b"s47-backup-passphrase-strong".as_slice(),
-        ] {
-            assert!(
-                !contains_subslice(haystack, needle),
-                "gateway leaked private restore material"
-            );
+    message: &str,
+) -> TestResult {
+    for _ in 0..100 {
+        let rows =
+            call(bus, account, "message.read", json!({"conversation_id":"s47-thread"})).await?;
+        if rows["messages"]
+            .as_array()
+            .is_some_and(|rows| rows.iter().any(|row| row["message_id"] == message))
+        {
+            return Ok(());
         }
+        tokio::time::sleep(Duration::from_millis(100)).await;
     }
-    Ok(())
-}
-
-#[cfg(all(test, feature = "realnet"))]
-fn mvp_s47_service_file(
-    compose_project: &str,
-    remote_path: &str,
-) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
-    let output = std::process::Command::new("docker")
-        .args([
-            "compose",
-            "-p",
-            compose_project,
-            "-f",
-            "docker-compose.itest.yml",
-            "exec",
-            "-T",
-            "ramflux-gateway",
-            "cat",
-            remote_path,
-        ])
-        .current_dir(code_root().join("ramflux/deploy"))
-        .output()?;
-    if !output.status.success() {
-        return Err(format!(
-            "failed to read gateway file {remote_path}: {}",
-            String::from_utf8_lossy(&output.stderr)
-        )
-        .into());
-    }
-    Ok(output.stdout)
+    Err(format!("native restore message {message} was not received").into())
 }

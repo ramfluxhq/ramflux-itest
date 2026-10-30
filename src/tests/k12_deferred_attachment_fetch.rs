@@ -54,35 +54,42 @@ async fn run(node: &S8RealnetNode) -> TestResult {
     let alice_socket = PathBuf::from(format!("/tmp/rf-k12-a-{}.sock", std::process::id()));
     let bob_socket = PathBuf::from(format!("/tmp/rf-k12-b-{}.sock", std::process::id()));
     let binary = mvp_s4_build_rf_binary().await?;
-    let mut alice_process = client_directory_daemon_command(
+    let profiles = root.join("native-nodes.json");
+    std::fs::write(&profiles, serde_json::to_vec(&[native_node_profile(node, S73_RELAY_QUIC)?])?)?;
+    let mut alice_command = native_client_directory_daemon_command(
         &binary,
         &alice_socket,
         &root.join("alice"),
         &node.ca_cert,
-        Some("principal_k12_alice"),
-    )
-    .env("RAMFLUX_SYNC_ATTACHMENT_PREFETCH", "0")
-    .spawn()?;
-    let mut bob_process = client_directory_daemon_command(
+        None,
+    );
+    alice_command
+        .arg("--builtin-nodes")
+        .arg(&profiles)
+        .env("RAMFLUX_SYNC_ATTACHMENT_PREFETCH", "0");
+    let mut alice_process = alice_command.spawn()?;
+    let mut bob_command = native_client_directory_daemon_command(
         &binary,
         &bob_socket,
         &root.join("bob"),
         &node.ca_cert,
         None,
-    )
-    .env("RAMFLUX_SYNC_ATTACHMENT_PREFETCH", "0")
-    .spawn()?;
+    );
+    bob_command.arg("--builtin-nodes").arg(&profiles).env("RAMFLUX_SYNC_ATTACHMENT_PREFETCH", "0");
+    let mut bob_process = bob_command.spawn()?;
     let result = tokio::time::timeout(Duration::from_mins(5), async {
         mvp_s4_wait_for_socket(&alice_socket).await?;
         mvp_s4_wait_for_socket(&bob_socket).await?;
         let mut alice = ramflux_sdk::LocalBusClient::connect(&alice_socket).await?;
         let mut bob = ramflux_sdk::LocalBusClient::connect(&bob_socket).await?;
-        let a = create(&mut alice, node, "alice", [0x61; 32], [0x62; 32]).await?;
-        let b = create(&mut bob, node, "bob", [0x63; 32], [0x64; 32]).await?;
+        select_native_node(&mut alice, &node.node_id).await?;
+        select_native_node(&mut bob, &node.node_id).await?;
+        let a = create_native_account(&alice_socket, "Alice").await?;
+        let b = create_native_account(&bob_socket, "Bob").await?;
         send(&mut alice, &mut bob, &a, &b).await?;
         let received = call(
             &mut bob,
-            "bob",
+            &b.account_id,
             "message.receive",
             json!({"conversation_id":"dm_k12","limit":20,"auto_fetch_attachments":false}),
         )
@@ -99,36 +106,19 @@ async fn run(node: &S8RealnetNode) -> TestResult {
                 .or(directory["objects"][0]["id"].as_str()),
             Some(OBJECT)
         );
-        // Reopen B's account after receipt, proving the grant/key slot are not held only in memory.
-        drop(bob);
-        let _ = bob_process.start_kill();
-        bob_process.wait().await?;
-        let _ = std::fs::remove_file(&bob_socket);
-        bob_process = client_directory_daemon_command(
-            &binary,
-            &bob_socket,
-            &root.join("bob"),
-            &node.ca_cert,
-            None,
+        // Reopen the native account actor while retaining the headless test vault. A daemon
+        // process restart deliberately loses an in-memory vault and cannot authenticate.
+        call(&mut bob, &b.account_id, "account.lock", json!({})).await?;
+        bob.request(
+            Some(b.account_id.clone()),
+            "account",
+            "account.unlock",
+            json!({"passphrase":NATIVE_DATA_PASSPHRASE}),
         )
-        .env("RAMFLUX_SYNC_ATTACHMENT_PREFETCH", "0")
-        .spawn()?;
-        mvp_s4_wait_for_socket(&bob_socket).await?;
-        let mut bob = ramflux_sdk::LocalBusClient::connect(&bob_socket).await?;
-        // rfd restores persisted accounts in the background after the socket is up; wait for it
-        // instead of racing it with an explicit unlock.
-        let mut reopened = false;
-        for _ in 0..100 {
-            let accounts = call(&mut bob, "bob", "account.list", json!({})).await?;
-            if accounts["accounts"].as_array().is_some_and(|ids| ids.iter().any(|id| id == "bob")) {
-                reopened = true;
-                break;
-            }
-            tokio::time::sleep(Duration::from_millis(200)).await;
-        }
-        assert!(reopened, "rfd must reopen Bob's persisted account after restart");
-        fetch_failure_and_retry(node, &mut bob).await?;
-        let bytes = call(&mut bob, "bob", "object.get", json!({"object_id":OBJECT})).await?;
+        .await?;
+        fetch_failure_and_retry(node, &mut bob, &b.account_id).await?;
+        let bytes =
+            call(&mut bob, &b.account_id, "object.get", json!({"object_id":OBJECT})).await?;
         assert_eq!(
             ramflux_protocol::decode_base64url(
                 bytes["plaintext_base64"].as_str().ok_or("missing bytes")?
@@ -152,10 +142,12 @@ async fn run(node: &S8RealnetNode) -> TestResult {
 async fn fetch_failure_and_retry(
     node: &S8RealnetNode,
     bob: &mut ramflux_sdk::LocalBusClient,
+    bob_account: &str,
 ) -> TestResult {
     let body = json!({"object_id":OBJECT,"operation_id":"k12-fetch"});
     let before =
-        call(bob, "bob", "message.read", json!({"conversation_id":"dm_k12","limit":20})).await?;
+        call(bob, bob_account, "message.read", json!({"conversation_id":"dm_k12","limit":20}))
+            .await?;
     assert_eq!(
         before["messages"].as_array().map(Vec::len),
         Some(1),
@@ -169,7 +161,7 @@ async fn fetch_failure_and_retry(
         &["stop", "ramflux-relay"],
         false,
     )?;
-    let failure = call(bob, "bob", "object.fetch", body.clone()).await;
+    let failure = call(bob, bob_account, "object.fetch", body.clone()).await;
     // Restore the relay even if the request unexpectedly fails at the IPC layer.
     run_docker_compose_project_with_options(
         &node.guard.deploy_root,
@@ -181,17 +173,18 @@ async fn fetch_failure_and_retry(
     let failure = failure?;
     assert_eq!(failure["transfer_state"], "failed");
     assert_eq!(failure["retryable"], true);
-    let failed = call(bob, "bob", "object.directory", json!({})).await?;
+    let failed = call(bob, bob_account, "object.directory", json!({})).await?;
     assert_eq!(failed["objects"][0]["transfer_state"], "failed");
     assert!(failed["objects"][0]["last_error"].is_string());
     assert_eq!(
-        call(bob, "bob", "message.read", json!({"conversation_id":"dm_k12","limit":20})).await?,
+        call(bob, bob_account, "message.read", json!({"conversation_id":"dm_k12","limit":20}))
+            .await?,
         before
     );
     wait_relay_quic_healthy(S73_RELAY_QUIC, "ramflux-relay", &node.ca_cert).await?;
-    let success = call(bob, "bob", "object.fetch", body.clone()).await?;
+    let success = call(bob, bob_account, "object.fetch", body.clone()).await?;
     assert_eq!(success["transfer_state"], "available");
-    let listed = call(bob, "bob", "object.directory", json!({})).await?;
+    let listed = call(bob, bob_account, "object.directory", json!({})).await?;
     assert_eq!(listed["objects"][0]["transfer_state"], "available");
     run_docker_compose_project_with_options(
         &node.guard.deploy_root,
@@ -200,8 +193,8 @@ async fn fetch_failure_and_retry(
         &["stop", "ramflux-relay"],
         false,
     )?;
-    let replay = call(bob, "bob", "object.fetch", body).await;
-    let offline_read = call(bob, "bob", "object.get", json!({"object_id":OBJECT})).await;
+    let replay = call(bob, bob_account, "object.fetch", body).await;
+    let offline_read = call(bob, bob_account, "object.get", json!({"object_id":OBJECT})).await;
     run_docker_compose_project_with_options(
         &node.guard.deploy_root,
         PROJECT,
@@ -237,55 +230,11 @@ async fn call(
 async fn send(
     alice: &mut ramflux_sdk::LocalBusClient,
     bob: &mut ramflux_sdk::LocalBusClient,
-    a: &Value,
-    b: &Value,
+    a: &NativeAccount,
+    b: &NativeAccount,
 ) -> TestResult {
-    for (bus, id, from, to) in [(&mut *alice, "alice", a, b), (&mut *bob, "bob", b, a)] {
-        let result=call(bus,id,"contact.add",json!({"link_id":format!("friend_k12_{id}"),"requester_id":from["principal_commitment"],"target_id":to["principal_commitment"]})).await?;
-        assert_eq!(result["state"], "accepted");
-    }
-    call(alice,"alice","message.submit",json!({"conversation_id":"dm_k12","message_id":"message_k12","envelope_id":"env_k12","source_principal_id":a["principal_id"],"sender_id":a["device_id"],"recipient_device_id":b["device_id"],"recipient_principal_commitment":b["principal_commitment"],"target_delivery_id":b["target_delivery_id"],"encrypted_body_base64":"","plaintext_body_base64":ramflux_protocol::encode_base64url(b"message with deferred attachment"),"created_at":realnet_now_i64(),"ttl":3600,"attachments":[{"object_id":OBJECT,"plaintext_base64":ramflux_protocol::encode_base64url(b"k12 deferred bytes"),"chunk_size":4096,"relay_endpoint":"http://127.0.0.1:64504"}]})).await?;
+    call(alice, &a.account_id, "contact.add", json!({"principal_id":b.principal_id})).await?;
+    call(bob, &b.account_id, "contact.accept", json!({"principal_id":a.principal_id})).await?;
+    call(alice,&a.account_id,"message.submit",json!({"conversation_id":"dm_k12","message_id":"message_k12","envelope_id":"env_k12","source_principal_id":a.principal_id,"sender_id":a.device_id,"recipient_device_id":b.device_id,"recipient_principal_commitment":b.anchor,"target_delivery_id":b.delivery_id,"encrypted_body_base64":"","plaintext_body_base64":ramflux_protocol::encode_base64url(b"message with deferred attachment"),"created_at":realnet_now_i64(),"ttl":3600,"attachments":[{"object_id":OBJECT,"plaintext_base64":ramflux_protocol::encode_base64url(b"k12 deferred bytes"),"chunk_size":4096,"relay_endpoint":"http://127.0.0.1:64504"}]})).await?;
     Ok(())
-}
-async fn create(
-    bus: &mut ramflux_sdk::LocalBusClient,
-    node: &S8RealnetNode,
-    id: &str,
-    root_seed: [u8; 32],
-    device_seed: [u8; 32],
-) -> TestResult<Value> {
-    let device = format!("{id}_k12_device");
-    let target = format!("target_k12_{id}");
-    let request = ramflux_sdk::LocalBusAccountCreateRequest {
-        label: None,
-        kind: None,
-        node_id: None,
-        local_account_id: id.to_owned(),
-        principal_id: format!("principal_k12_{id}"),
-        principal_commitment: String::new(),
-        device_id: device.clone(),
-        target_delivery_id: target.clone(),
-        account_secret: "k12-test-secret".to_owned(),
-        root_seed,
-        device_seed,
-        client_mode: ramflux_sdk::LocalBusClientMode::AttendedCli,
-        gateway: ramflux_sdk::GatewayQuicEndpointConfig {
-            bind_addr: "0.0.0.0:0".parse()?,
-            gateway_addr: S73_GATEWAY_B_QUIC.parse()?,
-            server_name: "localhost".to_owned(),
-            ca_cert: node.ca_cert.clone(),
-            principal_id: format!("principal_k12_{id}"),
-            device_id: device,
-            target_delivery_id: target,
-            prekey_http_url: None,
-        },
-    };
-    let mut request = serde_json::to_value(request)?;
-    request["label"] = json!(format!("Profile {id}"));
-    request["kind"] = json!("human");
-    let response = bus
-        .request(None, "account", "account.itest_legacy.create", serde_json::to_value(request)?)
-        .await?;
-    assert_eq!(response["local_account_id"], id);
-    Ok(response)
 }
