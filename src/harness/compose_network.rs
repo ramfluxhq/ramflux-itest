@@ -15,10 +15,11 @@ pub(super) fn supply_network_name(
     env: &mut Vec<(String, String)>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     if !env.iter().any(|(key, _)| key == NETWORK_ENV) {
-        env.push((
-            NETWORK_ENV.into(),
-            std::env::var(NETWORK_ENV).unwrap_or_else(|_| DEFAULT_NETWORK.into()),
-        ));
+        let inherited = std::env::var_os(NETWORK_ENV).map_or_else(
+            || Ok(DEFAULT_NETWORK.to_owned()),
+            |value| value.into_string().map_err(|_| format!("{NETWORK_ENV} must be UTF-8")),
+        )?;
+        env.push((NETWORK_ENV.into(), inherited));
     }
     network_name(env)?;
     Ok(())
@@ -42,10 +43,20 @@ pub(super) fn ensure_itest_shared_network(
 ) -> Result<(), Box<dyn std::error::Error>> {
     let network = network_name(env)?;
     let runtime = super::container_runtime()?;
+    ensure_network_with_command(network, runtime, |_| {})
+}
+
+fn ensure_network_with_command(
+    network: &str,
+    runtime: &str,
+    configure: impl Fn(&mut Command),
+) -> Result<(), Box<dyn std::error::Error>> {
     ensure_network(
         network,
         |operation| {
-            let output = Command::new(runtime)
+            let mut command = Command::new(runtime);
+            configure(&mut command);
+            let output = command
                 .args(["network", operation, network])
                 .output()
                 .map_err(|error| error.to_string())?;
@@ -93,6 +104,8 @@ fn ensure_network(
     ))
 }
 
+#[path = "compose_fixture_commands.rs"]
+mod fixture_commands;
 #[path = "compose_network_realnet.rs"]
 mod realnet;
 #[path = "compose_network_tests.rs"]

@@ -101,3 +101,28 @@ fn invalid_or_duplicate_network_names_are_refused() {
         .is_err()
     );
 }
+
+#[test]
+fn non_utf8_process_network_name_is_refused() -> Result<(), Box<dyn std::error::Error>> {
+    use std::os::unix::ffi::OsStringExt;
+    const CHILD: &str = "RAMFLUX_ITEST_INVALID_NETWORK_CHILD";
+    if std::env::var(CHILD).as_deref() == Ok("1") {
+        let error = supply_network_name(&mut Vec::new()).err().ok_or("invalid name accepted")?;
+        assert!(error.to_string().contains("must be UTF-8"));
+        return Ok(());
+    }
+    let status = Command::new(std::env::current_exe()?)
+        .args([
+            "--exact",
+            concat!(
+                "harness::realnet_compose_stun::compose_network::tests::",
+                "non_utf8_process_network_name_is_refused"
+            ),
+            "--nocapture",
+        ])
+        .env(CHILD, "1")
+        .env(NETWORK_ENV, std::ffi::OsString::from_vec(vec![0xff]))
+        .status()?;
+    assert!(status.success());
+    Ok(())
+}
