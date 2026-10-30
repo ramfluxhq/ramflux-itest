@@ -3,7 +3,6 @@
 
 //! Native replacement-device coverage shared by slices whose concurrent-device behavior remains legacy.
 #![cfg(all(test, feature = "realnet"))]
-use ramflux_sdk::LocalBusClient;
 use serde_json::json;
 
 type Result<T = ()> = std::result::Result<T, Box<dyn std::error::Error>>;
@@ -53,10 +52,8 @@ async fn replacement_flow(
     replacement_socket: &std::path::Path,
     root: &std::path::Path,
 ) -> Result {
-    super::mvp_s4_wait_for_socket(primary_socket).await?;
-    super::mvp_s4_wait_for_socket(replacement_socket).await?;
-    let mut primary = LocalBusClient::connect(primary_socket).await?;
-    let mut replacement = LocalBusClient::connect(replacement_socket).await?;
+    let mut primary = super::connect_native_bus(primary_socket).await?;
+    let mut replacement = super::connect_native_bus(replacement_socket).await?;
     super::select_native_node(&mut primary, &node.node_id).await?;
     super::select_native_node(&mut replacement, &node.node_id).await?;
     let owner = super::create_native_account(primary_socket, "Native replacement owner").await?;
