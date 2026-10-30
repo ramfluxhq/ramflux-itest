@@ -7,6 +7,8 @@ use super::*;
 use serde_json::{Value, json};
 use std::os::unix::fs::PermissionsExt;
 type TestResult<T = ()> = Result<T, Box<dyn std::error::Error>>;
+#[path = "agent_v3_native/receiver_probe.rs"]
+mod receiver_probe;
 
 #[derive(Clone, Copy)]
 enum Case {
@@ -101,8 +103,8 @@ async fn run(
     let socket = root.join("rfd.sock");
     let mut config = ramflux_sdk::LocalBusConfig::new(&socket, root.join("rfd"));
     config.builtin_nodes = vec![native_node_profile(node, relay_quic)?];
-    config.custody_vault =
-        Some(std::sync::Arc::new(ramflux_sdk::custody::MemoryPrimaryVault::default()));
+    let vault = std::sync::Arc::new(receiver_probe::ProbeVault::default());
+    config.custody_vault = Some(vault.clone());
     let (stop, stopped) = tokio::sync::watch::channel(false);
     let server = ramflux_sdk::serve_local_bus_until(config, stopped);
     let flow = async {
@@ -125,7 +127,7 @@ async fn run(
             }
             Case::Surface => {
                 seed_dm(&mut bus, &human, &agent, "agent-v3-seed", "@agent ping").await?;
-                surface_case(&mut bus, &socket, &human, &agent).await?;
+                surface_case(&mut bus, &socket, &human, &agent, &vault).await?;
             }
             Case::Task => {
                 seed_dm(&mut bus, &human, &agent, "agent-v3-seed", "@agent ping").await?;
@@ -156,7 +158,15 @@ async fn call(
     method: &str,
     body: Value,
 ) -> TestResult<Value> {
-    Ok(bus.request(Some(account.to_owned()), "agent-v3", method, body).await?)
+    Ok(bus
+        .request_frame_structured(ramflux_sdk::LocalBusFrame::request(
+            "agent-v3",
+            Some(account.to_owned()),
+            "agent-v3",
+            method,
+            body,
+        ))
+        .await?)
 }
 
 async fn attend(bus: &mut ramflux_sdk::LocalBusClient, account: &str) -> TestResult {
@@ -176,7 +186,33 @@ async fn connect_contacts(
         (&human.account_id, &agent.principal_id, &agent.device_id, "headless_ai"),
         (&agent.account_id, &human.principal_id, &human.device_id, "human"),
     ] {
-        let directory = call(bus, account, "identity.directory", json!({"limit":100})).await?;
+        // Live registration does not guarantee this account's peer route cache is populated.
+        // Fetch and verify the peer's current manifest until its named route is projected.
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(30);
+        let directory = loop {
+            let directory = call(bus, account, "identity.directory", json!({"limit":100})).await?;
+            let ready = directory["identities"].as_array().is_some_and(|rows| {
+                rows.iter().any(|row| {
+                    row["principal_id"] == *peer
+                        && row["kind_verified"] == true
+                        && row["devices"].as_array().is_some_and(|devices| {
+                            devices.iter().any(|device| device["device_id"] == *peer_device)
+                        })
+                })
+            });
+            if ready {
+                break directory;
+            }
+            if tokio::time::Instant::now() >= deadline {
+                return Err(format!(
+                    "verified native peer route did not become ready: {directory}"
+                )
+                .into());
+            }
+            let anchor = if peer == &human.principal_id { &human.anchor } else { &agent.anchor };
+            call(bus, account, "device.refresh", json!({"principal_commitment":anchor})).await?;
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        };
         let row = directory["identities"]
             .as_array()
             .and_then(|rows| rows.iter().find(|row| row["principal_id"] == *peer))
@@ -371,6 +407,7 @@ async fn surface_case(
     socket: &Path,
     human: &NativeAccount,
     agent: &NativeAccount,
+    vault: &receiver_probe::ProbeVault,
 ) -> TestResult {
     use ramflux_protocol::{
         A2uiConversationCommand, CreateSurfaceCommand, StreamAppendCommand, SurfaceType,
@@ -404,7 +441,7 @@ async fn surface_case(
         {
             assert_eq!(view["author_principal_id"], agent.principal_id);
             assert_eq!(view["snapshot"]["components"][0]["text"], "Complete");
-            return surface_security_case(bus, socket, human, agent, &view).await;
+            return surface_security_case(bus, socket, human, agent, &view, vault).await;
         }
         tokio::time::sleep(Duration::from_millis(100)).await;
     }
@@ -417,13 +454,15 @@ async fn surface_security_case(
     human: &NativeAccount,
     agent: &NativeAccount,
     current: &Value,
+    vault: &receiver_probe::ProbeVault,
 ) -> TestResult {
     use ramflux_protocol::{
         A2uiConversationCommand, DeleteSurfaceCommand, PatchSurfaceCommand, SurfacePatchOp,
     };
     let stale = surface_action_wire(1, current["surface_hash"].as_str().ok_or("surface hash")?)?;
-    let stale_result=call(bus,&human.account_id,"surface.action",json!({"conversation_id":"dm_agent_v3","message_id":"native-action-stale","wire_base64":ramflux_protocol::encode_base64url(stale)})).await?;
+    let stale_result=call(bus,&human.account_id,"surface.action",json!({"conversation_id":"dm_agent_v3","message_id":"native-action-stale","wire_base64":ramflux_protocol::encode_base64url(&stale)})).await?;
     assert_eq!(stale_result["accepted"], false);
+    receiver_probe::reject_at_author(bus, socket, human, agent, vault, "action", &stale).await?;
     receive(bus, &agent.account_id).await?;
     assert!(
         call(bus, &agent.account_id, "surface.get", json!({"surface_id":"native-surface"})).await?
@@ -444,6 +483,7 @@ async fn surface_security_case(
     let wire = serde_json::to_vec(
         &json!({"schema":"ramflux.a2ui.conversation.v2","conversationId":"dm_agent_v3","version":3,"command":unauthorized}),
     )?;
+    receiver_probe::reject_at_author(bus, socket, human, agent, vault, "event", &wire).await?;
     assert!(call(bus,&human.account_id,"surface.send",json!({"conversation_id":"dm_agent_v3","message_id":"native-foreign-patch","wire_base64":ramflux_protocol::encode_base64url(wire)})).await.is_err());
 
     let mut watcher = ramflux_sdk::LocalBusClient::connect(socket).await?;
@@ -455,10 +495,24 @@ async fn surface_security_case(
         call(bus, &human.account_id, "surface.action", request.clone()).await?["accepted"],
         true
     );
+    tokio::time::timeout(Duration::from_secs(20), async {
+        loop {
+            receive(bus, &agent.account_id).await?;
+            let accepted =
+                call(bus, &agent.account_id, "surface.get", json!({"surface_id":"native-surface"}))
+                    .await?;
+            if accepted["actions"].as_array().map(Vec::len) == Some(1) {
+                return Ok::<_, Box<dyn std::error::Error>>(());
+            }
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
+    })
+    .await??;
     let event = tokio::time::timeout(Duration::from_secs(10), watcher.next_event()).await??;
     assert_eq!(event.method, "surface.changed");
     assert!(event.body.get("snapshot").is_none());
     assert!(event.body.get("fallback_text").is_none());
+    assert!(event.body.get("actions").is_none());
     assert!(!event.body.to_string().contains("PRIVATE_FORM_VALUE"));
     assert_eq!(call(bus, &human.account_id, "surface.action", request).await?["replayed"], true);
 
@@ -533,7 +587,7 @@ async fn task_case(
     call(bus,&agent.account_id,"task.propose",json!({"conversation_id":"dm_agent_v3","task_id":"native-task","message_id":"native-propose","assignee":agent.principal_id,"title":"Investigate","steps":[{"id":"step","title":"Run tool","state":"proposed"}]})).await?;
     wait_task(bus, &human.account_id, 1).await?;
     let self_accept=call(bus,&agent.account_id,"task.accept",json!({"conversation_id":"dm_agent_v3","task_id":"native-task","message_id":"native-self-accept","version":2})).await;
-    assert!(self_accept.is_err(), "agent accepted its own proposal");
+    assert_task_refusal(self_accept, ramflux_sdk::TaskRefusalCode::HumanRequired)?;
     call(bus,&human.account_id,"task.accept",json!({"conversation_id":"dm_agent_v3","task_id":"native-task","message_id":"native-accept","version":2})).await?;
     wait_task(bus, &agent.account_id, 2).await?;
     call(bus,&agent.account_id,"task.update",json!({"conversation_id":"dm_agent_v3","task_id":"native-task","version":3,"state":"running","steps":[{"id":"step","title":"Run tool","state":"running"}]})).await?;
@@ -546,7 +600,7 @@ async fn task_case(
         str::to_owned,
     );
     call(bus,&agent.account_id,"task.update",json!({"conversation_id":"dm_agent_v3","task_id":"native-task","version":4,"state":"needs_me","steps":[{"id":"step","title":"Run tool","state":"needs_me","needs_me":{"kind":"approval","grant_id":grant_id}}]})).await?;
-    wait_task(bus, &human.account_id, 4).await?;
+    assert_eq!(wait_task(bus, &human.account_id, 4).await?["requester"], human.principal_id);
     let pending = wait_approval(bus, &human.account_id, &grant_id).await?;
     let decision = call(
         bus,
@@ -558,10 +612,10 @@ async fn task_case(
     assert_eq!(decision["status"], "approved");
     wait_grant(bus, &agent.account_id, &grant_id).await?;
     let resolve = json!({"conversation_id":"dm_agent_v3","task_id":"native-task","message_id":"native-resolve","base_revision":4,"step_id":"step","target":{"kind":"approval","grant_id":grant_id},"decision_id":decision["approval_id"],"decision":"resume"});
-    assert!(
-        call(bus, &agent.account_id, "task.resolve", resolve.clone()).await.is_err(),
-        "agent resolved its own intervention"
-    );
+    assert_task_refusal(
+        call(bus, &agent.account_id, "task.resolve", resolve.clone()).await,
+        ramflux_sdk::TaskRefusalCode::HumanRequired,
+    )?;
     let resolved = call(bus, &human.account_id, "task.resolve", resolve.clone()).await?;
     assert_eq!(resolved["pending"], true);
     wait_task(bus, &agent.account_id, 5).await?;
@@ -569,7 +623,10 @@ async fn task_case(
     assert_eq!(current["state"], "running");
     let mut replay = resolve;
     replay["message_id"] = json!("native-resolve-replay");
-    assert!(call(bus, &human.account_id, "task.resolve", replay).await.is_err());
+    assert_task_refusal(
+        call(bus, &human.account_id, "task.resolve", replay).await,
+        ramflux_sdk::TaskRefusalCode::DecisionConsumed,
+    )?;
     let ran=call(bus,&agent.account_id,"mcp.tool.started",json!({"server_id":"native-server","tool_name":"shell","arguments":{"cmd":"echo task"},"operation_origin":"ai_mcp"})).await?;
     assert_eq!(ran["status"], "ok");
     let reused=call(bus,&agent.account_id,"mcp.tool.started",json!({"server_id":"native-server","tool_name":"shell","arguments":{"cmd":"echo task"},"operation_origin":"ai_mcp"})).await?;
@@ -590,6 +647,19 @@ async fn task_case(
     let fallbacks = rows.iter().filter_map(|row| row["body_utf8"].as_str()).collect::<Vec<_>>();
     assert!(fallbacks.iter().any(|text| text.contains("Task native-task accepted")));
     assert!(fallbacks.iter().any(|text| text.contains("Task native-task: done")));
+    assert!(fallbacks.iter().all(|text| !text.contains("actor kind unverified")));
+    Ok(())
+}
+
+fn assert_task_refusal(
+    result: TestResult<Value>,
+    expected: ramflux_sdk::TaskRefusalCode,
+) -> TestResult {
+    let error = result.err().ok_or("task operation unexpectedly accepted")?;
+    assert!(
+        matches!(error.downcast_ref::<ramflux_sdk::SdkError>(), Some(ramflux_sdk::SdkError::LocalBusRefused { code, .. }) if code == expected.as_str()),
+        "expected {expected:?}, got {error:?}"
+    );
     Ok(())
 }
 
