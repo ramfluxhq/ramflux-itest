@@ -5,9 +5,9 @@
 use crate::*;
 
 #[cfg(all(test, feature = "realnet"))]
-const MVP_S1_ROOT_SEED: [u8; 32] = [0x51; 32];
+pub(crate) const MVP_S1_ROOT_SEED: [u8; 32] = [0x51; 32];
 #[cfg(all(test, feature = "realnet"))]
-const MVP_S1_DEVICE_SEED: [u8; 32] = [0x52; 32];
+pub(crate) const MVP_S1_DEVICE_SEED: [u8; 32] = [0x52; 32];
 
 #[cfg(all(test, feature = "realnet"))]
 #[derive(Clone, Copy)]

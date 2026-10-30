@@ -115,6 +115,8 @@ async fn flow(
     )
     .await?;
     assert_eq!(added["contact"]["root_commitment"], bob_account.anchor);
+    wait_for_pending_native_contact_request(&mut bob, &bob_account.account_id, &alice_account)
+        .await?;
     let accepted = call(
         &mut bob,
         &bob_account.account_id,

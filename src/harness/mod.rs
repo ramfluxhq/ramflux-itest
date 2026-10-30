@@ -13,11 +13,15 @@ mod native_accounts;
 #[cfg(all(test, feature = "realnet"))]
 mod native_backup;
 #[cfg(all(test, feature = "realnet"))]
+mod native_contact_requests;
+#[cfg(all(test, feature = "realnet"))]
 mod native_replacement;
 #[cfg(all(test, feature = "realnet"))]
 pub(crate) use native_accounts::*;
 #[cfg(all(test, feature = "realnet"))]
 pub(crate) use native_backup::*;
+#[cfg(all(test, feature = "realnet"))]
+pub(crate) use native_contact_requests::wait_for_pending_native_contact_request;
 #[cfg(all(test, feature = "realnet"))]
 pub(crate) use native_replacement::*;
 mod node_prebuild;
