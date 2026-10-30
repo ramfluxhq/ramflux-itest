@@ -224,15 +224,14 @@ async fn wait_for_native_manifest(gateway_url: &str, anchor: &str) -> TestResult
         last = fetch_manifest(gateway_url, anchor)?;
         let projected = last.get("devices").and_then(Value::as_array);
         let native = last.pointer("/custody/devices").and_then(Value::as_array);
-        if projected.is_some_and(|devices| devices.len() == 1)
-            && native.is_some_and(|devices| devices.len() == 1)
+        if projected.is_some_and(Vec::is_empty) && native.is_some_and(|devices| devices.len() == 1)
         {
             return Ok(last);
         }
         tokio::time::sleep(Duration::from_millis(100)).await;
     }
     Err(format!(
-        "native S39 manifest never exposed exactly one projected and custody device; response={last}"
+        "native S39 manifest never exposed an empty projected device list and one custody device; response={last}"
     )
     .into())
 }
@@ -263,7 +262,7 @@ fn assert_tamper_rejected(mut manifest: Value, anchor: &str, tamper: Tamper) -> 
         Tamper::PrekeySignature => {
             replace_signature(
                 &mut manifest,
-                "/devices/0/prekey_bundle/signature_by_device_identity",
+                "/custody/devices/0/prekey_bundle/signature_by_device_identity",
                 "native prekey signature missing",
             )?;
         }
@@ -273,11 +272,13 @@ fn assert_tamper_rejected(mut manifest: Value, anchor: &str, tamper: Tamper) -> 
         Err(error) => error,
     };
     match tamper {
-        Tamper::RootPublicKey => assert!(
-            matches!(&error, ramflux_sdk::SdkError::InboundRejected(reason)
-                if reason == "identity authority: native directory identity mismatch"),
-            "unexpected native root tamper error: {error:?}"
-        ),
+        Tamper::RootPublicKey => match &error {
+            ramflux_sdk::SdkError::Json(error) => assert!(
+                error.to_string().starts_with("mixed or inconsistent native directory evidence"),
+                "unexpected native root tamper JSON error: {error}"
+            ),
+            error => return Err(format!("unexpected native root tamper error: {error:?}").into()),
+        },
         Tamper::CustodySignature | Tamper::PrekeySignature => assert!(
             matches!(
                 &error,

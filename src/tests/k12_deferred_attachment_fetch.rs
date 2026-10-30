@@ -233,8 +233,13 @@ async fn send(
     a: &NativeAccount,
     b: &NativeAccount,
 ) -> TestResult {
-    call(alice, &a.account_id, "contact.add", json!({"principal_id":b.principal_id})).await?;
-    call(bob, &b.account_id, "contact.accept", json!({"principal_id":a.principal_id})).await?;
+    let added =
+        call(alice, &a.account_id, "contact.add", json!({"principal_id":b.principal_id})).await?;
+    assert_eq!(added["contact"]["root_commitment"], b.anchor);
+    let accepted =
+        call(bob, &b.account_id, "contact.accept", json!({"principal_id":a.principal_id})).await?;
+    assert_eq!(accepted["state"], "accepted");
+    assert_eq!(accepted["contact"]["root_commitment"], a.anchor);
     call(alice,&a.account_id,"message.submit",json!({"conversation_id":"dm_k12","message_id":"message_k12","envelope_id":"env_k12","source_principal_id":a.principal_id,"sender_id":a.device_id,"recipient_device_id":b.device_id,"recipient_principal_commitment":b.anchor,"target_delivery_id":b.delivery_id,"encrypted_body_base64":"","plaintext_body_base64":ramflux_protocol::encode_base64url(b"message with deferred attachment"),"created_at":realnet_now_i64(),"ttl":3600,"attachments":[{"object_id":OBJECT,"plaintext_base64":ramflux_protocol::encode_base64url(b"k12 deferred bytes"),"chunk_size":4096,"relay_endpoint":"http://127.0.0.1:64504"}]})).await?;
     Ok(())
 }
