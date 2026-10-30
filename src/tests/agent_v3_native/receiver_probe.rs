@@ -80,9 +80,9 @@ pub(super) async fn reject_at_author(
     human: &NativeAccount,
     agent: &NativeAccount,
     vault: &ProbeVault,
-    kind: &str,
-    wire: &[u8],
+    probe: (&str, &[u8]),
 ) -> TestResult {
+    let (kind, wire) = probe;
     let before =
         call(bus, &agent.account_id, "surface.get", json!({"surface_id":"native-surface"})).await?;
     let id = format!("native-raw-{kind}");
