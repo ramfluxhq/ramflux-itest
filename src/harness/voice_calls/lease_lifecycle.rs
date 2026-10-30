@@ -33,8 +33,8 @@ fn released_voice_lease_refuses_a_concurrent_callee_refresh()
     let initial = relay.accept_verified("node", &consent, "relay:19001", 101)?;
     let refreshed_expiry = relay.renew_consented("node", &consent, 120)?;
     assert!(refreshed_expiry > initial.expires_at);
-    // The SDK releases before delivering its pending Hangup. The peer can still be processing
-    // the preceding renewed offer, even though its existing media lease has not expired.
+    // Even with Hangup submitted first, its peer may still be processing an in-flight refresh
+    // when Release reaches the relay, before the peer's existing media lease has expired.
     relay.release("node", &scope)?;
     assert!(121 < initial.expires_at);
     let refused = relay.accept_verified("node", &consent, "relay:19001", 121);
