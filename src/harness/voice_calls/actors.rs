@@ -204,3 +204,14 @@ pub(super) fn public_fields_only(value: &Value) -> VoiceResult {
     }
     Ok(())
 }
+
+pub(super) async fn wait_refresh_barrier(path: &Path) -> VoiceResult {
+    tokio::time::timeout(Duration::from_secs(60), async {
+        while !tokio::fs::try_exists(path.with_extension("ready")).await? {
+            tokio::time::sleep(Duration::from_millis(25)).await;
+        }
+        Ok::<_, Box<dyn std::error::Error>>(())
+    })
+    .await??;
+    Ok(())
+}
