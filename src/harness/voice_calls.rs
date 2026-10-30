@@ -82,27 +82,7 @@ async fn flow(node: &S8RealnetNode, rf: &Path, sockets: &[PathBuf; 2]) -> VoiceR
     let b = actors::create(&mut bob, &sockets[1], node, "Bob Call Fixture").await?;
     let alice_id = a["local_account_id"].as_str().ok_or("missing alice account id")?;
     let bob_id = b["local_account_id"].as_str().ok_or("missing bob account id")?;
-    actors::call(&mut alice, alice_id, "contact.add", json!({"principal_id":b["principal_id"]}))
-        .await?;
-    let request = actors::wait_inbound_contact_request(
-        &mut bob,
-        bob_id,
-        a["principal_id"].as_str().ok_or("missing alice principal")?,
-    )
-    .await?;
-    actors::call(&mut bob, bob_id, "contact.accept", json!({"request_id":request})).await?;
-    actors::wait_accepted_contact(
-        &mut alice,
-        alice_id,
-        b["principal_id"].as_str().ok_or("missing bob principal")?,
-    )
-    .await?;
-    actors::wait_accepted_contact(
-        &mut bob,
-        bob_id,
-        a["principal_id"].as_str().ok_or("missing alice principal")?,
-    )
-    .await?;
+    establish_native_contacts(&mut alice, alice_id, &a, &mut bob, bob_id, &b).await?;
     for (bus, id) in [(&mut alice, alice_id), (&mut bob, bob_id)] {
         actors::call(bus, id, "bus.subscribe", json!({"topics":["call.changed"]})).await?;
     }
@@ -186,5 +166,37 @@ async fn flow(node: &S8RealnetNode, rf: &Path, sockets: &[PathBuf; 2]) -> VoiceR
         "voice complete",
         "bidirectional opaque Opus, durable timeline, hangup and rejection verified",
     );
+    Ok(())
+}
+
+async fn establish_native_contacts(
+    alice: &mut ramflux_sdk::LocalBusClient,
+    alice_id: &str,
+    a: &Value,
+    bob: &mut ramflux_sdk::LocalBusClient,
+    bob_id: &str,
+    b: &Value,
+) -> VoiceResult {
+    actors::call(&mut alice, alice_id, "contact.add", json!({"principal_id":b["principal_id"]}))
+        .await?;
+    let request = actors::wait_inbound_contact_request(
+        &mut bob,
+        bob_id,
+        a["principal_id"].as_str().ok_or("missing alice principal")?,
+    )
+    .await?;
+    actors::call(&mut bob, bob_id, "contact.accept", json!({"request_id":request})).await?;
+    actors::wait_accepted_contact(
+        &mut alice,
+        alice_id,
+        b["principal_id"].as_str().ok_or("missing bob principal")?,
+    )
+    .await?;
+    actors::wait_accepted_contact(
+        &mut bob,
+        bob_id,
+        a["principal_id"].as_str().ok_or("missing alice principal")?,
+    )
+    .await?;
     Ok(())
 }
