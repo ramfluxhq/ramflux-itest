@@ -5,6 +5,8 @@
 use crate::*;
 use serde_json::{Value, json};
 mod actors;
+#[cfg(test)]
+mod lease_lifecycle;
 mod media;
 type VoiceResult<T = ()> = Result<T, Box<dyn std::error::Error>>;
 
@@ -173,9 +175,13 @@ async fn flow(
         actors::public_fields_only(&event.body)?;
     }
     let ended = actors::cli(rf, &sockets[0], "hangup", alice_id, Some(("--call", id))).await?;
-    assert_eq!(ended["end_reason"], "completed");
+    actors::public_fields_only(&ended)?;
+    realnet_step("voice caller hangup", ended.to_string());
+    assert_eq!(ended["end_reason"], "completed", "caller hangup row: {ended}");
     let ended = actors::wait_state(&mut bob, bob_id, id, "ended").await?;
-    assert_eq!(ended["end_reason"], "completed");
+    actors::public_fields_only(&ended)?;
+    realnet_step("voice callee ended", ended.to_string());
+    assert_eq!(ended["end_reason"], "completed", "callee terminal row: {ended}");
     let timeline =
         actors::call(&mut bob, bob_id, "message.list", json!({"conversation_id":"voice-thread"}))
             .await?;
