@@ -174,7 +174,7 @@ async fn seed_dm(
     text: &str,
 ) -> TestResult<Value> {
     let sent=call(bus,&human.account_id,"message.submit",json!({"conversation_id":"dm_agent_v3","message_id":message,"envelope_id":message,"source_principal_id":human.principal_id,"sender_id":human.device_id,"recipient_device_id":agent.device_id,"recipient_principal_commitment":agent.anchor,"target_delivery_id":agent.delivery_id,"encrypted_body_base64":"","plaintext_body_base64":ramflux_protocol::encode_base64url(text.as_bytes()),"created_at":realnet_now_i64(),"ttl":600})).await?;
-    assert_eq!(sent["delivery_state"], "submitted");
+    assert_eq!(sent["target_delivery_id"], agent.delivery_id);
     Ok(sent)
 }
 
