@@ -195,6 +195,8 @@ mod transport_node_store;
 #[path = "mvp_s73_client_read_model.rs"]
 mod mvp_s73_client_read_model;
 
+#[path = "agent_v3_native.rs"]
+mod agent_v3_native;
 #[path = "k12_deferred_attachment_fetch.rs"]
 mod k12_deferred_attachment_fetch;
 mod k3b_task_needs_me_approval;
