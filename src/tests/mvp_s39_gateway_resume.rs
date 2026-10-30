@@ -17,19 +17,35 @@ fn mvp_s39_realnet_gateway_session_resume_token_rejoin() -> Result<(), Box<dyn s
         return Ok(());
     }
 
-    let realnet = start_realnet_compose_with_env(&[(
-        "RAMFLUX_GATEWAY_RESUME_WINDOW_SECONDS".to_owned(),
-        "2".to_owned(),
-    )])?;
-    let code_root = code_root();
-    let ca_cert = code_root.join("ramflux/deploy/certs/ca.pem");
-    let gateway_quic_addr: std::net::SocketAddr = std::env::var("RAMFLUX_ITEST_GATEWAY_QUIC_ADDR")
-        .unwrap_or_else(|_| "127.0.0.1:18443".to_owned())
-        .parse()?;
+    // The native client-directory stack supplies the signed v3 relay inputs that the plain
+    // legacy stack lacks. S39a still exercises the legacy gateway frames below; only its service
+    // bootstrap is aligned with the other native S39 slice.
+    let mut stack = start_client_directory_stack_named(
+        "ramflux-s39-gateway-resume",
+        S8ComposePorts {
+            gateway_http: 65_091,
+            gateway_quic: 65_092,
+            router_http: 65_090,
+            router_mesh: 65_093,
+            notify_http: 65_094,
+            federation_http: 65_095,
+            federation_mesh: 65_096,
+            relay_http: 65_097,
+            relay_media_udp: 65_098,
+            signaling_turn_udp: 65_099,
+            signaling_turn_tcp: 65_100,
+            retention_http: 65_101,
+        },
+        &[
+            ("RAMFLUX_GATEWAY_RESUME_WINDOW_SECONDS".into(), "2".into()),
+            ("RAMFLUX_ITEST_RELAY_CLIENT_QUIC_PORT".into(), "65102".into()),
+        ],
+    )?;
+    let gateway_quic_addr = stack.node.gateway_quic_addr;
+    let ca_cert = stack.node.ca_cert.clone();
 
-    mvp_s1_enable_gateway_preauth(&realnet.gateway_url)?;
-    let router_url = std::env::var("RAMFLUX_ITEST_ROUTER_URL")
-        .unwrap_or_else(|_| "http://127.0.0.1:18080".to_owned());
+    mvp_s1_enable_gateway_preauth(&stack.node.gateway_url)?;
+    let router_url = "http://127.0.0.1:65090".to_owned();
     wait_for_itest_service(&router_url, "router")?;
     mvp_s1_register_identity(&router_url)?;
     let runtime = tokio::runtime::Builder::new_current_thread().enable_all().build()?;
@@ -38,7 +54,7 @@ fn mvp_s39_realnet_gateway_session_resume_token_rejoin() -> Result<(), Box<dyn s
         mvp_s39_assert_resume_rejoin(gateway_quic_addr, &ca_cert, &cookie).await?;
         Ok::<(), Box<dyn std::error::Error>>(())
     })?;
-    drop(realnet);
+    stack.node.guard.mark_success();
     Ok(())
 }
 

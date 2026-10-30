@@ -5,8 +5,11 @@
 #![cfg(feature = "realnet")]
 use super::*;
 use serde_json::{Value, json};
+use std::sync::Arc;
 
 type TestResult<T = ()> = Result<T, Box<dyn std::error::Error>>;
+const S47_GATEWAY_CAPTURE: &str = "/tmp/ramflux-gateway-itest-capture-s47.jsonl";
+const S47_COMPOSE_PROJECT: &str = "ramflux-s47-restore-device";
 
 #[test]
 fn mvp_s47_realnet_restore_device_rejoin_manifest_gate() -> TestResult {
@@ -16,7 +19,7 @@ fn mvp_s47_realnet_restore_device_rejoin_manifest_gate() -> TestResult {
     }
     crate::harness::sdk_receive_diagnostics::install();
     let mut stack = start_client_directory_stack_named(
-        "ramflux-s47-restore-device",
+        S47_COMPOSE_PROJECT,
         S8ComposePorts {
             gateway_http: 64_761,
             gateway_quic: 64_621,
@@ -31,7 +34,10 @@ fn mvp_s47_realnet_restore_device_rejoin_manifest_gate() -> TestResult {
             signaling_turn_tcp: 64_641,
             retention_http: 64_767,
         },
-        &[("RAMFLUX_ITEST_RELAY_CLIENT_QUIC_PORT".into(), "64765".into())],
+        &[
+            ("RAMFLUX_ITEST_RELAY_CLIENT_QUIC_PORT".into(), "64765".into()),
+            ("RAMFLUX_GATEWAY_ITEST_CAPTURE_JSON".into(), S47_GATEWAY_CAPTURE.into()),
+        ],
     )?;
     let runtime = tokio::runtime::Builder::new_current_thread().enable_all().build()?;
     runtime.block_on(run(&stack.node))?;
@@ -44,38 +50,51 @@ async fn run(node: &S8RealnetNode) -> TestResult {
     wait_for_private_gateway_quic(node.gateway_quic_addr, &node.ca_cert).await?;
     let root = temp_root("s47_native_restore")?;
     let sockets = [root.join("alice.sock"), root.join("replacement.sock"), root.join("bob.sock")];
-    let profiles = root.join("native-nodes.json");
-    std::fs::write(
-        &profiles,
-        serde_json::to_vec(&[native_node_profile(node, "127.0.0.1:64765")?])?,
-    )?;
-    let binary = mvp_s4_build_rf_binary().await?;
-    let mut children = Vec::new();
+    let profile = native_node_profile(node, "127.0.0.1:64765")?;
+    let vaults: [Arc<RecordingPrimaryVault>; 3] = std::array::from_fn(|_| Arc::default());
+    let mut configs = Vec::new();
+    let mut stops = Vec::new();
     for (index, socket) in sockets.iter().enumerate() {
-        let mut command = native_client_directory_daemon_command(
-            &binary,
-            socket,
-            &root.join(format!("account-{index}")),
-            &node.ca_cert,
-            None,
+        let mut config =
+            ramflux_sdk::LocalBusConfig::new(socket, root.join(format!("account-{index}")));
+        config.custody_vault = Some(vaults[index].clone());
+        config.builtin_nodes = vec![profile.clone()];
+        let (stop, receiver) = tokio::sync::watch::channel(false);
+        stops.push(stop);
+        configs.push((config, receiver));
+    }
+    let [alice, replacement, bob] = configs.try_into().map_err(|_| "S47 daemon config count")?;
+    let client_flow = async {
+        let result = flow(node, &sockets, &root, &vaults).await;
+        for stop in stops {
+            let _ = stop.send(true);
+        }
+        result
+    };
+    let result = tokio::time::timeout(Duration::from_mins(4), async {
+        let (alice_result, replacement_result, bob_result, flow_result) = tokio::join!(
+            ramflux_sdk::serve_local_bus_until(alice.0, alice.1),
+            ramflux_sdk::serve_local_bus_until(replacement.0, replacement.1),
+            ramflux_sdk::serve_local_bus_until(bob.0, bob.1),
+            client_flow,
         );
-        command
-            .arg("--builtin-nodes")
-            .arg(&profiles)
-            .env("RAMFLUX_SDK_RELAY_QUIC_ADDR", "127.0.0.1:64765");
-        children.push(command.spawn()?);
-    }
-    let result = tokio::time::timeout(Duration::from_mins(4), flow(node, &sockets, &root)).await;
-    for child in &mut children {
-        let _ = child.start_kill();
-        let _ = child.wait().await;
-    }
+        alice_result?;
+        replacement_result?;
+        bob_result?;
+        flow_result
+    })
+    .await;
     let _ = std::fs::remove_dir_all(&root);
     result??;
     Ok(())
 }
 
-async fn flow(node: &S8RealnetNode, sockets: &[PathBuf; 3], root: &Path) -> TestResult {
+async fn flow(
+    node: &S8RealnetNode,
+    sockets: &[PathBuf; 3],
+    root: &Path,
+    vaults: &[Arc<RecordingPrimaryVault>; 3],
+) -> TestResult {
     for socket in sockets {
         mvp_s4_wait_for_socket(socket).await?;
     }
@@ -87,20 +106,24 @@ async fn flow(node: &S8RealnetNode, sockets: &[PathBuf; 3], root: &Path) -> Test
     }
     let alice_account = create_native_account(&sockets[0], "Alice").await?;
     let bob_account = create_native_account(&sockets[2], "Bob").await?;
-    call(
+    assert_foreign_registration_refused(node, &alice_account).await?;
+    let added = call(
         &mut alice,
         &alice_account.account_id,
         "contact.add",
         json!({"principal_id":bob_account.principal_id}),
     )
     .await?;
-    call(
+    assert_eq!(added["contact"]["root_commitment"], bob_account.anchor);
+    let accepted = call(
         &mut bob,
         &bob_account.account_id,
         "contact.accept",
         json!({"principal_id":alice_account.principal_id}),
     )
     .await?;
+    assert_eq!(accepted["state"], "accepted");
+    assert_eq!(accepted["contact"]["root_commitment"], alice_account.anchor);
     send(
         &mut bob,
         &bob_account,
@@ -146,7 +169,9 @@ async fn flow(node: &S8RealnetNode, sockets: &[PathBuf; 3], root: &Path) -> Test
         &mut replacement,
         &mut bob,
     )
-    .await
+    .await?;
+    assert_gateway_has_no_private_material(&alice_account, vaults)?;
+    Ok(())
 }
 
 async fn promote_and_verify(
@@ -255,13 +280,234 @@ async fn wait_for_message(
     for _ in 0..100 {
         let rows =
             call(bus, account, "message.read", json!({"conversation_id":"s47-thread"})).await?;
-        if rows["messages"]
+        if let Some(row) = rows["messages"]
             .as_array()
-            .is_some_and(|rows| rows.iter().any(|row| row["message_id"] == message))
+            .and_then(|rows| rows.iter().find(|row| row["message_id"] == message))
         {
+            let plaintext = row["plaintext_body_base64"]
+                .as_str()
+                .ok_or("S47 received message plaintext missing")?;
+            assert_eq!(
+                ramflux_protocol::decode_base64url(plaintext)?,
+                b"native restore traffic",
+                "S47 restored device must decrypt the delivered body"
+            );
             return Ok(());
         }
         tokio::time::sleep(Duration::from_millis(100)).await;
     }
     Err(format!("native restore message {message} was not received").into())
+}
+
+#[allow(clippy::too_many_lines)]
+async fn assert_foreign_registration_refused(
+    node: &S8RealnetNode,
+    alice: &NativeAccount,
+) -> TestResult {
+    use ramflux_crypto::custody::{branch_exporter_hash, sign_branch_proof_v3};
+    use ramflux_protocol::custody::{
+        BindingMode, BranchProofV3, CustodyClientFrame, CustodyProofAction, CustodyRefusal,
+        CustodyServerFrame, DeviceRef,
+    };
+    use ramflux_transport::{GatewaySessionFrameSink, GatewaySessionFrameSource};
+
+    let before = fetch_s47_manifest(&node.gateway_url, &alice.anchor)?;
+    let before_manifest = ramflux_protocol::canonical_json_bytes(&before)?;
+    let before_device_set = ramflux_protocol::canonical_json_bytes(
+        before
+            .pointer("/custody/publication/record")
+            .ok_or("S47 native device set missing before foreign registration")?,
+    )?;
+
+    let branch = ramflux_crypto::create_device_branch(
+        "principal-s47-foreign",
+        "device-s47-foreign",
+        1,
+        [0x47; 32],
+    );
+    let agreement = ramflux_crypto::X25519KeyPair::from_seed([0x48; 32]);
+    let foreign_phrase = ramflux_crypto::custody::RecoveryPhrase::from_entropy(&[0x45; 32])?;
+    let foreign_master = ramflux_crypto::custody::MasterKey::from_phrase(&foreign_phrase)?;
+    let foreign_primary = ramflux_crypto::custody::SelfSigningKey::from_vault_seed(
+        &zeroize::Zeroizing::new([0x46; 32]),
+    );
+    let foreign_record = ramflux_crypto::custody::create_genesis(
+        &foreign_master,
+        &foreign_primary,
+        &branch,
+        &agreement,
+        ramflux_crypto::custody::GenesisInput {
+            principal_kind: ramflux_protocol::PrincipalKind::Human,
+            display_name: "S47 foreign root".into(),
+            issued_at: u64::try_from(realnet_now_i64())?,
+            master_cert_id: ramflux_protocol::encode_base64url([0x4a; 32]),
+            branch_cert_id: ramflux_protocol::encode_base64url([0x4b; 32]),
+            external_human_primary: None,
+        },
+    )?;
+    let signed_prekey = ramflux_crypto::X25519KeyPair::from_seed([0x49; 32]);
+    let bundle = ramflux_crypto::create_prekey_bundle(
+        &branch,
+        &agreement,
+        "s47-foreign-prekey",
+        &signed_prekey,
+        None,
+        None,
+    )?;
+    let action = CustodyProofAction::Register { prekey_bundle: serde_json::to_value(bundle)? };
+    let claimed = DeviceRef {
+        account_anchor: alice.anchor.clone(),
+        device_id: branch.device_id.clone(),
+        device_epoch: branch.device_epoch,
+    };
+    let (_, mut stream) = ramflux_transport::TcpTlsGatewayClient::connect(
+        "0.0.0.0:0".parse()?,
+        node.gateway_quic_addr,
+        "ramflux-gateway",
+        &node.ca_cert,
+        Duration::from_secs(10),
+    )
+    .await?;
+    stream
+        .send_frame(&serde_json::to_vec(&CustodyClientFrame::CustodyOpen {
+            binding_mode: BindingMode::DirectExporter,
+        })?)
+        .await?;
+    let opened: CustodyServerFrame = serde_json::from_slice(&stream.recv_frame().await?)?;
+    assert!(matches!(opened, CustodyServerFrame::NodeIdentity { .. }));
+    stream
+        .send_frame(&serde_json::to_vec(&CustodyClientFrame::Challenge {
+            device_ref: claimed.clone(),
+            action: action.clone(),
+        })?)
+        .await?;
+    let challenged: CustodyServerFrame = serde_json::from_slice(&stream.recv_frame().await?)?;
+    let refusal = match challenged {
+        CustodyServerFrame::Challenge { challenge } => {
+            let nonce: [u8; 32] = ramflux_protocol::decode_base64url(&challenge.challenge_nonce)?
+                .try_into()
+                .map_err(|_| "S47 custody challenge nonce length")?;
+            let issued = u64::try_from(realnet_now_i64())?;
+            let proof = sign_branch_proof_v3(
+                &branch,
+                BranchProofV3 {
+                    schema: ramflux_protocol::domain::BRANCH_PROOF_V3.into(),
+                    version: 3,
+                    device_ref: claimed,
+                    certificate_hash: ramflux_protocol::custody::object_hash(
+                        foreign_record.body.devices[0]
+                            .branch_certificate
+                            .as_ref()
+                            .ok_or("S47 foreign branch certificate missing")?,
+                    )?,
+                    record_hash: ramflux_protocol::custody::object_hash(&foreign_record)?,
+                    proof_id: ramflux_protocol::encode_base64url([0x4c; 32]),
+                    challenge_nonce: challenge.challenge_nonce,
+                    action_hash: challenge.action_hash,
+                    audience: challenge.audience,
+                    binding_mode: BindingMode::DirectExporter,
+                    transport_binding: branch_exporter_hash(&stream.custody_exporter(&nonce)?),
+                    issued_at: issued,
+                    expires_at: challenge.expires_at.min(issued.saturating_add(300)),
+                },
+            )?;
+            stream
+                .send_frame(&serde_json::to_vec(&CustodyClientFrame::Prove {
+                    action,
+                    proof: Box::new(proof),
+                })?)
+                .await?;
+            serde_json::from_slice(&stream.recv_frame().await?)?
+        }
+        response => response,
+    };
+    assert_eq!(
+        refusal,
+        CustodyServerFrame::Refused { code: CustodyRefusal::InvalidInput },
+        "foreign-root signed S47 registration must receive the typed refusal"
+    );
+
+    let after = fetch_s47_manifest(&node.gateway_url, &alice.anchor)?;
+    assert_eq!(ramflux_protocol::canonical_json_bytes(&after)?, before_manifest);
+    assert_eq!(
+        ramflux_protocol::canonical_json_bytes(
+            after
+                .pointer("/custody/publication/record")
+                .ok_or("S47 native device set missing after foreign registration")?,
+        )?,
+        before_device_set
+    );
+    Ok(())
+}
+
+fn fetch_s47_manifest(gateway_url: &str, anchor: &str) -> TestResult<Value> {
+    Ok(ramflux_node_core::itest_http_get_json(&format!(
+        "{gateway_url}/mvp1/device-manifest/{anchor}"
+    ))?)
+}
+
+fn assert_gateway_has_no_private_material(
+    alice: &NativeAccount,
+    vaults: &[Arc<RecordingPrimaryVault>; 3],
+) -> TestResult {
+    use hkdf::Hkdf;
+    use sha2::Sha256;
+
+    let capture = s47_service_file(S47_GATEWAY_CAPTURE)?;
+    let database = s47_service_file("/var/lib/ramflux/gateway/gateway.redb")?;
+    let phrase = ramflux_crypto::custody::RecoveryPhrase::parse(alice.recovery_phrase())?;
+    let entropy = phrase.entropy();
+    let mut master_seed = zeroize::Zeroizing::new([0_u8; 32]);
+    Hkdf::<Sha256>::new(Some(&[0_u8; 32]), &entropy)
+        .expand(ramflux_protocol::domain::CUSTODY_MASTER_SEED.as_bytes(), &mut *master_seed)
+        .map_err(|_| "S47 master seed derivation failed")?;
+    let mut secrets = vec![
+        zeroize::Zeroizing::new(alice.recovery_phrase().as_bytes().to_vec()),
+        zeroize::Zeroizing::new(NATIVE_DATA_PASSPHRASE.as_bytes().to_vec()),
+        zeroize::Zeroizing::new(NATIVE_RESTORED_PASSPHRASE.as_bytes().to_vec()),
+        zeroize::Zeroizing::new(NATIVE_BACKUP_PASSPHRASE.as_bytes().to_vec()),
+        zeroize::Zeroizing::new(master_seed.to_vec()),
+    ];
+    for vault in vaults {
+        secrets.extend(vault.secret_material()?);
+    }
+    for (index, secret) in secrets.iter().enumerate() {
+        let encoded = ramflux_protocol::encode_base64url(secret.as_slice());
+        for (surface, bytes) in [("capture", &capture), ("database", &database)] {
+            assert!(
+                !contains_subslice(bytes, secret),
+                "gateway {surface} leaked S47 private dictionary entry {index}"
+            );
+            assert!(
+                !String::from_utf8_lossy(bytes).contains(&encoded),
+                "gateway {surface} leaked base64url S47 private dictionary entry {index}"
+            );
+        }
+    }
+    Ok(())
+}
+
+fn s47_service_file(path: &str) -> TestResult<Vec<u8>> {
+    let (mut command, _env_file) = checked_itest_compose_command("s47-read-gateway-file")?;
+    let output = command
+        .arg("-p")
+        .arg(S47_COMPOSE_PROJECT)
+        .arg("-f")
+        .arg("docker-compose.itest.yml")
+        .arg("exec")
+        .arg("-T")
+        .arg("ramflux-gateway")
+        .arg("cat")
+        .arg(path)
+        .current_dir(code_root().join("ramflux/deploy"))
+        .output()?;
+    if !output.status.success() {
+        return Err(format!(
+            "failed to read S47 gateway file {path}: status={} stderr={}",
+            output.status,
+            String::from_utf8_lossy(&output.stderr)
+        )
+        .into());
+    }
+    Ok(output.stdout)
 }
