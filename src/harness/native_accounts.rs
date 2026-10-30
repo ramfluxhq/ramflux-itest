@@ -233,24 +233,15 @@ pub(crate) async fn create_native_account(
     });
     let account =
         ceremony.confirm(&words, &Zeroizing::new(NATIVE_DATA_PASSPHRASE.to_owned())).await?;
+    drop(ceremony);
+    let status = wait_native_account_live(socket, &account.account_id).await?;
     eprintln!(
         "STEP: native creation confirmed account={} networking={:?}",
-        account.account_id, account.networking
+        account.account_id, status["networking"]
     );
-    assert_eq!(account.networking, ramflux_sdk::custody::CreationState::Live);
-    let mut bus = LocalBusClient::connect(socket).await?;
-    let status = bus
-        .request(
-            Some(account.account_id.clone()),
-            "account",
-            "account.status",
-            serde_json::json!({}),
-        )
-        .await?;
     let field = |name: &str| -> Result<String> {
         Ok(status[name].as_str().ok_or("native account status field missing")?.to_owned())
     };
-    assert_eq!(status["networking"], "live");
     Ok(NativeAccount {
         account_id: account.account_id,
         principal_id: field("principal_id")?,
@@ -278,7 +269,8 @@ pub(crate) async fn create_native_agent_account(
         Zeroizing::new(saved_words[usize::from(positions[index] - 1)].to_owned())
     });
     let account = ceremony.confirm_headless(&words).await?;
-    assert_eq!(account.networking, ramflux_sdk::custody::CreationState::Live);
+    drop(ceremony);
+    let status = wait_native_account_live(socket, &account.account_id).await?;
     let mut bus = LocalBusClient::connect(socket).await?;
     bus.request(
         Some(owner.account_id.clone()),
@@ -294,18 +286,9 @@ pub(crate) async fn create_native_agent_account(
         serde_json::json!({"account":account.account_id,"path":bundle_path}),
     )
     .await?;
-    let status = bus
-        .request(
-            Some(account.account_id.clone()),
-            "account",
-            "account.status",
-            serde_json::json!({}),
-        )
-        .await?;
     let field = |name: &str| -> Result<String> {
         Ok(status[name].as_str().ok_or("native agent status field missing")?.to_owned())
     };
-    assert_eq!(status["networking"], "live");
     assert_eq!(status["display_name"], display_name);
     Ok(NativeAccount {
         account_id: account.account_id,
@@ -316,6 +299,29 @@ pub(crate) async fn create_native_agent_account(
         display_name: display_name.to_owned(),
         phrase,
     })
+}
+
+async fn wait_native_account_live(socket: &Path, account_id: &str) -> Result<serde_json::Value> {
+    let mut bus = LocalBusClient::connect(socket).await?;
+    let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(60);
+    loop {
+        let status = bus
+            .request(
+                Some(account_id.to_owned()),
+                "account",
+                "account.status",
+                serde_json::json!({}),
+            )
+            .await?;
+        if status["networking"] == "live" {
+            assert!(status["networking_reason"].is_null());
+            return Ok(status);
+        }
+        if tokio::time::Instant::now() >= deadline {
+            return Err("native account networking did not become live".into());
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(250)).await;
+    }
 }
 
 pub(crate) async fn recover_native_account(
