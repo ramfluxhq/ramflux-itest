@@ -119,7 +119,7 @@ async fn flow(
     let (a, b) = create_accounts(node, sockets, &mut alice, &mut bob, mode).await?;
     let alice_id = a["local_account_id"].as_str().ok_or("missing alice account id")?;
     let bob_id = b["local_account_id"].as_str().ok_or("missing bob account id")?;
-    establish_contacts(&mut alice, alice_id, &a, &mut bob, bob_id, &b, mode).await?;
+    establish_contacts(&mut alice, &a, &mut bob, &b, mode).await?;
     for (bus, id) in [(&mut alice, alice_id), (&mut bob, bob_id)] {
         actors::call(bus, id, "bus.subscribe", json!({"topics":["call.changed"]})).await?;
     }
@@ -240,13 +240,13 @@ fn native_account_value(account: &NativeAccount) -> Value {
 
 async fn establish_contacts(
     alice: &mut ramflux_sdk::LocalBusClient,
-    alice_id: &str,
     a: &Value,
     bob: &mut ramflux_sdk::LocalBusClient,
-    bob_id: &str,
     b: &Value,
     mode: AccountMode,
 ) -> VoiceResult {
+    let alice_id = a["local_account_id"].as_str().ok_or("missing alice account id")?;
+    let bob_id = b["local_account_id"].as_str().ok_or("missing bob account id")?;
     if matches!(mode, AccountMode::Legacy) {
         for (bus, id, own, peer) in [(alice, alice_id, a, b), (bob, bob_id, b, a)] {
             let accepted = actors::call(
