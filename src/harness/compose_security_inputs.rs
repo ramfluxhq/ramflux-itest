@@ -278,7 +278,10 @@ mod tests {
             if name != "docker-compose.yml" && name != "docker-compose.itest.yml" {
                 compose.args(["-f", "docker-compose.itest.yml"]);
             }
-            if name == "docker-compose.itest.object-v3.yml" {
+            if matches!(
+                name.as_str(),
+                "docker-compose.itest.object-v3.yml" | "docker-compose.itest.voice.yml"
+            ) {
                 compose.args(["-f", "docker-compose.itest.cross-gateway.yml"]);
             }
             compose.args(["-f", &name]);
@@ -303,3 +306,7 @@ mod tests {
         Ok(())
     }
 }
+
+#[cfg(test)]
+#[path = "compose_native_preflight_tests.rs"]
+mod native_preflight;
