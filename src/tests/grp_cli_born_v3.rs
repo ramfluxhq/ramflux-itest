@@ -58,7 +58,7 @@ impl Cli<'_> {
         all.extend_from_slice(args);
         mvp_s10_rf_json(self.binary, &all, &args.join(" ")).await
     }
-    pub(super) async fn create(&self, name: &str) -> TestResult<Value> {
+    pub(super) async fn create_pending(&self, name: &str) -> TestResult<Value> {
         let child = tokio::process::Command::new("python3")
             .arg(Path::new(env!("CARGO_MANIFEST_DIR")).join("src/tests/grp_cli_born_v3/create.py"))
             .arg(self.binary)
@@ -77,7 +77,10 @@ impl Cli<'_> {
             )
             .into());
         }
-        let created: Value = serde_json::from_slice(&output.stdout)?;
+        Ok(serde_json::from_slice(&output.stdout)?)
+    }
+    pub(super) async fn create(&self, name: &str) -> TestResult<Value> {
+        let created = self.create_pending(name).await?;
         let id = field(&created, "account_id")?;
         let deadline = tokio::time::Instant::now() + Duration::from_secs(90);
         loop {

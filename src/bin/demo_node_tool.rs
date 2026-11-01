@@ -246,6 +246,24 @@ impl Drop for TemporaryCa {
     }
 }
 
+fn custody_budgets(endpoint: &str, certs: &Path, server_name: &str) -> Result {
+    let token = std::env::var("RAMFLUX_ROUTER_ADMIN_TOKEN")?;
+    let tls = ramflux_transport::MeshTlsConfig {
+        ca_cert: certs.join("ca.pem"),
+        service_cert: certs.join("gateway/gateway.pem"),
+        service_key: certs.join("gateway/gateway-key.pem"),
+    };
+    let response: serde_json::Value = ramflux_transport::MeshHttpClient::new().post_json(
+        endpoint,
+        "/admin/custody/budgets",
+        &tls,
+        server_name,
+        &serde_json::json!({"admin_token": token}),
+    )?;
+    println!("{}", serde_json::to_string_pretty(&response)?);
+    Ok(())
+}
+
 #[tokio::main]
 async fn main() -> Result {
     let args: Vec<_> = std::env::args().collect();
@@ -256,7 +274,11 @@ async fn main() -> Result {
         [_, command, origin, key] if command == "verify" => {
             tokio::time::timeout(Duration::from_secs(45), verify(origin, key)).await?
         }
-        _ => Err("usage: demo-node-tool init DATA_DIR NODE_ID | verify ORIGIN EXPECTED_PUBLIC_KEY"
+        [_, command, endpoint, certs, server_name] if command == "custody-budgets" => {
+            // This command is synchronous; no async tasks have been started on this path.
+            custody_budgets(endpoint, Path::new(certs), server_name)
+        }
+        _ => Err("usage: demo-node-tool init DATA_DIR NODE_ID | verify ORIGIN EXPECTED_PUBLIC_KEY | custody-budgets ROUTER_MESH_ADDR CERTS_DIR ROUTER_SERVER_NAME"
             .into()),
     }
 }

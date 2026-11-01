@@ -516,6 +516,9 @@ pub(crate) fn run_docker_compose_project_with_overrides(
 fn add_itest_compose_files(command: &mut std::process::Command, overrides: ItestComposeOverrides) {
     let overrides = overrides.with_env_defaults();
     command.arg("-f").arg("docker-compose.itest.yml");
+    if std::env::var_os("RAMFLUX_ITEST_CUSTODY_PREFIX_PER_DAY").is_some() {
+        command.arg("-f").arg("docker-compose.itest.custody-quota.yml");
+    }
     if quic_broken_compose_enabled() {
         command.arg("-f").arg("docker-compose.itest.quic-broken.yml");
     }
