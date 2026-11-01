@@ -279,6 +279,8 @@ jobs:
           - slice: custody_prefix_quota_16
             custody_prefix: "16"
             tests: tests::custody_prefix_quota::custody_prefix_quota_realnet_ninth_principal
+          - slice: att_cli_born_v3
+            tests: tests::att_cli_born_v3::att_cli_born_v3_realnet_same_node_attachment
           - slice: grp_cli_born_v3
             tests: tests::grp_cli_born_v3::grp_cli_born_v3_realnet_same_node_delivery
           - slice: grpsync01

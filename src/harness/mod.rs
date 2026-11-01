@@ -6,6 +6,8 @@ mod rf_cli_arguments;
 pub(crate) use rf_cli_arguments::rf_cli_args;
 mod container_runtime;
 #[cfg(feature = "realnet")]
+pub(crate) mod native_cli;
+#[cfg(feature = "realnet")]
 pub(crate) use container_runtime::container_runtime;
 mod device_identity_fixture;
 #[cfg(feature = "realnet")]
