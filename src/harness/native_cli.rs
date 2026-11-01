@@ -140,14 +140,22 @@ pub(crate) async fn contacts(
 
 /// Build the same native diagnostic binary used by operator acceptance.
 pub(crate) async fn native_rf_binary() -> TestResult<PathBuf> {
+    use std::hash::{Hash, Hasher};
     let target = std::env::var_os("CARGO_TARGET_DIR")
         .map_or_else(|| code_root().join("ramflux/target"), PathBuf::from);
     let target = if target.is_absolute() { target } else { std::env::current_dir()?.join(target) };
     let manifest = code_root().join("ramflux/apps/rf/Cargo.toml");
+    // SDK's mixed crate types have unqualified library outputs. Keep this native-only build
+    // separate from broader test features and from another source checkout's cached executable.
+    let mut source = std::collections::hash_map::DefaultHasher::new();
+    manifest.hash(&mut source);
+    let target = target.join("native-cli").join(format!("{:016x}", source.finish()));
+    let build_target = target.clone();
     let status = tokio::task::spawn_blocking(move || {
         std::process::Command::new("cargo")
             .args(["build", "--quiet", "--features", "itest-memory-vault", "--manifest-path"])
             .arg(manifest)
+            .env("CARGO_TARGET_DIR", build_target)
             .env("RAMFLUX_ITEST_BUILD", "1")
             .status()
     })

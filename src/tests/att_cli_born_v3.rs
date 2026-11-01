@@ -93,9 +93,11 @@ async fn run(node: &S8RealnetNode) -> TestResult {
     for daemon in &mut daemons {
         let _ = daemon.wait().await;
     }
+    let mut logging_ready = true;
     for label in ["alice", "bob"] {
         let path = root.join(format!("{label}.log"));
         let logs = std::fs::read_to_string(&path)?;
+        logging_ready &= logs.contains("local bus daemon ready");
         eprintln!(
             "STEP: att_cli_born_v3 daemon={label} stderr_bytes={} log={}",
             logs.len(),
@@ -107,6 +109,11 @@ async fn run(node: &S8RealnetNode) -> TestResult {
     }
     eprintln!("STEP: att_cli_born_v3 artifacts={}", root.display());
     result??;
+    if !logging_ready {
+        return Err(
+            "native CLI daemon readiness diagnostic missing with SDK logging enabled".into()
+        );
+    }
     std::fs::remove_dir_all(root)?;
     Ok(())
 }
