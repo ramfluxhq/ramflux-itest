@@ -367,7 +367,7 @@ async fn assert_foreign_registration_refused(
     .await?;
     assert_eq!(
         registration_refusal,
-        CustodyServerFrame::Refused { code: CustodyRefusal::BindingRefused },
+        CustodyServerFrame::Refused { code: CustodyRefusal::BindingRefused, capacity: None },
         "foreign-device S47 registration must receive the binding refusal"
     );
 
@@ -390,7 +390,7 @@ async fn assert_foreign_registration_refused(
     .await?;
     assert_eq!(
         publication_refusal,
-        CustodyServerFrame::Refused { code: CustodyRefusal::InvalidInput },
+        CustodyServerFrame::Refused { code: CustodyRefusal::InvalidInput, capacity: None },
         "foreign-signed S47 publication claiming Alice's anchor must be refused"
     );
 
