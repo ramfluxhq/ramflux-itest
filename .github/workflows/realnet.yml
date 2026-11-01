@@ -272,6 +272,13 @@ jobs:
           - slice: network
             plain: "1"
             tests: harness::realnet_compose_stun::compose_network::realnet::realnet_two_projects_share_ready_network_and_teardown_preserves_the_other
+          - slice: custody_cli_budget
+            tests: tests::custody_cli_budget::custody_cli_budget_realnet_poll_stop_and_restore
+          - slice: custody_prefix_quota_default
+            tests: tests::custody_prefix_quota::custody_prefix_quota_realnet_ninth_principal
+          - slice: custody_prefix_quota_16
+            custody_prefix: "16"
+            tests: tests::custody_prefix_quota::custody_prefix_quota_realnet_ninth_principal
           - slice: grp_cli_born_v3
             tests: tests::grp_cli_born_v3::grp_cli_born_v3_realnet_same_node_delivery
           - slice: grpsync01
@@ -411,11 +418,13 @@ jobs:
           RAMFLUX_CROSS_GATEWAY: "1"
           RAMFLUX_ITEST_VOICE: ${{ matrix.voice || '' }}
           PLAIN: ${{ matrix.plain || '' }}
+          RAMFLUX_ITEST_CUSTODY_PREFIX_PER_DAY: ${{ matrix.custody_prefix || '' }}
           # Short: fixtures put Unix sockets under TMPDIR (108-byte sun_path).
           TMPDIR: /tmp/rfq
         run: |
           mkdir -p "$TMPDIR" ../logs/containers
           [ -n "$RAMFLUX_ITEST_VOICE" ] || unset RAMFLUX_ITEST_VOICE
+          [ -n "$RAMFLUX_ITEST_CUSTODY_PREFIX_PER_DAY" ] || unset RAMFLUX_ITEST_CUSTODY_PREFIX_PER_DAY
           if [ -n "$PLAIN" ]; then unset RAMFLUX_OBJECT_V3 RAMFLUX_CROSS_GATEWAY; fi
           env | grep -E '^RAMFLUX_' | sort
           # Snapshot container logs while the test runs: the fixtures tear

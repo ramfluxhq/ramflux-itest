@@ -64,83 +64,104 @@ async fn run(node: &S8RealnetNode, configured: bool) -> TestResult {
     };
     let profiles = root.join("nodes.json");
     std::fs::write(&profiles, serde_json::to_vec(&[native_node_profile(node, S73_RELAY_QUIC)?])?)?;
-    let cli = Cli { binary: &binary, socket: root.join("q.sock") };
-    let mut command = native_client_directory_daemon_command(
-        &binary,
-        &cli.socket,
-        &root.join("daemon"),
-        &node.ca_cert,
-        None,
-    );
-    command.arg("--builtin-nodes").arg(&profiles);
-    let mut daemon = command.spawn()?;
-    let result = tokio::time::timeout(Duration::from_mins(12), flow(&cli, node, configured)).await;
-    let _ = daemon.start_kill();
-    let _ = daemon.wait().await;
-    result??;
+    tokio::time::timeout(
+        Duration::from_mins(12),
+        flow(&root, &binary, &profiles, node, configured),
+    )
+    .await??;
     std::fs::remove_dir_all(root)?;
     Ok(())
 }
 
-async fn flow(cli: &Cli<'_>, node: &S8RealnetNode, configured: bool) -> TestResult {
-    mvp_s4_wait_for_socket(&cli.socket).await?;
-    cli.call(&["node", "set-default", &node.node_id]).await?;
+async fn flow(
+    root: &Path,
+    binary: &Path,
+    profiles: &Path,
+    node: &S8RealnetNode,
+    configured: bool,
+) -> TestResult {
     let mut first_principal = String::new();
     for number in 1..=9 {
-        // Keep challenge issuance below its independent per-source minute budget.
-        if number != 1 {
+        // Separate participants must not share daemon account/driver state. Stopping each one
+        // also proves that the network quota persists independently of live client sessions.
+        let cli = Cli { binary, socket: root.join(format!("q{number}.sock")) };
+        let mut command = native_client_directory_daemon_command(
+            binary,
+            &cli.socket,
+            &root.join(format!("client-{number}")),
+            &node.ca_cert,
+            None,
+        );
+        command.arg("--builtin-nodes").arg(profiles);
+        let mut daemon = command.spawn()?;
+        let result = principal(&cli, node, configured, number, &mut first_principal).await;
+        let _ = daemon.start_kill();
+        let _ = daemon.wait().await;
+        result?;
+        if number != 9 {
             tokio::time::sleep(Duration::from_secs(20)).await;
-        }
-        let created = cli.create_pending(&format!("Quota {number}")).await?;
-        let id = field(&created, "account_id")?;
-        let deadline = tokio::time::Instant::now() + Duration::from_secs(90);
-        let status = loop {
-            let status = cli.call(&["account", "status", "--account", id]).await?;
-            if status["networking"] == "live" || status["networking_reason"]["kind"] == "node_busy"
-            {
-                break status;
-            }
-            if tokio::time::Instant::now() >= deadline {
-                break status;
-            }
-            tokio::time::sleep(Duration::from_millis(250)).await;
-        };
-        if number == 9 && !configured {
-            assert_ne!(status["networking"], "live", "default ninth principal was admitted");
-            assert_eq!(status["networking_reason"]["kind"], "node_busy", "{status}");
-            let output = tokio::process::Command::new(cli.binary)
-                .args([
-                    "--socket",
-                    cli.socket.to_str().ok_or("socket encoding")?,
-                    "contact",
-                    "add",
-                    "--account",
-                    id,
-                    "--principal",
-                    &first_principal,
-                ])
-                .output()
-                .await?;
-            assert!(!output.status.success());
-            let output = format!(
-                "{}{}",
-                String::from_utf8_lossy(&output.stdout),
-                String::from_utf8_lossy(&output.stderr)
-            );
-            assert!(output.contains("Capacity"), "expected typed Capacity: {output}");
-            eprintln!("QUOTA default ninth: Capacity, cooldown=300s");
-        } else {
-            assert_eq!(
-                status["networking"], "live",
-                "principal {number}, configured={configured}: {status}"
-            );
-            if number == 1 {
-                first_principal = field(&status, "principal_id")?.into();
-            }
-            eprintln!("QUOTA principal {number}: live, configured={configured}");
         }
     }
     inspect_quota(configured)
+}
+
+async fn principal(
+    cli: &Cli<'_>,
+    node: &S8RealnetNode,
+    configured: bool,
+    number: u8,
+    first_principal: &mut String,
+) -> TestResult {
+    mvp_s4_wait_for_socket(&cli.socket).await?;
+    cli.call(&["node", "set-default", &node.node_id]).await?;
+    let created = cli.create_pending(&format!("Quota {number}")).await?;
+    let id = field(&created, "account_id")?;
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(90);
+    let status = loop {
+        let status = cli.call(&["account", "status", "--account", id]).await?;
+        if status["networking"] == "live" || status["networking_reason"]["kind"] == "node_busy" {
+            break status;
+        }
+        if tokio::time::Instant::now() >= deadline {
+            break status;
+        }
+        tokio::time::sleep(Duration::from_millis(250)).await;
+    };
+    if number == 9 && !configured {
+        assert_ne!(status["networking"], "live", "default ninth principal was admitted");
+        assert_eq!(status["networking_reason"]["kind"], "node_busy", "{status}");
+        let output = tokio::process::Command::new(cli.binary)
+            .args([
+                "--socket",
+                cli.socket.to_str().ok_or("socket encoding")?,
+                "contact",
+                "add",
+                "--account",
+                id,
+                "--principal",
+                first_principal.as_str(),
+            ])
+            .output()
+            .await?;
+        assert!(!output.status.success());
+        let output = format!(
+            "{}{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert!(output.contains("Capacity"), "expected typed Capacity: {output}");
+        eprintln!("QUOTA default ninth: Capacity, cooldown=300s");
+    } else {
+        assert_eq!(
+            status["networking"], "live",
+            "principal {number}, configured={configured}: {status}"
+        );
+        if number == 1 {
+            *first_principal = field(&status, "principal_id")?.into();
+        }
+        eprintln!("QUOTA principal {number}: live, configured={configured}");
+    }
+    Ok(())
 }
 
 fn inspect_quota(configured: bool) -> TestResult {
@@ -167,7 +188,7 @@ fn inspect_quota(configured: bool) -> TestResult {
     assert_eq!(prefix["reset_at"].as_u64().ok_or("reset missing")? % 86400, 0);
     eprintln!("QUOTA durable inspection: {inspection}");
     if !configured {
-        let names = std::process::Command::new("podman")
+        let names = std::process::Command::new(container_runtime()?)
             .args([
                 "ps",
                 "--filter",
@@ -180,7 +201,9 @@ fn inspect_quota(configured: bool) -> TestResult {
             .output()?;
         assert!(names.status.success());
         let name = String::from_utf8(names.stdout)?;
-        let logs = std::process::Command::new("podman").args(["logs", name.trim()]).output()?;
+        let logs = std::process::Command::new(container_runtime()?)
+            .args(["logs", name.trim()])
+            .output()?;
         assert!(logs.status.success());
         let logs = format!(
             "{}{}",
