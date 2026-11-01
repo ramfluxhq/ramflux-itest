@@ -272,6 +272,8 @@ jobs:
           - slice: network
             plain: "1"
             tests: harness::realnet_compose_stun::compose_network::realnet::realnet_two_projects_share_ready_network_and_teardown_preserves_the_other
+          - slice: grp_cli_born_v3
+            tests: tests::grp_cli_born_v3::grp_cli_born_v3_realnet_same_node_delivery
           - slice: grpsync01
             tests: tests::grpsync01_membership_and_name::grpsync01_realnet_membership_and_name
           - slice: contact01

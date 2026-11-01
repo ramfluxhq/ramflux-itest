@@ -222,3 +222,6 @@ mod proof01_durable_identity;
 
 #[cfg(feature = "realnet")]
 mod id02_custody;
+
+#[path = "grp_cli_born_v3.rs"]
+mod grp_cli_born_v3;
