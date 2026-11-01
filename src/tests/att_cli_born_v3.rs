@@ -229,6 +229,9 @@ async fn flow(
     if !lists_ok {
         return Err("born-v3 object list failed after attachment delivery".into());
     }
+    send(bob, &b, &a, "-dm-after-attachment", "Bob after attachment", None).await?;
+    wait_dm(alice, field(&a, "account_id")?, "Bob after attachment").await?;
+    eprintln!("STEP: att_cli_born_v3 recipient gateway remains usable after attachment fetch");
     Ok(())
 }
 
@@ -261,6 +264,17 @@ async fn read_attachment(cli: &Cli<'_>, account: &str, expected: &[u8]) -> TestR
                 }
             }
             Err(error) => {
+                if error.to_string().contains("attachment fetch deferred; retry object.fetch") {
+                    eprintln!(
+                        "STEP: att_cli_born_v3 bounded fetch deferred; retrying saved progress"
+                    );
+                    if tokio::time::Instant::now() >= deadline {
+                        return Err(
+                            "bounded attachment retries did not complete before deadline".into()
+                        );
+                    }
+                    continue;
+                }
                 failures += 1;
                 eprintln!("STEP: att_cli_born_v3 dm read attempt={failures} failed: {error}");
                 if failures >= 2 {
