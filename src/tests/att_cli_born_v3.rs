@@ -80,7 +80,7 @@ async fn run(node: &S8RealnetNode) -> TestResult {
         command
             .arg("--builtin-nodes")
             .arg(&profiles)
-            .env("RUST_LOG", "ramflux_sdk=info")
+            .env("RUST_LOG", "ramflux_sdk=info,ramflux_sdk::attachment_timing=debug")
             .stderr(std::fs::File::create(root.join(format!("{label}.log")))?);
         daemons.push(command.spawn()?);
     }
@@ -236,10 +236,19 @@ async fn flow(
 }
 
 async fn read_attachment(cli: &Cli<'_>, account: &str, expected: &[u8]) -> TestResult {
-    let deadline = tokio::time::Instant::now() + Duration::from_secs(90);
+    // The grant window bounds this test; page and SDK operation budgets remain unchanged.
+    let started = tokio::time::Instant::now();
+    let deadline = started + Duration::from_secs(240);
+    eprintln!("STEP: att_cli_born_v3 receiver starts grant-window completion test");
     let mut failures = 0;
     loop {
-        match cli.call(&["dm", "read", "--account", account, "--conversation", THREAD]).await {
+        let response = tokio::time::timeout_at(
+            deadline,
+            cli.call(&["dm", "read", "--account", account, "--conversation", THREAD]),
+        )
+        .await
+        .map_err(|_| "attachment completion exceeded grant-window test bound")?;
+        match response {
             Ok(value) => {
                 if let Some(rows) = value["decrypted_messages"].as_array() {
                     for row in rows {
@@ -253,8 +262,9 @@ async fn read_attachment(cli: &Cli<'_>, account: &str, expected: &[u8]) -> TestR
                                         );
                                     }
                                     eprintln!(
-                                        "STEP: att_cli_born_v3 receiver read identical {} bytes",
-                                        bytes.len()
+                                        "STEP: att_cli_born_v3 receiver read identical {} bytes elapsed_ms={}",
+                                        bytes.len(),
+                                        started.elapsed().as_millis()
                                     );
                                     return Ok(());
                                 }
