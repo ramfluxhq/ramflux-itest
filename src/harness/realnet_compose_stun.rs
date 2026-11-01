@@ -649,6 +649,13 @@ pub(crate) fn compose_env_with_required_defaults(
     if !compose_env.iter().any(|(key, _value)| key == "RAMFLUX_NODE_ID") {
         compose_env.push(("RAMFLUX_NODE_ID".to_owned(), "localhost".to_owned()));
     }
+    // The optional quota overlay requires an interpolation value during inventory linting.
+    // Ordinary stacks do not select that overlay, so their router setting stays unset.
+    ensure_compose_default_env(
+        &mut compose_env,
+        "RAMFLUX_CUSTODY_NEW_PRINCIPALS_PER_PREFIX_PER_DAY",
+        "8",
+    );
     compose_input_aliases::forward_aliases(&mut compose_env, env);
     security_inputs::supply_required_inputs(&mut compose_env)?;
     Ok(compose_env)
@@ -1237,6 +1244,23 @@ pub(crate) fn federation_dns_alias(project_name: &str) -> String {
 #[cfg(all(test, feature = "realnet"))]
 mod compose_default_tests {
     use super::*;
+
+    #[test]
+    fn quota_overlay_alias_has_a_default_and_preserves_explicit_fixture_limit()
+    -> Result<(), Box<dyn std::error::Error>> {
+        let key = "RAMFLUX_CUSTODY_NEW_PRINCIPALS_PER_PREFIX_PER_DAY";
+        for explicit in [None, Some("16")] {
+            let input =
+                explicit.map(|value| vec![(key.to_owned(), value.to_owned())]).unwrap_or_default();
+            let env = compose_env_with_required_defaults(&input)?;
+            for name in [key, "RF_COMPOSE_CUSTODY_NEW_PRINCIPALS_PER_PREFIX_PER_DAY"] {
+                let values: Vec<_> = env.iter().filter(|(k, _)| k == name).collect();
+                assert_eq!(values.len(), 1);
+                assert_eq!(values[0].1, explicit.unwrap_or("8"));
+            }
+        }
+        Ok(())
+    }
 
     #[test]
     fn capture_path_is_concrete_and_preserves_explicit_fixture_values()
