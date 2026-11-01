@@ -48,17 +48,17 @@ fn grp_cli_born_v3_realnet_same_node_delivery() -> TestResult {
     Ok(())
 }
 
-struct Cli<'a> {
-    binary: &'a Path,
-    socket: PathBuf,
+pub(super) struct Cli<'a> {
+    pub(super) binary: &'a Path,
+    pub(super) socket: PathBuf,
 }
 impl Cli<'_> {
-    async fn call(&self, args: &[&str]) -> TestResult<Value> {
+    pub(super) async fn call(&self, args: &[&str]) -> TestResult<Value> {
         let mut all = vec!["--socket", self.socket.to_str().ok_or("socket encoding")?];
         all.extend_from_slice(args);
         mvp_s10_rf_json(self.binary, &all, &args.join(" ")).await
     }
-    async fn create(&self, name: &str) -> TestResult<Value> {
+    pub(super) async fn create(&self, name: &str) -> TestResult<Value> {
         let child = tokio::process::Command::new("python3")
             .arg(Path::new(env!("CARGO_MANIFEST_DIR")).join("src/tests/grp_cli_born_v3/create.py"))
             .arg(self.binary)
@@ -94,7 +94,7 @@ impl Cli<'_> {
         }
     }
 }
-fn field<'a>(value: &'a Value, name: &str) -> TestResult<&'a str> {
+pub(super) fn field<'a>(value: &'a Value, name: &str) -> TestResult<&'a str> {
     value[name].as_str().ok_or_else(|| format!("missing field {name}: {value}").into())
 }
 async fn run(node: &S8RealnetNode) -> TestResult {
@@ -275,7 +275,7 @@ async fn wait_text(cli: &Cli<'_>, account: &str, text: &str) -> TestResult {
     }
 }
 
-async fn contacts(
+pub(super) async fn contacts(
     alice: &Cli<'_>,
     bob: &Cli<'_>,
     node: &S8RealnetNode,
