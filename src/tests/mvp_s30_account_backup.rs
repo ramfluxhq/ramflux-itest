@@ -361,7 +361,7 @@ async fn mvp_s30_rf_json_with_env(
         Duration::from_mins(2),
         tokio::task::spawn_blocking(move || {
             let mut command = std::process::Command::new(binary);
-            command.args(args).envs(env).output()
+            command.args(crate::rf_cli_args(args)).envs(env).output()
         }),
     )
     .await
@@ -392,7 +392,7 @@ async fn mvp_s30_rf_json_expect_failure_with_env(
         Duration::from_mins(2),
         tokio::task::spawn_blocking(move || {
             let mut command = std::process::Command::new(binary);
-            command.args(args).envs(env).output()
+            command.args(crate::rf_cli_args(args)).envs(env).output()
         }),
     )
     .await

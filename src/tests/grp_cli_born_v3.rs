@@ -7,8 +7,8 @@ use super::*;
 use serde_json::Value;
 
 type TestResult<T = ()> = Result<T, Box<dyn std::error::Error>>;
-const GROUP: &str = "grp-cli-born-v3";
-const THREAD: &str = "conv-cli-born-v3";
+const GROUP: &str = "-grp-cli-born-v3";
+const THREAD: &str = "-conv-cli-born-v3";
 const TEXT: &str = "Born-v3 CLI group delivery";
 
 #[test]
@@ -179,44 +179,98 @@ async fn flow(alice: &Cli<'_>, bob: &Cli<'_>, node: &S8RealnetNode) -> TestResul
         tokio::time::sleep(Duration::from_millis(250)).await;
     }
     eprintln!("STEP: grp_cli_born_v3 receiver at epoch 2; send with principal selector");
-    let sent = alice
+    send(alice, aid, ap, "-cli-born-v3-first", TEXT).await?;
+    wait_text(bob, bid, TEXT).await?;
+    eprintln!("STEP: grp_cli_born_v3 bob replies after divergent-selector read");
+    send(bob, bid, field(&b, "principal_id")?, "-cli-born-v3-reply", "Bob reply after read")
+        .await?;
+    wait_text(alice, aid, "Bob reply after read").await?;
+    eprintln!("STEP: grp_cli_born_v3 alice renames after send and reply");
+    alice
+        .call(&[
+            "group",
+            "rename",
+            "--account",
+            aid,
+            "--group",
+            GROUP,
+            "--name",
+            "Renamed after reply",
+            "--request-id",
+            "-cli-rename",
+        ])
+        .await?;
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(60);
+    loop {
+        bob.call(&["dm", "list", "--account", bid, "--conversation", "contact-cli-v3"]).await?;
+        let state = bob.call(&["group", "members", "--account", bid, "--group", GROUP]).await?;
+        if state["name"] == "Renamed after reply" {
+            eprintln!("STEP: grp_cli_born_v3 bob observed post-send signed rename");
+            return Ok(());
+        }
+        assert!(tokio::time::Instant::now() < deadline, "post-send rename missing: {state}");
+        tokio::time::sleep(Duration::from_millis(250)).await;
+    }
+}
+
+async fn send(
+    cli: &Cli<'_>,
+    account: &str,
+    principal: &str,
+    message: &str,
+    text: &str,
+) -> TestResult {
+    let sent = cli
         .call(&[
             "group",
             "send",
             "--account",
-            aid,
+            account,
             "--group",
             GROUP,
             "--conversation",
             THREAD,
             "--message",
-            "cli-born-v3-first",
+            message,
             "--sender",
-            ap,
+            principal,
             "--body",
-            TEXT,
+            text,
         ])
         .await?;
     assert_eq!(sent["submitted"].as_array().map(Vec::len), Some(1), "same-node send: {sent}");
     assert_eq!(sent["federated_submitted"].as_array().map(Vec::len), Some(0));
+    Ok(())
+}
+
+async fn wait_text(cli: &Cli<'_>, account: &str, text: &str) -> TestResult {
     let deadline = tokio::time::Instant::now() + Duration::from_secs(90);
     loop {
-        let read = bob
-            .call(&["group", "read", "--account", bid, "--group", GROUP, "--conversation", THREAD])
+        let read = cli
+            .call(&[
+                "group",
+                "read",
+                "--account",
+                account,
+                "--group",
+                GROUP,
+                "--conversation",
+                THREAD,
+            ])
             .await?;
         if ["messages", "decrypted_messages"].iter().any(|key| {
             read[key].as_array().is_some_and(|rows| {
-                rows.iter().any(|row| row["body_utf8"] == TEXT || row["plaintext_utf8"] == TEXT)
+                rows.iter().any(|row| row["body_utf8"] == text || row["plaintext_utf8"] == text)
             })
         }) {
-            eprintln!("STEP: grp_cli_born_v3 receiver read expected plaintext");
+            eprintln!("STEP: grp_cli_born_v3 receiver read expected plaintext: {text}");
             return Ok(());
         }
         assert!(
             tokio::time::Instant::now() < deadline,
             "born-v3 CLI group message missing after epoch 2 and successful same-node send: {read}"
         );
-        bob.call(&["dm", "list", "--account", bid, "--conversation", "contact-cli-v3"]).await?;
+        cli.call(&["dm", "list", "--account", account, "--conversation", "contact-cli-v3"]).await?;
         tokio::time::sleep(Duration::from_millis(500)).await;
     }
 }

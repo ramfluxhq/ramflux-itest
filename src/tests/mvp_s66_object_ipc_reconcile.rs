@@ -529,7 +529,8 @@ async fn s66_run_rf_capture(
     rf_binary: &Path,
     args: &[&str],
 ) -> Result<(bool, String), Box<dyn std::error::Error + Send + Sync>> {
-    let output = tokio::process::Command::new(rf_binary).args(args).output().await?;
+    let output =
+        tokio::process::Command::new(rf_binary).args(crate::rf_cli_args(args)).output().await?;
     let mut combined = String::from_utf8_lossy(&output.stdout).into_owned();
     combined.push_str(&String::from_utf8_lossy(&output.stderr));
     Ok((output.status.success(), combined))

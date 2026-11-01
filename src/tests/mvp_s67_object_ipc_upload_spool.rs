@@ -446,7 +446,10 @@ async fn s67_rf_put_traced(
     let output = tokio::time::timeout(
         Duration::from_mins(10),
         tokio::task::spawn_blocking(move || {
-            std::process::Command::new(binary).args(args).env("RAMFLUX_BUS_TRACE", "1").output()
+            std::process::Command::new(binary)
+                .args(crate::rf_cli_args(args))
+                .env("RAMFLUX_BUS_TRACE", "1")
+                .output()
         }),
     )
     .await

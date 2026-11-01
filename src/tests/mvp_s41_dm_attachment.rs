@@ -413,7 +413,7 @@ async fn mvp_s41_rf_failure(
     step: &str,
 ) -> Result<String, Box<dyn std::error::Error>> {
     let output = tokio::process::Command::new(binary)
-        .args(args)
+        .args(crate::rf_cli_args(args))
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped())
         .kill_on_drop(true)

@@ -263,7 +263,7 @@ pub(crate) async fn mvp_s4_rf_failure(
     args: &[&str],
 ) -> Result<String, Box<dyn std::error::Error>> {
     let binary = binary.to_path_buf();
-    let args = args.iter().copied().map(str::to_owned).collect::<Vec<_>>();
+    let args = crate::rf_cli_args(args);
     let command_line = format!("{} {}", binary.display(), args.join(" "));
     let output = match tokio::time::timeout(
         Duration::from_mins(2),
@@ -339,7 +339,7 @@ pub(crate) async fn mvp_s4_rf_json(
     args: &[&str],
 ) -> Result<serde_json::Value, Box<dyn std::error::Error>> {
     let binary = binary.to_path_buf();
-    let args = args.iter().copied().map(str::to_owned).collect::<Vec<_>>();
+    let args = crate::rf_cli_args(args);
     let command_line = format!("{} {}", binary.display(), args.join(" "));
     let output = match tokio::time::timeout(
         Duration::from_mins(2),

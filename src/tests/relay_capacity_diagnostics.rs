@@ -482,7 +482,7 @@ pub(super) fn s64_parse_percent(value: &str) -> f64 {
 /// Runs an `rf` command to completion WITHOUT asserting, returning `(success, combined_output)`.
 #[cfg(feature = "realnet")]
 pub(super) async fn s64_run_capture(rf_binary: &Path, args: &[&str]) -> (bool, String) {
-    match tokio::process::Command::new(rf_binary).args(args).output().await {
+    match tokio::process::Command::new(rf_binary).args(crate::rf_cli_args(args)).output().await {
         Ok(output) => {
             let mut combined = String::from_utf8_lossy(&output.stdout).into_owned();
             combined.push_str(&String::from_utf8_lossy(&output.stderr));

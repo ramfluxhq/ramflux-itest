@@ -205,7 +205,7 @@ pub(crate) async fn mvp_s10_rf_json(
     // and the test mis-reads rf's real output as "empty stdout" -- the root cause that masked
     // 7 S10 debugging rounds. rf was printing correctly; the harness just wasn't capturing it.
     let child = tokio::process::Command::new(binary)
-        .args(args)
+        .args(crate::rf_cli_args(args))
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped())
         .kill_on_drop(true)

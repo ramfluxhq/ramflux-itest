@@ -81,7 +81,7 @@ async fn rf_failure(binary: &Path, socket: &str, args: &[&str], expected: &str) 
         Duration::from_secs(30),
         tokio::process::Command::new(binary)
             .args(["--socket", socket])
-            .args(args)
+            .args(crate::rf_cli_args(args))
             .kill_on_drop(true)
             .output(),
     )
