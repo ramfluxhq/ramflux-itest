@@ -3,7 +3,9 @@
 
 //! Isolated SDK owner configuration for the s35 history-export client process.
 use std::{net::SocketAddr, path::Path};
-pub(super) const OWNER_HOME_NODE: &str = "node_b.realnet";
+// Every history-export client connects through gateway A, which must issue its relay grant.
+pub(super) const OWNER_HOME_NODE: &str = "node_a.realnet";
+pub(super) const OWNER_GATEWAY: &str = "gw-a";
 pub(super) fn child_command(
     executable: &Path,
     gateway: SocketAddr,
@@ -66,7 +68,7 @@ fn s35_history_sync_child_has_explicit_owner_authority_and_its_own_relay_endpoin
         ("RAMFLUX_S35_GATEWAY_QUIC_ADDR", "127.0.0.1:63361"),
         ("RAMFLUX_S35_CA_CERT", "fixture.pem"),
         ("RAMFLUX_S35_RELAY_HTTP_URL", "http://127.0.0.1:63354"),
-        ("RAMFLUX_SDK_RELAY_OWNER_HOME_NODE_ID", OWNER_HOME_NODE),
+        ("RAMFLUX_SDK_RELAY_OWNER_HOME_NODE_ID", "node_a.realnet"),
         ("RAMFLUX_SDK_RELAY_OWNER_PRINCIPAL_ID", "principal_s35_bob"),
         ("RAMFLUX_SDK_RELAY_AUDIENCE_NODE_ID", "node_a.realnet"),
         ("RAMFLUX_SDK_RELAY_QUIC_ADDR", "127.0.0.1:63365"),
