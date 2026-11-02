@@ -153,14 +153,16 @@ async fn send_dm(cli: &Cli<'_>, sender: &Value, receiver: &Value, n: usize) -> T
     Ok(())
 }
 
-fn texts(value: &Value) -> Vec<&str> {
-    // Prefer the history projection; receive-only rows can be empty after a previous read.
-    value["messages"]
-        .as_array()
+fn row_texts(rows: &Value) -> Vec<&str> {
+    rows.as_array()
         .into_iter()
         .flatten()
         .filter_map(|row| row["body_utf8"].as_str().or_else(|| row["plaintext_utf8"].as_str()))
         .collect()
+}
+
+fn texts(value: &Value) -> Vec<&str> {
+    ["messages", "decrypted_messages"].into_iter().flat_map(|key| row_texts(&value[key])).collect()
 }
 
 async fn wait_history(cli: &Cli<'_>, account: &str, expected: usize) -> TestResult {
@@ -169,7 +171,8 @@ async fn wait_history(cli: &Cli<'_>, account: &str, expected: usize) -> TestResu
         let read = cli
             .call(&["dm", "list", &format!("--account={account}"), "--conversation", THREAD])
             .await?;
-        let found = texts(&read);
+        // Receive rows can repeat newly persisted history, so count the history projection only.
+        let found = row_texts(&read["messages"]);
         if found.len() == expected {
             return Ok(());
         }
@@ -307,7 +310,7 @@ async fn flow(
         .call(&["dm", "list", &format!("--account={id}"), "--conversation", THREAD])
         .await?;
     assert_eq!(history["messages"].as_array().map(Vec::len), Some(6), "{history}");
-    let restored_texts = texts(&history);
+    let restored_texts = row_texts(&history["messages"]);
     assert_eq!(restored_texts.len(), 6, "{history}");
     for n in 0..6 {
         assert!(
