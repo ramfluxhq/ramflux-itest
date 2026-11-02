@@ -16,6 +16,15 @@ impl NativeCli<'_> {
         all.extend_from_slice(args);
         mvp_s10_rf_json(self.binary, &all, &args.join(" ")).await
     }
+    pub(crate) async fn call_until(
+        &self,
+        args: &[&str],
+        deadline: tokio::time::Instant,
+    ) -> TestResult<Value> {
+        let mut all = vec!["--socket", self.socket.to_str().ok_or("socket encoding")?];
+        all.extend_from_slice(args);
+        mvp_s10_rf_json_until(self.binary, &all, &args.join(" "), deadline).await
+    }
     pub(crate) async fn create_pending(&self, name: &str) -> TestResult<Value> {
         let child = tokio::process::Command::new("python3")
             .arg(Path::new(env!("CARGO_MANIFEST_DIR")).join("src/harness/native_cli/create.py"))

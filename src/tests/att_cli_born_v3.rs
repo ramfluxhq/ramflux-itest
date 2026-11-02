@@ -199,11 +199,18 @@ async fn flow(
     let input = root.join("attachment.bin");
     std::fs::write(&input, &bytes)?;
     eprintln!("STEP: att_cli_born_v3 send bytes={} relay={relay_url}", bytes.len());
+    let send_started = tokio::time::Instant::now();
     let sent =
         send(alice, &a, &b, MESSAGE, TEXT, Some((input.to_str().ok_or("input path")?, relay_url)))
             .await?;
     assert_eq!(sent["envelope"]["envelope_id"], MESSAGE);
     let received = read_attachment(bob, field(&b, "account_id")?, &bytes).await;
+    if received.is_ok() {
+        eprintln!(
+            "STEP: att_cli_born_v3 send_to_verified_bytes_ms={}",
+            send_started.elapsed().as_millis()
+        );
+    }
     let object = format!("attachment:{MESSAGE}:0");
     let mut lists_ok = true;
     for (cli, account, label) in
@@ -236,68 +243,83 @@ async fn flow(
 }
 
 async fn read_attachment(cli: &Cli<'_>, account: &str, expected: &[u8]) -> TestResult {
-    // The grant window bounds this test; page and SDK operation budgets remain unchanged.
+    // The test uses the grant window; individual page and SDK operation budgets stay unchanged.
     let started = tokio::time::Instant::now();
-    let deadline = started + Duration::from_secs(240);
     eprintln!("STEP: att_cli_born_v3 receiver starts grant-window completion test");
-    let mut failures = 0;
-    loop {
-        let response = tokio::time::timeout_at(
+    let deadline = started + Duration::from_secs(240);
+    read_attachment_with(expected, async || {
+        // Carry the same absolute bound into the child process, avoiding the default 120 s helper cap.
+        cli.call_until(
+            &["dm", "read", "--account", account, "--conversation", THREAD, "--wait", "240"],
             deadline,
-            cli.call(&["dm", "read", "--account", account, "--conversation", THREAD]),
         )
         .await
-        .map_err(|_| "attachment completion exceeded grant-window test bound")?;
-        match response {
-            Ok(value) => {
-                if let Some(rows) = value["decrypted_messages"].as_array() {
-                    for row in rows {
-                        if let Some(attachments) = row["attachments"].as_array() {
-                            for attachment in attachments {
-                                if let Some(encoded) = attachment["plaintext_base64"].as_str() {
-                                    let bytes = ramflux_protocol::decode_base64url(encoded)?;
-                                    if bytes != expected {
-                                        return Err(
-                                            "received attachment bytes differ from sender".into()
-                                        );
-                                    }
-                                    eprintln!(
-                                        "STEP: att_cli_born_v3 receiver read identical {} bytes elapsed_ms={}",
-                                        bytes.len(),
-                                        started.elapsed().as_millis()
-                                    );
-                                    return Ok(());
-                                }
-                            }
+    })
+    .await?;
+    eprintln!(
+        "STEP: att_cli_born_v3 receiver read identical {} bytes elapsed_ms={}",
+        expected.len(),
+        started.elapsed().as_millis()
+    );
+    Ok(())
+}
+
+async fn read_attachment_with<F>(expected: &[u8], fetch: F) -> TestResult
+where
+    F: std::ops::AsyncFnOnce() -> TestResult<Value>,
+{
+    let value = fetch().await.map_err(|error| {
+        if error.to_string().contains("attachment fetch deferred; retry object.fetch") {
+            format!("attachment wait budget exhausted: {error}")
+        } else {
+            format!("born-v3 CLI attachment dm read failed after successful send: {error}")
+        }
+    })?;
+    if let Some(rows) = value["decrypted_messages"].as_array() {
+        for row in rows {
+            if let Some(attachments) = row["attachments"].as_array() {
+                for attachment in attachments {
+                    if let Some(encoded) = attachment["plaintext_base64"].as_str() {
+                        let bytes = ramflux_protocol::decode_base64url(encoded)?;
+                        if bytes != expected {
+                            return Err("received attachment bytes differ from sender".into());
                         }
+                        return Ok(());
                     }
                 }
             }
-            Err(error) => {
-                if error.to_string().contains("attachment fetch deferred; retry object.fetch") {
-                    eprintln!(
-                        "STEP: att_cli_born_v3 bounded fetch deferred; retrying saved progress"
-                    );
-                    if tokio::time::Instant::now() >= deadline {
-                        return Err(
-                            "bounded attachment retries did not complete before deadline".into()
-                        );
-                    }
-                    continue;
-                }
-                failures += 1;
-                eprintln!("STEP: att_cli_born_v3 dm read attempt={failures} failed: {error}");
-                if failures >= 2 {
-                    return Err(format!(
-                        "born-v3 CLI attachment dm read failed after successful send: {error}"
-                    )
-                    .into());
-                }
-            }
         }
-        if tokio::time::Instant::now() >= deadline {
-            return Err("born-v3 CLI attachment plaintext missing after successful send".into());
-        }
-        tokio::time::sleep(Duration::from_millis(500)).await;
     }
+    Err("born-v3 CLI attachment plaintext missing after successful send".into())
+}
+
+#[tokio::test]
+async fn attachment_read_rejects_the_first_generic_error_and_names_budget_exhaustion() -> TestResult
+{
+    for message in ["generic receive failure", "attachment fetch deferred; retry object.fetch"] {
+        let mut calls = 0;
+        let result = read_attachment_with(b"expected", async || {
+            calls += 1;
+            Err(message.into())
+        })
+        .await;
+        assert_eq!(calls, 1);
+        let error = result.err().ok_or("a single error must fail the scenario")?.to_string();
+        assert!(error.contains(message));
+        assert_eq!(
+            error.contains("wait budget exhausted"),
+            message.starts_with("attachment fetch deferred")
+        );
+    }
+    Ok(())
+}
+
+#[tokio::test]
+async fn attachment_read_checks_the_received_bytes() -> TestResult {
+    let value = serde_json::json!({"decrypted_messages":[{"attachments":[{
+        "plaintext_base64":ramflux_protocol::encode_base64url(b"expected")
+    }]}]});
+    read_attachment_with(b"expected", async || Ok(value.clone())).await?;
+    assert!(read_attachment_with(b"different", async || Ok(value)).await.is_err());
+    Ok(())
 }

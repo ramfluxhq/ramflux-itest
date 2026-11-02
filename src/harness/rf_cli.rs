@@ -200,6 +200,17 @@ pub(crate) async fn mvp_s10_rf_json(
     args: &[&str],
     step: &str,
 ) -> Result<serde_json::Value, Box<dyn std::error::Error>> {
+    mvp_s10_rf_json_until(binary, args, step, tokio::time::Instant::now() + Duration::from_mins(2))
+        .await
+}
+
+#[cfg(all(test, feature = "realnet"))]
+pub(crate) async fn mvp_s10_rf_json_until(
+    binary: &Path,
+    args: &[&str],
+    step: &str,
+    deadline: tokio::time::Instant,
+) -> Result<serde_json::Value, Box<dyn std::error::Error>> {
     // tokio::process::Command does NOT auto-pipe stdout/stderr (unlike std's `.output()`),
     // so without these `Stdio::piped()` calls `wait_with_output()` returns EMPTY stdout/stderr
     // and the test mis-reads rf's real output as "empty stdout" -- the root cause that masked
@@ -210,8 +221,7 @@ pub(crate) async fn mvp_s10_rf_json(
         .stderr(std::process::Stdio::piped())
         .kill_on_drop(true)
         .spawn()?;
-    let output = match tokio::time::timeout(Duration::from_mins(2), child.wait_with_output()).await
-    {
+    let output = match tokio::time::timeout_at(deadline, child.wait_with_output()).await {
         Ok(result) => result?,
         Err(_elapsed) => {
             return Err(format!("rf command timed out during {step}").into());
