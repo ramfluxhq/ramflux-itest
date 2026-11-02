@@ -39,7 +39,11 @@ impl AttendedRestore {
         if length == 0 {
             return Err("terminal ceremony exited without a public result".into());
         }
-        Ok(serde_json::from_str(&line)?)
+        let value = serde_json::from_str(&line)?;
+        if let Some(error) = ceremony_error(&value) {
+            return Err(error.into());
+        }
+        Ok(value)
     }
     pub(crate) async fn recover(
         mut self,
@@ -56,5 +60,52 @@ impl AttendedRestore {
             return Err("terminal recovery ceremony failed".into());
         }
         Ok(recovered)
+    }
+}
+
+fn ceremony_error(value: &Value) -> Option<String> {
+    let error = value.get("fixture_error")?;
+    let code = error
+        .get("code")
+        .and_then(Value::as_str)
+        .filter(|code| {
+            matches!(
+                *code,
+                "custody_setup_invalid"
+                    | "custody_expired"
+                    | "confirmation_failed"
+                    | "vault_unavailable"
+                    | "no_node"
+                    | "fingerprint_mismatch"
+                    | "other_cli_error"
+                    | "helper_failed"
+            )
+        })
+        .unwrap_or("unclassified");
+    Some(format!(
+        "attended recovery failed: code={code}, exit={:?}, confirmed={:?}, phrase_sent={:?}, password_sent={:?}",
+        error.get("exit").and_then(Value::as_i64),
+        error.get("confirmed").and_then(Value::as_u64),
+        error.get("phrase_sent").and_then(Value::as_bool),
+        error.get("password_sent").and_then(Value::as_bool),
+    ))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn recovery_diagnostics_do_not_echo_unknown_error_values() {
+        let private = "private fixture payload";
+        let message = ceremony_error(&json!({"fixture_error": {
+            "code":private,"detail":private,"exit":1,"confirmed":1,
+            "phrase_sent":true,"password_sent":true
+        }}))
+        .expect("public diagnostic");
+        assert!(!message.contains(private));
+        assert!(message.contains("code=unclassified"));
+        assert!(message.contains("confirmed=Some(1)"));
+        assert_eq!(ceremony_error(&json!({"account_id":"installed"})), None);
     }
 }

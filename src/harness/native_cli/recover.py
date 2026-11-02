@@ -15,6 +15,24 @@ import time
 from create import create_account
 
 
+class CeremonyFailure(Exception):
+    def __init__(self, fields):
+        self.fields = fields
+
+
+def cli_error_code(stderr):
+    # Match whole fixed CLI errors; never include an exception, terminal buffer or payload.
+    known = {
+        b"SDK error: invalid custody setup": "custody_setup_invalid",
+        b"SDK error: custody setup expired": "custody_expired",
+        b"SDK error: recovery confirmation failed; setup cancelled": "confirmation_failed",
+        b"SDK error: non-synchronizing primary vault unavailable; no file fallback": "vault_unavailable",
+        b"SDK error: no confirmed home node is selected": "no_node",
+        b"Account fingerprint confirmation did not match.": "fingerprint_mismatch",
+    }
+    return known.get(stderr.strip(), "other_cli_error")
+
+
 def recover(binary, socket, account, words):
     master, slave = pty.openpty()
 
@@ -65,9 +83,13 @@ def recover(binary, socket, account, words):
                 os.write(master, os.environ["RESTORE_LOCAL_PASSPHRASE"].encode() + b"\n")
                 password_sent = True
                 pending = b""
-        output, _ = child.communicate(timeout=10)
+        output, stderr = child.communicate(timeout=10)
         if child.returncode != 0 or confirmations != 1 or not phrase_sent or not password_sent:
-            raise RuntimeError("recovery ceremony failed")
+            raise CeremonyFailure({
+                "code": cli_error_code(stderr), "exit": child.returncode,
+                "confirmed": confirmations, "phrase_sent": phrase_sent,
+                "password_sent": password_sent,
+            })
         return json.loads(output)
     finally:
         if child.poll() is None:
@@ -82,15 +104,20 @@ def main():
     print(json.dumps(account), flush=True)
     # Only public selectors cross this pipe; words never enter argv, files or test output.
     request = json.loads(sys.stdin.readline())
-    restored = recover(binary, request["socket"], request["account_id"], words)
-    words.clear()
+    try:
+        restored = recover(binary, request["socket"], request["account_id"], words)
+    finally:
+        words.clear()
     print(json.dumps(restored), flush=True)
 
 
 if __name__ == "__main__":
     try:
         main()
+    except CeremonyFailure as error:
+        print(json.dumps({"fixture_error": error.fields}), flush=True)
+        sys.exit(1)
     except Exception:
         # Never disclose terminal buffers or exception values from a secret ceremony.
-        print("attended restore fixture failed", file=sys.stderr)
+        print(json.dumps({"fixture_error": {"code": "helper_failed"}}), flush=True)
         sys.exit(1)
