@@ -96,16 +96,17 @@ mod tests {
     use super::*;
 
     #[test]
-    fn recovery_diagnostics_do_not_echo_unknown_error_values() {
+    fn recovery_diagnostics_do_not_echo_unknown_error_values() -> TestResult {
         let private = "private fixture payload";
         let message = ceremony_error(&json!({"fixture_error": {
             "code":private,"detail":private,"exit":1,"confirmed":1,
             "phrase_sent":true,"password_sent":true
         }}))
-        .expect("public diagnostic");
+        .ok_or("public diagnostic")?;
         assert!(!message.contains(private));
         assert!(message.contains("code=unclassified"));
         assert!(message.contains("confirmed=Some(1)"));
         assert_eq!(ceremony_error(&json!({"account_id":"installed"})), None);
+        Ok(())
     }
 }
