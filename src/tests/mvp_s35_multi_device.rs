@@ -288,6 +288,7 @@ async fn mvp_s35_assert_multi_device_activation(
                 &mut bob_restored,
                 &alice_commitment,
                 &bob_commitment,
+                &bob_restored_socket,
             )
             .await?;
 
