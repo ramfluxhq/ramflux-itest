@@ -242,15 +242,19 @@ async fn flow(
     Ok(())
 }
 
+const ATTACHMENT_READ_OUTER_SECONDS: u64 = 240;
+const ATTACHMENT_READ_WAIT_SECONDS: u64 = 210;
+
 async fn read_attachment(cli: &Cli<'_>, account: &str, expected: &[u8]) -> TestResult {
     // The test uses the grant window; individual page and SDK operation budgets stay unchanged.
     let started = tokio::time::Instant::now();
     eprintln!("STEP: att_cli_born_v3 receiver starts grant-window completion test");
-    let deadline = started + Duration::from_secs(240);
+    let deadline = started + Duration::from_secs(ATTACHMENT_READ_OUTER_SECONDS);
+    let wait = ATTACHMENT_READ_WAIT_SECONDS.to_string();
     read_attachment_with(expected, async || {
-        // Carry the same absolute bound into the child process, avoiding the default 120 s helper cap.
+        // Leave startup/response margin so the CLI can classify expiry before the child is killed.
         cli.call_until(
-            &["dm", "read", "--account", account, "--conversation", THREAD, "--wait", "240"],
+            &["dm", "read", "--account", account, "--conversation", THREAD, "--wait", &wait],
             deadline,
         )
         .await
@@ -321,5 +325,27 @@ async fn attachment_read_checks_the_received_bytes() -> TestResult {
     }]}]});
     read_attachment_with(b"expected", async || Ok(value.clone())).await?;
     assert!(read_attachment_with(b"different", async || Ok(value)).await.is_err());
+    Ok(())
+}
+
+#[tokio::test(start_paused = true)]
+async fn attachment_read_classifies_cli_expiry_before_the_outer_deadline() -> TestResult {
+    let started = tokio::time::Instant::now();
+    let deadline = started + Duration::from_secs(ATTACHMENT_READ_OUTER_SECONDS);
+    let result = tokio::time::timeout_at(
+        deadline,
+        read_attachment_with(b"expected", async || {
+            // A child starts after its harness deadline is anchored, including on a quiet runner.
+            tokio::time::sleep(Duration::from_millis(1)).await;
+            tokio::time::sleep(Duration::from_secs(ATTACHMENT_READ_WAIT_SECONDS)).await;
+            Err("attachment fetch deferred; retry object.fetch".into())
+        }),
+    )
+    .await;
+    assert!(result.is_ok(), "the outer deadline killed the CLI before wait-budget classification");
+    let error = result?.err().ok_or("deferred CLI read unexpectedly succeeded")?.to_string();
+    assert!(error.contains("attachment wait budget exhausted"));
+    assert!(!error.contains("rf command timed out"));
+    assert!(tokio::time::Instant::now() + Duration::from_secs(29) < deadline);
     Ok(())
 }
