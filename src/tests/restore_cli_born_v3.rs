@@ -367,6 +367,9 @@ async fn fresh_import(restored: &Cli<'_>, path: &str) -> TestResult<String> {
     .await?;
     assert_eq!(imported["state"], "done");
     let id = field(&imported, "local_account_id")?;
+    // Fresh restore installs a generated local selector while preserving the principal identity.
+    assert_eq!(id, field(&imported["archive"], "local_account_id")?);
+    assert_eq!(id, field(&imported["installed_account"], "local_account_id")?);
     assert_eq!(imported["networking"], "networking_pending");
     assert_eq!(
         imported["next_command"],
