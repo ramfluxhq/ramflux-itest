@@ -75,7 +75,8 @@ fn mvp_s35_realnet_multi_device_activation_fanout() -> Result<(), Box<dyn std::e
         .status()
         .await?;
         assert!(status.success(), "s35 configured client child failed: {status}");
-        assert_native_replacement_lifecycle(node, "127.0.0.1:63365", "s35_native_replacement").await?;
+        assert_native_replacement_lifecycle(node, "127.0.0.1:63365", "s35_native_replacement")
+            .await?;
         Ok::<(), Box<dyn std::error::Error>>(())
     })?;
     stack.node.guard.mark_success();

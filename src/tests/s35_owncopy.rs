@@ -27,6 +27,7 @@ pub(super) async fn assert_live_sent_messages(
         sibling,
         "conv_s35_alice_bob",
         "s35_bob_sent_dm",
+        "original_message_id",
         "s35 outgoing live DM",
         own_commitment,
     )
@@ -35,7 +36,7 @@ pub(super) async fn assert_live_sent_messages(
         primary,
         "group.create",
         json!({"group_id":"s35_own_group","creator_id":"bob_device_s35_a",
-        "creator_target_delivery_id":"target_s35_bob_a"}),
+        "creator_target_delivery_id":"target_s35_bob_a","conversation_id":"s35_own_group_thread"}),
     )
     .await?;
     call(primary, "group.member.add", json!({"group_id":"s35_own_group","member_id":"alice_device_s35",
@@ -45,11 +46,19 @@ pub(super) async fn assert_live_sent_messages(
         "sender_id":"bob_device_s35_a","encrypted_body_base64":"",
         "plaintext_body_base64":ramflux_protocol::encode_base64url(b"s35 outgoing live group"),"ttl":300
     })).await?;
-    assert_eq!(submitted["message_id"], "s35_bob_sent_group");
+    let group_message = ramflux_protocol::group_message_id(
+        "s35_own_group",
+        own_commitment,
+        "bob_device_s35_a",
+        "s35_bob_sent_group",
+    )?;
+    assert_eq!(submitted["message_id"], group_message);
+    assert_eq!(submitted["client_message_id"], "s35_bob_sent_group");
     observe(
         sibling,
         "s35_own_group_thread",
-        "s35_bob_sent_group",
+        &group_message,
+        "message_id",
         "s35 outgoing live group",
         own_commitment,
     )
@@ -60,6 +69,7 @@ pub(super) async fn assert_live_sent_messages(
         sibling,
         "conv_s35_alice_bob",
         "s35_bob_sent_dm",
+        "original_message_id",
         "s35 outgoing live DM",
         own_commitment,
     )
@@ -67,7 +77,8 @@ pub(super) async fn assert_live_sent_messages(
     assert_row(
         sibling,
         "s35_own_group_thread",
-        "s35_bob_sent_group",
+        &group_message,
+        "message_id",
         "s35 outgoing live group",
         own_commitment,
     )
@@ -81,6 +92,7 @@ async fn observe(
     bus: &mut LocalBusClient,
     conversation: &str,
     message: &str,
+    message_field: &str,
     text: &str,
     root: &str,
 ) -> TestResult {
@@ -88,7 +100,7 @@ async fn observe(
         loop {
             let event = bus.next_event().await?;
             let row = &event.body["message"];
-            if row["original_message_id"] == message {
+            if row[message_field] == message {
                 assert_eq!(row["direction"], "outgoing");
                 assert_eq!(row["sender_device_id"], "bob_device_s35_a");
                 assert_eq!(row["sender_root_commitment"], root);
@@ -99,18 +111,24 @@ async fn observe(
     })
     .await
     .map_err(|_| format!("s35 live outgoing subscription timed out for {message}"))??;
-    assert_row(bus, conversation, message, text, root).await
+    assert_row(bus, conversation, message, message_field, text, root).await
 }
 async fn assert_row(
     bus: &mut LocalBusClient,
     conversation: &str,
     message: &str,
+    message_field: &str,
     text: &str,
     root: &str,
 ) -> TestResult {
     let snapshot = call(bus, "message.list", json!({"conversation_id":conversation})).await?;
     let rows = snapshot["messages"].as_array().ok_or("s35 missing messages")?;
-    let rows = rows.iter().filter(|r| r["original_message_id"] == message).collect::<Vec<_>>();
+    assert_eq!(
+        rows.iter().filter(|row| row["body_utf8"] == text).count(),
+        1,
+        "one body across original delivery and live own copy"
+    );
+    let rows = rows.iter().filter(|row| row[message_field] == message).collect::<Vec<_>>();
     assert_eq!(rows.len(), 1, "one live outgoing row per original envelope/source");
     assert_eq!(rows[0]["body_utf8"], text);
     assert_eq!(rows[0]["direction"], "outgoing");
