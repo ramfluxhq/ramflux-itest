@@ -232,3 +232,6 @@ mod att_cli_born_v3;
 mod custody_cli_budget;
 #[path = "custody_prefix_quota.rs"]
 mod custody_prefix_quota;
+
+#[path = "restore_cli_born_v3.rs"]
+mod restore_cli_born_v3;

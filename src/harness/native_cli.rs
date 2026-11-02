@@ -165,3 +165,9 @@ pub(crate) async fn native_rf_binary() -> TestResult<PathBuf> {
     }
     Ok(target.join("debug/rf"))
 }
+
+#[path = "native_cli/restore.rs"]
+mod restore;
+pub(crate) use restore::AttendedRestore;
+
+pub(crate) const RESTORE_LOCAL_PASSPHRASE: &str = "restore CLI independent local fixture password";

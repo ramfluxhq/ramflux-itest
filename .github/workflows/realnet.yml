@@ -279,6 +279,8 @@ jobs:
           - slice: custody_prefix_quota_16
             custody_prefix: "16"
             tests: tests::custody_prefix_quota::custody_prefix_quota_realnet_ninth_principal
+          - slice: restore_cli_born_v3
+            tests: tests::restore_cli_born_v3::restore_cli_born_v3_realnet_offline_import_recover_and_history
           - slice: att_cli_born_v3
             tests: tests::att_cli_born_v3::att_cli_born_v3_realnet_same_node_attachment
           - slice: grp_cli_born_v3

@@ -14,7 +14,7 @@ import termios
 import time
 
 
-def create(binary, socket, name):
+def create_account(binary, socket, name):
     master, slave = pty.openpty()
 
     def terminal():
@@ -71,7 +71,7 @@ def create(binary, socket, name):
             # Never echo terminal buffers, stdout or errors from the secret ceremony.
             raise RuntimeError(f"rf account create failed: exit={child.returncode}, challenges={challenges}, passwords={passwords}")
         account = json.loads(output)
-        print(json.dumps({"account_id": account["account_id"]}))
+        return {"account_id": account["account_id"]}, words
     finally:
         if child.poll() is None:
             child.kill()
@@ -80,4 +80,5 @@ def create(binary, socket, name):
 
 
 if __name__ == "__main__":
-    create(*sys.argv[1:])
+    account, _ = create_account(*sys.argv[1:])
+    print(json.dumps(account))
