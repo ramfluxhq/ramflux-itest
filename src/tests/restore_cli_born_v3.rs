@@ -87,9 +87,48 @@ async fn run(node: &S8RealnetNode) -> TestResult {
         let _ = daemon.wait().await;
     }
     eprintln!("STEP: restore_cli_born_v3 artifacts={}", root.display());
+    if !matches!(&result, Ok(Ok(()))) {
+        // Only fixed install diagnostics are public; ceremony output and SQL stay private.
+        if let Ok(log) = std::fs::read_to_string(root.join("restored.log")) {
+            for location in log.lines().filter_map(panic_source_location) {
+                eprintln!("native backup worker panic location: {location}");
+            }
+            for line in
+                log.lines().filter(|line| line.contains("native backup installation failed"))
+            {
+                eprintln!("{line}");
+            }
+        }
+    }
     result??;
     std::fs::remove_dir_all(root)?;
     Ok(())
+}
+
+fn panic_source_location(line: &str) -> Option<&str> {
+    let location = line.split_once(" panicked at ")?.1.strip_suffix(':')?;
+    let mut parts = location.rsplitn(3, ':');
+    parts.next()?.parse::<u32>().ok()?;
+    parts.next()?.parse::<u32>().ok()?;
+    let file = parts.next()?;
+    (Path::new(file).extension().is_some_and(|ext| ext.eq_ignore_ascii_case("rs"))
+        && file.bytes().all(|b| b.is_ascii_alphanumeric() || b"_./-".contains(&b)))
+    .then_some(location)
+}
+
+#[test]
+fn restore_diagnostics_keep_panic_payloads_private() {
+    assert_eq!(
+        panic_source_location("thread 'worker' panicked at crates/restore.rs:10:12:"),
+        Some("crates/restore.rs:10:12"),
+    );
+    for line in [
+        "private SQL and credentials",
+        "thread 'worker' panicked at crates/restore.rs:10:12: private payload",
+        "thread 'worker' panicked at private payload",
+    ] {
+        assert_eq!(panic_source_location(line), None);
+    }
 }
 
 async fn backup_call(cli: &Cli<'_>, args: &[&str]) -> TestResult<Value> {
