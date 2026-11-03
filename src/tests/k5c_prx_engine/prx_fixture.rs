@@ -72,6 +72,11 @@ pub(super) mod runtime {
             r#"api_key = "fixture-key"
 default_provider = "custom:http://127.0.0.1:{port}/v1"
 default_model = "fixture-model"
+[cost.prices."custom:http://127.0.0.1:{port}/v1/fixture-model"]
+input = 0.0
+output = 0.0
+cache_read = 0.0
+cache_write = 0.0
 [memory]
 backend = "sqlite"
 auto_save = true
@@ -103,6 +108,8 @@ cross_conversation_retrieval = false
             &name,
             "--network",
             "host",
+            "--env",
+            "RUST_LOG=info,openprx=info,prx=info",
             "--user",
             &format!("{}:{}", id("-u")?, id("-g")?),
         ]);
