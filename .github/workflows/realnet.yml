@@ -22,7 +22,7 @@ name: Realnet
 # than requested as a failure.
 on:
   push:
-    branches: ["**"]
+    branches: ["**", "!backup/**"]
   schedule:
     - cron: "23 2 * * *"
   workflow_dispatch:

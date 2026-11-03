@@ -4,7 +4,7 @@ name: T22 production compose
 # providers. Resolve the product from Cargo.toml, never a second hard-coded pin.
 on:
   push:
-    branches: ["**"]
+    branches: ["**", "!backup/**"]
   workflow_dispatch:
 
 concurrency:
