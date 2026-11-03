@@ -182,7 +182,7 @@ pub(crate) async fn smoke_single_backend<B: ramflux_transport::TransportBackend>
     backend: &B,
     kind: ramflux_transport::BackendKind,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let root = fixture_root();
+    let root = fixture_root()?;
     let envelope = read_typed::<ramflux_protocol::Envelope>(
         &root,
         ramflux_protocol::fixture_json_path(fixture("envelope")?),

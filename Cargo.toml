@@ -83,4 +83,5 @@ name = "demo-node-tool"
 path = "src/bin/demo_node_tool.rs"
 
 [dev-dependencies]
+toml = "1.1"
 tokio = { version = "1.42", features = ["test-util"] }

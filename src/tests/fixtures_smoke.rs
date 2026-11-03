@@ -6,7 +6,7 @@ use super::*;
 
 #[test]
 fn fixture_canonical() -> Result<(), Box<dyn std::error::Error>> {
-    let root = fixture_root();
+    let root = fixture_root()?;
     for object in FIXTURE_OBJECTS {
         let json = read_json(&root, fixture_json_path(object))?;
         parse_fixture_value(object, json.clone())?;
@@ -35,7 +35,7 @@ fn fixture_canonical() -> Result<(), Box<dyn std::error::Error>> {
 
 #[test]
 fn fixture_signature() -> Result<(), Box<dyn std::error::Error>> {
-    let root = fixture_root();
+    let root = fixture_root()?;
     for object in FIXTURE_OBJECTS {
         let canonical = fs::read(root.join(fixture_canonical_path(object)))?;
         let signature = read_trimmed(&root, fixture_sig_path(object))?;
@@ -70,7 +70,7 @@ fn fixture_signature() -> Result<(), Box<dyn std::error::Error>> {
 
 #[test]
 fn fixture_replay_negative() -> Result<(), Box<dyn std::error::Error>> {
-    let root = fixture_root();
+    let root = fixture_root()?;
     for object in FIXTURE_OBJECTS {
         let mut seen = BTreeSet::new();
         let original = read_json(&root, fixture_json_path(object))?;
@@ -94,7 +94,7 @@ fn fixture_replay_negative() -> Result<(), Box<dyn std::error::Error>> {
 
 #[test]
 fn fixture_smoke() -> Result<(), Box<dyn std::error::Error>> {
-    let root = fixture_root();
+    let root = fixture_root()?;
     let mut object_count = 0;
     for object in FIXTURE_OBJECTS {
         let json = read_json(&root, fixture_json_path(object))?;

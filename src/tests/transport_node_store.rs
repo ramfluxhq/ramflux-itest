@@ -21,7 +21,7 @@ async fn transport_https_json_signed_envelope() -> Result<(), Box<dyn std::error
 
 #[tokio::test]
 async fn ack_fixture_cursor_advance() -> Result<(), Box<dyn std::error::Error>> {
-    let root = fixture_root();
+    let root = fixture_root()?;
     let ack = read_typed::<Ack>(&root, fixture_json_path(fixture("ack")?))?;
     let backend = GrpcH2Backend::new();
     authenticate_backend(&backend).await?;
@@ -33,7 +33,7 @@ async fn ack_fixture_cursor_advance() -> Result<(), Box<dyn std::error::Error>> 
 
 #[tokio::test]
 async fn nack_home_node_migrated_reresolve() -> Result<(), Box<dyn std::error::Error>> {
-    let root = fixture_root();
+    let root = fixture_root()?;
     let nack = read_typed::<Nack>(&root, fixture_json_path(fixture("nack")?))?;
     let backend = QuicQuinnBackend::new();
     authenticate_backend(&backend).await?;
@@ -283,7 +283,7 @@ fn gateway_store_restart_recovers_live_session_frames() -> Result<(), Box<dyn st
 
 #[tokio::test]
 async fn transport_backend_smoke() -> Result<(), Box<dyn std::error::Error>> {
-    let root = fixture_root();
+    let root = fixture_root()?;
     let envelope = read_typed::<Envelope>(&root, fixture_json_path(fixture("envelope")?))?;
     let signed_request =
         read_typed::<SignedRequest>(&root, fixture_json_path(fixture("signed_request")?))?;

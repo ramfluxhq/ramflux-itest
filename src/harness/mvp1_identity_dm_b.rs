@@ -243,7 +243,7 @@ pub(crate) async fn mvp10_assert_three_backend_real_delivery(
         service_cert: code_root.join("ramflux/deploy/certs/gateway/gateway.pem"),
         service_key: code_root.join("ramflux/deploy/certs/gateway/gateway-key.pem"),
     };
-    let root = fixture_root();
+    let root = fixture_root()?;
     let signed_request = read_typed::<ramflux_protocol::SignedRequest>(
         &root,
         ramflux_protocol::fixture_json_path(fixture("signed_request")?),

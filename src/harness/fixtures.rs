@@ -5,8 +5,80 @@
 use crate::*;
 
 #[cfg(test)]
-pub(crate) fn fixture_root() -> PathBuf {
-    code_root().join("ramflux/crates/ramflux-protocol")
+pub(crate) fn fixture_root() -> Result<PathBuf, Box<dyn std::error::Error>> {
+    static ROOT: std::sync::OnceLock<Result<PathBuf, String>> = std::sync::OnceLock::new();
+    ROOT.get_or_init(pinned_protocol_package).clone().map_err(Into::into)
+}
+
+#[cfg(test)]
+fn pinned_product_rev() -> Result<String, String> {
+    let manifest: toml::Value = include_str!("../../Cargo.toml")
+        .parse()
+        .map_err(|error| format!("cannot parse pinned product rev: {error}"))?;
+    manifest["dependencies"]["ramflux-protocol"]["rev"]
+        .as_str()
+        .map(str::to_owned)
+        .ok_or_else(|| "missing ramflux-protocol rev".to_owned())
+}
+
+#[cfg(test)]
+fn pinned_protocol_package() -> Result<PathBuf, String> {
+    let rev = pinned_product_rev()?;
+    let resolve = || -> Result<PathBuf, String> {
+        let output = std::process::Command::new(env!("CARGO"))
+            .args(["metadata", "--locked", "--offline", "--format-version", "1", "--manifest-path"])
+            .arg(Path::new(env!("CARGO_MANIFEST_DIR")).join("Cargo.toml"))
+            .output()
+            .map_err(|error| error.to_string())?;
+        if !output.status.success() {
+            return Err(String::from_utf8_lossy(&output.stderr).into_owned());
+        }
+        let metadata: Value =
+            serde_json::from_slice(&output.stdout).map_err(|error| error.to_string())?;
+        let expected = format!("git+https://github.com/ramfluxhq/ramflux.git?rev={rev}#");
+        let package = metadata["packages"]
+            .as_array()
+            .and_then(|packages| {
+                packages.iter().find(|p| {
+                    p["name"].as_str() == Some("ramflux-protocol")
+                        && p["source"].as_str().is_some_and(|source| source.starts_with(&expected))
+                })
+            })
+            .ok_or_else(|| {
+                "pinned ramflux-protocol package/source absent from metadata".to_owned()
+            })?;
+        let manifest =
+            package["manifest_path"].as_str().ok_or_else(|| "missing manifest_path".to_owned())?;
+        Path::new(manifest)
+            .parent()
+            .map(Path::to_path_buf)
+            .ok_or_else(|| "manifest has no parent".to_owned())
+    };
+    resolve().map_err(|error| {
+        format!("cannot resolve ramflux-protocol fixtures at expected rev {rev}: {error}")
+    })
+}
+
+#[cfg(test)]
+mod pinned_fixture_tests {
+    use super::*;
+
+    #[test]
+    fn fixture_root_is_the_pinned_product_package() -> Result<(), Box<dyn std::error::Error>> {
+        let root = fixture_root()?;
+        assert_eq!(root, pinned_protocol_package()?);
+        let rev = pinned_product_rev()?;
+        let components =
+            root.components().map(|p| p.as_os_str().to_string_lossy()).collect::<Vec<_>>();
+        assert!(components.windows(2).any(|pair| pair == ["git", "checkouts"]));
+        assert!(
+            components
+                .iter()
+                .any(|component| rev.starts_with(component.as_ref()) && component.len() >= 7)
+        );
+        assert_ne!(root, code_root().join("ramflux/crates/ramflux-protocol"));
+        Ok(())
+    }
 }
 
 #[cfg(test)]
