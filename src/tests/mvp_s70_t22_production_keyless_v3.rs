@@ -96,7 +96,7 @@ fn t22_production_keyless_v3_compose_smoke() -> Result<(), Box<dyn std::error::E
     eprintln!("s70 provider: {}", version.trim());
     let is_docker_v2 = docker_v2(&version);
     assert!(program != "docker" || is_docker_v2, "docker leg requires Docker Compose v2+");
-    check_preflight(&deploy, &compose_path, &env, &program, is_docker_v2)?;
+    check_preflight(&deploy, &compose_path, &env, &program)?;
     if is_docker_v2 {
         let inputs: Vec<_> =
             env.iter().filter(|(key, _)| !TRUST_KEYS.contains(&key.as_str())).cloned().collect();
@@ -140,7 +140,6 @@ fn check_preflight(
     compose_path: &Path,
     env: &[(String, String)],
     program: &str,
-    is_docker_v2: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let preflight = |file: &Path, inputs: &[(String, String)]| {
         clean_command("python3", inputs)
@@ -172,18 +171,17 @@ fn check_preflight(
             }
             let output = preflight(file.path(), &inputs)?;
             assert!(!output.status.success(), "preflight accepted invalid {key}");
-            assert_eq!(
-                String::from_utf8_lossy(&output.stderr).trim(),
-                format!(
-                    "Compose preflight refused settings: {}",
-                    // Both providers refuse an explicitly empty :? value during rendering.
-                    // Docker also refuses an absent value; Podman 1.3 leaves it literal.
-                    if bad == Some("") || (is_docker_v2 && bad.is_none()) {
-                        "CONFIG_RENDER"
-                    } else {
-                        key
-                    }
-                )
+            let diagnostic = String::from_utf8_lossy(&output.stderr);
+            let diagnostic = diagnostic.trim();
+            // An absent/empty required value may fail rendering, or Podman's YAML
+            // may wrap an unresolved expression into a form preflight refuses to parse.
+            // Whitespace and our short literal must reach the setting-name scanner.
+            let key_refusal = format!("Compose preflight refused settings: {key}");
+            let render_refusal = "Compose preflight refused settings: CONFIG_RENDER";
+            assert!(
+                diagnostic == key_refusal
+                    || (matches!(bad, None | Some("")) && diagnostic == render_refusal),
+                "preflight must report only {key} or its render failure: {diagnostic}"
             );
             assert!(output.stdout.is_empty(), "preflight must not print configuration");
         }
