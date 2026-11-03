@@ -3,12 +3,26 @@
 
 //! Exercise custody admission through real terminal-created accounts and polling daemons.
 #![cfg(feature = "realnet")]
-use super::grp_cli_born_v3::{Cli, contacts, field};
+use super::grp_cli_born_v3::{Cli, field};
+use crate::harness::custody_budget::DailyBudgetPlan;
+use crate::harness::native_cli::{contacts_at, native_rf_binary};
+#[path = "custody_cli_budget/admission.rs"]
+mod admission;
+#[path = "custody_cli_budget/target.rs"]
+mod target;
 use super::*;
 use serde_json::Value;
+use target::BudgetTarget;
 
 type TestResult<T = ()> = Result<T, Box<dyn std::error::Error>>;
-const ROUTER: &str = "http://127.0.0.1:64900";
+const PROJECT: &str = "ramflux-custody-cli-budget";
+const ADMISSION_GAP: Duration = Duration::from_secs(20);
+
+struct Clients<'a, 'binary> {
+    alice: &'a Cli<'binary>,
+    bob: &'a Cli<'binary>,
+    restored: &'a Cli<'binary>,
+}
 
 #[test]
 fn custody_cli_budget_realnet_poll_stop_and_restore() -> TestResult {
@@ -16,8 +30,15 @@ fn custody_cli_budget_realnet_poll_stop_and_restore() -> TestResult {
         eprintln!("skipping custody_cli_budget: set RAMFLUX_ITEST_REALNET=1");
         return Ok(());
     }
+    // A configured operator target must never fall back to a disposable node.
+    if let Some(target) = BudgetTarget::operator_from_env()? {
+        return tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()?
+            .block_on(run(&target));
+    }
     let mut stack = start_client_directory_stack_with_issuer(
-        "ramflux-custody-cli-budget",
+        PROJECT,
         S8ComposePorts {
             gateway_http: 64901,
             gateway_quic: 64971,
@@ -32,59 +53,67 @@ fn custody_cli_budget_realnet_poll_stop_and_restore() -> TestResult {
             signaling_turn_tcp: 64979,
             retention_http: 64907,
         },
-        &[],
+        &[
+            ("RAMFLUX_CUSTODY_NEW_PRINCIPALS_PER_PREFIX_PER_DAY".into(), "8".into()),
+            ("RAMFLUX_CUSTODY_NEW_PRINCIPALS_PER_DAY".into(), "256".into()),
+        ],
         "node_a.realnet",
         "gw-a",
     )?;
     tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()?
-        .block_on(run(&stack.node))?;
+        .block_on(run(&BudgetTarget::private(&stack.node)?))?;
     stack.node.guard.mark_success();
     Ok(())
 }
 
-async fn snapshot(label: &str) -> TestResult<Value> {
-    let response = reqwest::get(format!("{ROUTER}/perf/metrics")).await?;
-    let value: Value = serde_json::from_slice(&response.error_for_status()?.bytes().await?)?;
-    let counts = value.get("custody").ok_or("custody metrics missing")?.clone();
-    eprintln!("BUDGET {label}: {counts}");
-    Ok(counts)
-}
-
-async fn run(node: &S8RealnetNode) -> TestResult {
-    wait_for_private_gateway_quic(node.gateway_quic_addr, &node.ca_cert).await?;
+async fn run(target: &BudgetTarget) -> TestResult {
+    let inspection = target.inspect().await?;
+    let plan = DailyBudgetPlan::inspect(&inspection, target.prefix.as_deref(), target.fresh_limit)?;
+    let remaining = plan.remaining();
+    eprintln!(
+        "BUDGET start: prefix={:?} observed_count={} start_count={} limit={} reset_at={} remaining={remaining}",
+        plan.prefix, plan.observed_count, plan.start_count, plan.limit, plan.reset_at
+    );
+    if remaining == 0 {
+        eprintln!("BUDGET SKIP: inspected daily prefix quota is exhausted; no principals created");
+        return Ok(());
+    }
     let root = temp_root("custody-budget")?;
-    let binary = if let Some(path) = std::env::var_os("RAMFLUX_CUSTODY_BUDGET_RF_BINARY") {
-        PathBuf::from(path)
-    } else {
-        mvp_s4_build_rf_binary().await?
+    let binary = match std::env::var_os("RAMFLUX_CUSTODY_BUDGET_RF_BINARY") {
+        Some(path) => PathBuf::from(path),
+        None => native_rf_binary().await?,
     };
     let profiles = root.join("nodes.json");
-    std::fs::write(&profiles, serde_json::to_vec(&[native_node_profile(node, S73_RELAY_QUIC)?])?)?;
+    std::fs::write(&profiles, serde_json::to_vec(&[&target.profile])?)?;
+    let ca = root.join("ca.pem");
+    std::fs::write(&ca, &target.profile.ca_cert_pem)?;
     let alice = Cli { binary: &binary, socket: root.join("a.sock") };
     let bob = Cli { binary: &binary, socket: root.join("b.sock") };
     let restored = Cli { binary: &binary, socket: root.join("r.sock") };
     let mut children = Vec::new();
     for (cli, name) in [(&alice, "alice"), (&bob, "bob"), (&restored, "restore")] {
-        let mut command = native_client_directory_daemon_command(
-            &binary,
-            &cli.socket,
-            &root.join(name),
-            &node.ca_cert,
-            None,
-        );
-        command
-            .arg("--builtin-nodes")
-            .arg(&profiles)
-            .env("RAMFLUX_ACCOUNT_BACKUP_PASSPHRASE", "custody budget fixture archive passphrase")
-            .env("RAMFLUX_BUDGET_RESTORE_PASSPHRASE", "custody budget restored data passphrase");
-        children.push(command.spawn()?);
+        if name == "bob" && remaining == 1 {
+            continue;
+        }
+        children.push(target.daemon(cli, &root.join(name), &ca, &profiles).spawn()?);
     }
     let primary = children.first_mut().ok_or("primary daemon missing")?;
+    // Preserve the original poll/restore allowance, adding only the mandatory
+    // inter-admission spacing for this node's inspected remainder.
+    let timeout = Duration::from_secs(
+        900_u64.saturating_add(remaining.saturating_mul(ADMISSION_GAP.as_secs())),
+    );
     let result = tokio::time::timeout(
-        Duration::from_mins(15),
-        flow(node, &alice, &bob, &restored, &root, primary),
+        timeout,
+        flow(
+            target,
+            &plan,
+            &Clients { alice: &alice, bob: &bob, restored: &restored },
+            &root,
+            primary,
+        ),
     )
     .await;
     if let Ok(Err(error)) = &result {
@@ -96,10 +125,10 @@ async fn run(node: &S8RealnetNode) -> TestResult {
     for child in &mut children {
         let _ = child.wait().await;
     }
-    let final_counts = snapshot("clients stopped").await?;
+    let final_counts = target.snapshot("clients stopped").await?;
     if final_counts["outstanding"] != 0 {
         tokio::time::sleep(Duration::from_secs(300)).await;
-        assert_eq!(snapshot("idle 300s").await?["outstanding"], 0);
+        assert_eq!(target.snapshot("idle 300s").await?["outstanding"], 0);
     }
     result??;
     std::fs::remove_dir_all(root)?;
@@ -107,36 +136,105 @@ async fn run(node: &S8RealnetNode) -> TestResult {
 }
 
 async fn flow(
-    node: &S8RealnetNode,
-    alice: &Cli<'_>,
-    bob: &Cli<'_>,
-    restored: &Cli<'_>,
+    target: &BudgetTarget,
+    plan: &DailyBudgetPlan,
+    clients: &Clients<'_, '_>,
     root: &Path,
     primary: &mut tokio::process::Child,
 ) -> TestResult {
-    for cli in [alice, bob, restored] {
-        mvp_s4_wait_for_socket(&cli.socket).await?;
-        cli.call(&["node", "set-default", &node.node_id]).await?;
-    }
-    snapshot("before create").await?;
-    let a = alice.create("Budget Alice").await?;
-    snapshot("alice live").await?;
-    let b = bob.create("Budget Bob").await?;
-    snapshot("bob live").await?;
-    contacts(alice, bob, node, &a, &b).await?;
+    let alice = clients.alice;
+    let bob = clients.bob;
+    let restored = clients.restored;
+    mvp_s4_wait_for_socket(&restored.socket).await?;
+    restored.call(&["node", "set-default", &target.profile.node_id]).await?;
+    target.snapshot("before create").await?;
+    plan.verify_progress(&target.inspect().await?, 0)?;
+    let a = admission::principal(alice, target, "Budget Alice", None).await?;
+    let mut accepted = 1;
+    plan.verify_progress(&target.inspect().await?, accepted)?;
+    target.snapshot("alice live").await?;
+    let b = if plan.remaining() >= 2 {
+        tokio::time::sleep(ADMISSION_GAP).await;
+        plan.verify_progress(&target.inspect().await?, accepted)?;
+        let b = admission::principal(bob, target, "Budget Bob", None).await?;
+        accepted += 1;
+        plan.verify_progress(&target.inspect().await?, accepted)?;
+        target.snapshot("bob live").await?;
+        contacts_at(alice, bob, &target.profile.node_id, &target.profile.prekey_http_url, &a, &b)
+            .await?;
+        send_first_dm(alice, &a, &b).await?;
+        Some(b)
+    } else {
+        eprintln!(
+            "BUDGET one remaining slot: poll and restore one principal; no second admission for DM setup"
+        );
+        None
+    };
     let aid = field(&a, "account_id")?;
-    let bid = field(&b, "account_id")?;
-    send_first_dm(alice, &a, &b).await?;
+    poll(target, plan, clients, aid, b.as_ref(), accepted).await?;
+    restore(target, alice, restored, root, primary, aid).await?;
+    plan.verify_progress(&target.inspect().await?, accepted)?;
+    while accepted < plan.remaining() {
+        tokio::time::sleep(ADMISSION_GAP).await;
+        plan.verify_progress(&target.inspect().await?, accepted)?;
+        let number = accepted + 1;
+        admission::isolated_principal(target, alice.binary, root, number, None).await?;
+        accepted = number;
+        plan.verify_progress(&target.inspect().await?, accepted)?;
+        eprintln!(
+            "BUDGET accepted: start_count={} + accepted={accepted} = {}",
+            plan.start_count,
+            plan.start_count + accepted
+        );
+    }
+    tokio::time::sleep(ADMISSION_GAP).await;
+    plan.verify_progress(&target.inspect().await?, accepted)?;
+    admission::isolated_principal(
+        target,
+        alice.binary,
+        root,
+        accepted + 1,
+        Some((field(&a, "principal_id")?, plan.reset_at)),
+    )
+    .await?;
+    plan.verify_progress(&target.inspect().await?, accepted)?;
+    eprintln!(
+        "BUDGET complete: start_count={} accepted={accepted} durable_count={} limit={} reset_at={}; one typed refusal",
+        plan.start_count,
+        plan.start_count + accepted,
+        plan.limit,
+        plan.reset_at
+    );
+    Ok(())
+}
+
+async fn poll(
+    target: &BudgetTarget,
+    plan: &DailyBudgetPlan,
+    clients: &Clients<'_, '_>,
+    aid: &str,
+    b: Option<&Value>,
+    accepted: u64,
+) -> TestResult {
+    let alice = clients.alice;
+    let bob = clients.bob;
     for round in 0..60 {
-        for (cli, id) in [(alice, aid), (bob, bid)] {
-            cli.call(&["dm", "list", "--account", id, "--conversation", "contact-cli-v3"]).await?;
+        let mut participants = vec![(alice, aid)];
+        if let Some(b) = b {
+            participants.push((bob, field(b, "account_id")?));
+        }
+        for (cli, id) in participants {
+            if b.is_some() {
+                cli.call(&["dm", "list", "--account", id, "--conversation", "contact-cli-v3"])
+                    .await?;
+            }
             cli.call(&["contact", "list", "--account", id]).await?;
             cli.call(&["account", "status", "--account", id]).await?;
         }
-        snapshot(&format!("poll {round}")).await?;
+        target.snapshot(&format!("poll {round}")).await?;
+        plan.verify_progress(&target.inspect().await?, accepted)?;
         tokio::time::sleep(Duration::from_secs(3)).await;
     }
-    restore(alice, restored, root, primary, aid).await?;
     Ok(())
 }
 
@@ -174,6 +272,7 @@ async fn send_first_dm(alice: &Cli<'_>, a: &Value, b: &Value) -> TestResult {
 }
 
 async fn restore(
+    target: &BudgetTarget,
     alice: &Cli<'_>,
     restored: &Cli<'_>,
     root: &Path,
@@ -204,7 +303,7 @@ async fn restore(
     );
     primary.start_kill()?;
     primary.wait().await?;
-    snapshot("original stopped").await?;
+    target.snapshot("original stopped").await?;
     let mut import = tokio::process::Command::new(alice.binary);
     import
         .args([
@@ -225,6 +324,6 @@ async fn restore(
         "backup import failed: {}",
         String::from_utf8_lossy(&output.stderr)
     );
-    snapshot("restored").await?;
+    target.snapshot("restored").await?;
     Ok(())
 }

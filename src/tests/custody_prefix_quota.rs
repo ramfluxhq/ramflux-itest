@@ -5,6 +5,7 @@
 #![cfg(feature = "realnet")]
 use super::grp_cli_born_v3::{Cli, field};
 use super::*;
+use crate::harness::custody_budget::require_daily_capacity_hint;
 use serde_json::Value;
 
 type TestResult<T = ()> = Result<T, Box<dyn std::error::Error>>;
@@ -194,17 +195,6 @@ fn daily_prefix_row(inspection: &Value) -> TestResult<&Value> {
         .ok_or_else(|| "daily prefix receipt missing".into())
 }
 
-fn require_daily_capacity_hint(status: &Value, reset: u64) -> TestResult {
-    let capacity = &status["networking_reason"]["capacity"];
-    if capacity["scope"] != "prefix_daily" {
-        return Err(format!("expected prefix_daily capacity hint: {status}").into());
-    }
-    if capacity["resets_at_unix"].as_u64().ok_or("capacity reset missing")? != reset {
-        return Err(format!("capacity hint differs from durable reset {reset}: {status}").into());
-    }
-    Ok(())
-}
-
 fn inspect_quota(configured: bool) -> TestResult {
     let inspection = quota_inspection()?;
     let prefix = daily_prefix_row(&inspection)?;
@@ -248,18 +238,5 @@ fn inspect_quota(configured: bool) -> TestResult {
             "QUOTA warn verified: budget=\"publication_daily\" scope=\"prefix\" count=8 limit=8"
         );
     }
-    Ok(())
-}
-
-#[test]
-fn custody_prefix_quota_hint_requires_scope_and_the_durable_reset() -> TestResult {
-    let status = serde_json::json!({"networking_reason":{"kind":"node_busy",
-        "capacity":{"scope":"prefix_daily","resets_at_unix":172_800}}});
-    require_daily_capacity_hint(&status, 172_800)?;
-    assert!(require_daily_capacity_hint(&status, 259_200).is_err());
-    let mut wrong_scope = status.clone();
-    wrong_scope["networking_reason"]["capacity"]["scope"] = "global_daily".into();
-    assert!(require_daily_capacity_hint(&wrong_scope, 172_800).is_err());
-    assert!(require_daily_capacity_hint(&serde_json::json!({}), 172_800).is_err());
     Ok(())
 }

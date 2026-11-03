@@ -2,6 +2,7 @@
 // Copyright (c) 2026 Span Brain
 
 #![allow(unused_imports)]
+pub(crate) mod custody_budget;
 mod rf_cli_arguments;
 pub(crate) use rf_cli_arguments::rf_cli_args;
 mod container_runtime;
