@@ -656,6 +656,8 @@ pub(crate) fn compose_env_with_required_defaults(
         "RAMFLUX_CUSTODY_NEW_PRINCIPALS_PER_PREFIX_PER_DAY",
         "8",
     );
+    ensure_compose_default_env(&mut compose_env, "RAMFLUX_CUSTODY_NEW_PRINCIPALS_PER_DAY", "256");
+    ensure_compose_default_env(&mut compose_env, "RAMFLUX_CUSTODY_NEW_PRINCIPALS_PER_MINUTE", "16");
     compose_input_aliases::forward_aliases(&mut compose_env, env);
     security_inputs::supply_required_inputs(&mut compose_env)?;
     Ok(compose_env)
