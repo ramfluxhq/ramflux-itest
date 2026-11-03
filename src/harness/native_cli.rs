@@ -74,6 +74,17 @@ pub(crate) async fn contacts(
     a: &Value,
     b: &Value,
 ) -> TestResult {
+    contacts_at(alice, bob, &node.node_id, &node.federation_url, a, b).await
+}
+
+pub(crate) async fn contacts_at(
+    alice: &NativeCli<'_>,
+    bob: &NativeCli<'_>,
+    node_id: &str,
+    federation_url: &str,
+    a: &Value,
+    b: &Value,
+) -> TestResult {
     let aid = field(a, "account_id")?;
     let bid = field(b, "account_id")?;
     let ap = field(a, "principal_id")?;
@@ -124,13 +135,13 @@ pub(crate) async fn contacts(
         "--target-delivery",
         field(a, "target_delivery_id")?,
         "--federation-url",
-        &node.federation_url,
+        federation_url,
         "--source-node",
-        &node.node_id,
+        node_id,
         "--target-node",
-        &node.node_id,
+        node_id,
         "--recipient-prekey-url",
-        &node.federation_url,
+        federation_url,
     ])
     .await?;
     for (cli, id, peer) in [(alice, aid, b), (bob, bid, a)] {
