@@ -38,11 +38,15 @@ pub(super) fn run(supervised: bool) -> TestResult {
             )
             .await?;
             let mut context = Context::start(&topology, supervised).await?;
-            if supervised {
+            let result = if supervised {
                 flows::supervised(&mut context).await
             } else {
                 flows::full(&mut context).await
+            };
+            if result.is_err() {
+                context.failure_diagnostics();
             }
+            result
         });
     if result.is_err() {
         topology.dump_contact_failure_logs();
@@ -57,7 +61,7 @@ struct Context {
     host_binary: PathBuf,
     host: tokio::process::Child,
     _daemons: [tokio::process::Child; 2],
-    _prx: prx_fixture::runtime::PrxProcess,
+    prx: prx_fixture::runtime::PrxProcess,
     alice: ramflux_sdk::LocalBusClient,
     agent: ramflux_sdk::LocalBusClient,
     human: NativeAccount,
@@ -123,6 +127,32 @@ fn spawn_host(
     Ok(command.spawn()?)
 }
 impl Context {
+    fn failure_diagnostics(&mut self) {
+        eprintln!("STEP: k5c failure host_status={:?}", self.host.try_wait());
+        if let Ok(logs) = fs::read_to_string(&self.log) {
+            // Host diagnostic lines contain typed reasons/counters, never frame bodies.
+            for line in logs
+                .lines()
+                .filter(|line| line.starts_with("agent host "))
+                .rev()
+                .take(40)
+                .collect::<Vec<_>>()
+                .into_iter()
+                .rev()
+            {
+                eprintln!("STEP: k5c failure {line}");
+            }
+        }
+        if let Ok(state) = self.checkpoint() {
+            for field in ["inbound", "turns", "erases", "decisions"] {
+                eprintln!(
+                    "STEP: k5c failure checkpoint_{field}={}",
+                    state["engine"][field].as_object().map_or(0, serde_json::Map::len)
+                );
+            }
+        }
+        self.prx.diagnostics();
+    }
     async fn start(topology: &ClientDiscoveryTopology, supervised: bool) -> TestResult<Self> {
         let root = temp_root("k5c")?;
         fs::set_permissions(&root, fs::Permissions::from_mode(0o700))?;
@@ -197,14 +227,17 @@ impl Context {
             host_binary,
             host,
             _daemons: daemons,
-            _prx: prx,
+            prx,
             alice,
             agent,
             human,
             ai,
             llm,
         };
-        context.ready().await?;
+        if let Err(error) = context.ready().await {
+            context.failure_diagnostics();
+            return Err(error);
+        }
         assert!(!bundle.exists(), "agent provisioning bundle was not consumed");
         Ok(context)
     }

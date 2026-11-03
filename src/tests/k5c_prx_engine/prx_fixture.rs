@@ -15,6 +15,19 @@ pub(super) mod runtime {
         runtime: &'static str,
         name: String,
     }
+    impl PrxProcess {
+        pub(crate) fn diagnostics(&self) {
+            if let Ok(output) = Command::new(self.runtime)
+                .args(["inspect", "--format", "{{.State.Status}} {{.State.ExitCode}}", &self.name])
+                .output()
+            {
+                eprintln!(
+                    "STEP: k5c failure prx_process={}",
+                    String::from_utf8_lossy(&output.stdout).trim()
+                );
+            }
+        }
+    }
     impl Drop for PrxProcess {
         fn drop(&mut self) {
             let _ = Command::new(self.runtime).args(["rm", "--force", &self.name]).output();
