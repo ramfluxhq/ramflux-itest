@@ -16,6 +16,8 @@ use ramflux_transport::{
 };
 use std::collections::BTreeSet;
 
+#[path = "dalek_node_record.rs"]
+mod dalek_node_record;
 #[path = "federation.rs"]
 mod federation;
 #[path = "fixtures_smoke.rs"]
