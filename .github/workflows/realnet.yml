@@ -173,6 +173,38 @@ jobs:
             ${{ steps.keys.outputs.prefix }}-${{ steps.product.outputs.sha }}-
             realnet-build-
 
+      - name: Restore pinned PRX image archive
+        id: prx-image
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830
+        with:
+          path: prx-image
+          key: prx-image-${{ runner.os }}-${{ hashFiles('ramflux-itest/fixtures/prx/Containerfile') }}
+
+      - name: Build pinned PRX image from source
+        if: steps.prx-image.outputs.cache-hit != 'true'
+        run: |
+          python3 ramflux-itest/fixtures/prx/build_image.py docker --measure-cold --evidence prx-build-evidence
+          python3 ramflux-itest/fixtures/prx/image_archive.py save docker prx-image
+
+      - name: Verify cached PRX image
+        if: steps.prx-image.outputs.cache-hit == 'true'
+        run: python3 ramflux-itest/fixtures/prx/image_archive.py load docker prx-image
+
+      - name: Cache pinned PRX image archive
+        if: steps.prx-image.outputs.cache-hit != 'true'
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830
+        with:
+          path: prx-image
+          key: prx-image-${{ runner.os }}-${{ hashFiles('ramflux-itest/fixtures/prx/Containerfile') }}
+
+      - name: Upload pinned PRX image
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: realnet-prx-image
+          path: prx-image/
+          if-no-files-found: error
+          retention-days: 7
+
       - name: Prebuild service binaries
         run: RAMFLUX_REALNET_PREBUILD_ONLY=1 ramflux/deploy/scripts/run-realnet.sh
 
@@ -187,6 +219,10 @@ jobs:
           cargo build --bin rf --features itest-local-mint \
             --manifest-path ../ramflux/apps/rf/Cargo.toml --target-dir ../ramflux/target
           cargo build --bin ramflux-agent-host \
+            --manifest-path ../ramflux/Cargo.toml --target-dir ../ramflux/target
+          cargo build --bin rf --features itest-local-mint,itest-memory-vault \
+            --manifest-path ../ramflux/Cargo.toml --target-dir ../ramflux/target
+          cargo build --bin ramflux-agent-host --features itest-memory-vault \
             --manifest-path ../ramflux/Cargo.toml --target-dir ../ramflux/target
 
       - name: Build itest test executable
@@ -299,6 +335,10 @@ jobs:
             tests: tests::k2b_surface_round_trip::k2b_realnet_surface_round_trip
           - slice: k3b
             tests: tests::k3b_task_needs_me_approval::k3b_realnet_task_needs_me_approval
+          - slice: k5c
+            tests: tests::k5c_prx_engine::k5c_realnet_prx_engine_dm_reply
+          - slice: k5c2
+            tests: tests::k5c_prx_engine::k5c2_realnet_prx_engine_supervised_approval
           - slice: k5a
             tests: tests::k5a_agent_host::k5a_realnet_agent_replies_in_dm_and_group
           - slice: k5a2
@@ -404,6 +444,17 @@ jobs:
         with:
           name: realnet-binaries
           path: stage
+
+      - name: Download pinned PRX image
+        if: matrix.slice == 'k5c' || matrix.slice == 'k5c2'
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: realnet-prx-image
+          path: prx-image
+
+      - name: Load and verify pinned PRX image
+        if: matrix.slice == 'k5c' || matrix.slice == 'k5c2'
+        run: python3 ramflux-itest/fixtures/prx/image_archive.py load docker prx-image
 
       - name: Stage binaries
         run: |

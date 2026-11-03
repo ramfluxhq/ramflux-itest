@@ -235,3 +235,6 @@ mod custody_prefix_quota;
 
 #[path = "restore_cli_born_v3.rs"]
 mod restore_cli_born_v3;
+
+#[path = "k5c_prx_engine.rs"]
+mod k5c_prx_engine;

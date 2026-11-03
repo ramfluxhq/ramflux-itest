@@ -1,0 +1,15 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Copyright (c) 2026 Span Brain
+
+FROM docker.io/library/rust:1.99.0-slim@sha256:24e632c09342c20abf8312cf4f61430a911c01ed3a5e4c02b87292b1c39c5273 AS build
+ARG PRX_SHA=0785e3f82c87da243b6fd1e64c9a9ba3769d17f7
+RUN apt-get update && apt-get install -y --no-install-recommends git ca-certificates pkg-config libssl-dev cmake clang && rm -rf /var/lib/apt/lists/*
+WORKDIR /src
+RUN git clone --filter=blob:none --no-checkout https://github.com/openprx/prx . && git checkout --detach "$PRX_SHA" && test "$(git rev-parse HEAD)" = "$PRX_SHA"
+RUN CARGO_BUILD_JOBS=8 cargo build --release --locked --bin prx
+
+FROM docker.io/library/debian:trixie-slim@sha256:f6e2cfac5cf956ea044b4bd75e6397b4372ad88fe00908045e9a0d21712ae3ba
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates libssl3t64 && rm -rf /var/lib/apt/lists/*
+COPY --from=build /src/target/release/prx /usr/local/bin/prx
+LABEL org.opencontainers.image.revision="0785e3f82c87da243b6fd1e64c9a9ba3769d17f7"
+ENTRYPOINT ["/usr/local/bin/prx"]
