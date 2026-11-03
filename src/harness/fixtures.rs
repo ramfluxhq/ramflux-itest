@@ -12,8 +12,7 @@ pub(crate) fn fixture_root() -> Result<PathBuf, Box<dyn std::error::Error>> {
 
 #[cfg(test)]
 fn pinned_product_rev() -> Result<String, String> {
-    let manifest: toml::Value = include_str!("../../Cargo.toml")
-        .parse()
+    let manifest: toml::Value = toml::from_str(include_str!("../../Cargo.toml"))
         .map_err(|error| format!("cannot parse pinned product rev: {error}"))?;
     manifest["dependencies"]["ramflux-protocol"]["rev"]
         .as_str()
