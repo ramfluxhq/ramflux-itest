@@ -278,8 +278,9 @@ jobs:
           fi
 
       - name: Save build cache
-        # Override runs never seed the shared build cache.
-        if: steps.product.outputs.override != 'true'
+        # Override runs never seed the shared build cache; neither do targeted
+        # (slice-selected) runs, which would only add about 100 s to the critical path.
+        if: steps.product.outputs.override != 'true' && inputs.slices == ''
         uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830
         with:
           path: |
