@@ -31,12 +31,16 @@ on:
         description: Product ref (branch, tag or SHA) overriding the Cargo.toml pin; empty = pinned SHA
         required: false
         default: ""
+      slices:
+        description: Comma-separated slice names from .github/realnet-slices.json (for example k2b,s35); empty = all slices
+        required: false
+        default: ""
 
 # Main runs are never cancelled. On other refs a newer run cancels the older
 # one, separately per product override so a product-branch run does not cancel
 # the regular run of the same itest branch.
 concurrency:
-  group: realnet-${{ github.ref == 'refs/heads/main' && github.run_id || format('{0}-{1}', github.ref, inputs.product_ref) }}
+  group: realnet-${{ github.ref == 'refs/heads/main' && github.run_id || format('{0}-{1}-{2}', github.ref, inputs.product_ref, inputs.slices) }}
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 permissions:
@@ -50,6 +54,44 @@ env:
   RUST_TOOLCHAIN: "1.99.0"
 
 jobs:
+  setup:
+    name: select slices
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      matrix: ${{ steps.select.outputs.matrix }}
+    steps:
+      - name: Checkout slice list
+        uses: actions/checkout@b9e0990d219a03df7633c93f6f005a8fecbcab22
+        with:
+          sparse-checkout: .github/realnet-slices.json
+          sparse-checkout-cone-mode: false
+          persist-credentials: false
+
+      - name: Select slices
+        id: select
+        env:
+          SLICES: ${{ inputs.slices }}
+        run: |
+          list=.github/realnet-slices.json
+          names=$(printf '%s' "$SLICES" | tr -d ' ')
+          if [ -z "$names" ]; then
+            matrix=$(jq -c '{include: .include}' "$list")
+          else
+            printf '%s' "$names" | grep -qxE '[A-Za-z0-9_,-]+' \
+              || { echo "::error::invalid slices input (comma list of slice names)"; exit 1; }
+            IFS=, read -ra want <<< "$names"
+            for n in "${want[@]}"; do
+              [ -z "$n" ] && continue
+              jq -e --arg n "$n" '.include | any(.slice == $n)' "$list" >/dev/null \
+                || { echo "::error::unknown slice: $n"; exit 1; }
+            done
+            matrix=$(jq -c --arg names "$names" \
+              '($names | split(",") | map(select(. != ""))) as $w | {include: [.include[] | select(.slice as $s | $w | index($s))]}' "$list")
+          fi
+          echo "matrix=$matrix" >> "$GITHUB_OUTPUT"
+          echo "slices: $(printf '%s' "$matrix" | jq -r '[.include[].slice] | join(", ")')" >> "$GITHUB_STEP_SUMMARY"
+
   build:
     name: build
     runs-on: ubuntu-24.04
@@ -159,6 +201,14 @@ jobs:
         # Same components as rust-toolchain.toml, so rustup does not fetch them mid-test.
         run: rustup toolchain install "$RUST_TOOLCHAIN" --profile minimal --component rustfmt,clippy
 
+      - name: Optimize dependencies only
+        # Workspace members stay at opt-level 0; third-party crypto/SQLite code
+        # runs 5-10x faster, which dominates the daemon and service latency in
+        # the slices. Both jobs must set it so cargo fingerprints match.
+        run: |
+          mkdir -p ~/.cargo
+          printf '[profile.dev.package."*"]\nopt-level = 3\n' >> ~/.cargo/config.toml
+
       - name: Restore build cache
         uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830
         with:
@@ -261,94 +311,13 @@ jobs:
 
   slice:
     name: ${{ matrix.slice }}
-    needs: build
+    needs: [setup, build]
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     strategy:
       fail-fast: false
-      max-parallel: 4
-      matrix:
-        include:
-          - slice: network
-            plain: "1"
-            tests: harness::realnet_compose_stun::compose_network::realnet::realnet_two_projects_share_ready_network_and_teardown_preserves_the_other
-          - slice: custody_cli_budget
-            tests: tests::custody_cli_budget::custody_cli_budget_realnet_poll_stop_and_restore
-          - slice: custody_prefix_quota_default
-            tests: tests::custody_prefix_quota::custody_prefix_quota_realnet_ninth_principal
-          - slice: custody_prefix_quota_16
-            custody_prefix: "16"
-            tests: tests::custody_prefix_quota::custody_prefix_quota_realnet_ninth_principal
-          - slice: restore_cli_born_v3
-            tests: tests::restore_cli_born_v3::restore_cli_born_v3_realnet_offline_import_recover_and_history
-          - slice: att_cli_born_v3
-            tests: tests::att_cli_born_v3::att_cli_born_v3_realnet_same_node_attachment
-          - slice: grp_cli_born_v3
-            tests: tests::grp_cli_born_v3::grp_cli_born_v3_realnet_same_node_delivery
-          - slice: grpsync01
-            tests: tests::grpsync01_membership_and_name::grpsync01_realnet_membership_and_name
-          - slice: contact01
-            tests: tests::contact01_contact_resolution::contact01_realnet_add_then_dm
-          - slice: id01
-            tests: tests::id01_root_bound_devices::id01_realnet_root_bound_device_add_revoke
-          - slice: id02
-            tests: tests::id02_custody::id02_born_v3_realnet_register_session_and_dm
-          - slice: proof01
-            tests: tests::proof01_durable_identity::proof01_realnet_durable_identity_after_session_proof_expiry
-          - slice: k2b
-            tests: tests::k2b_surface_round_trip::k2b_realnet_surface_round_trip
-          - slice: k3b
-            tests: tests::k3b_task_needs_me_approval::k3b_realnet_task_needs_me_approval
-          - slice: k5a
-            tests: tests::k5a_agent_host::k5a_realnet_agent_replies_in_dm_and_group
-          - slice: k5a2
-            tests: tests::k5a_agent_host::k5a2_realnet_agent_surface
-          # Includes live outgoing DM/group sibling rows before explicit history sync.
-          - slice: s35
-            tests: tests::mvp_s35_multi_device::mvp_s35_realnet_multi_device_activation_fanout
-          - slice: s39a
-            tests: tests::mvp_s39_gateway_resume::mvp_s39_realnet_gateway_session_resume_token_rejoin
-          - slice: s39b
-            tests: tests::mvp_s39_device_aware_safety_number::mvp_s39_realnet_device_aware_safety_number_fail_closed
-          - slice: s42
-            tests: tests::mvp_s42_tui_object_attachment::mvp_s42_realnet_tui_object_attachment_panel
-          - slice: s47
-            tests: tests::mvp_s47_restore_device_rejoin::mvp_s47_realnet_restore_device_rejoin_manifest_gate
-          - slice: s48
-            tests: tests::mvp_s48_own_device_sync::mvp_s48_realnet_own_device_history_group_key_sync
-          - slice: s51
-            tests: tests::mvp_s51_home_node_migration_forward::mvp_s51_realnet_home_node_migration_forwards_within_window
-          - slice: s73
-            tests: tests::mvp_s73_client_read_model::mvp_s73_realnet_client_read_model_actionable_ids
-          - slice: s74
-            tests: tests::mvp_s74_event_stream::mvp_s74_realnet_autonomous_sync_replay_and_daemon_restart
-          - slice: k12
-            tests: tests::k12_deferred_attachment_fetch::k12_realnet_deferred_attachment_fetch
-          # s13 drives production push registration (authenticated gateway session,
-          # node-owned provider credentials) on the plain single-mesh stack.
-          - slice: s13
-            plain: "1"
-            tests: tests::mvp_s13_push::mvp_s13_realnet_push_provider_wake_bridge
-          - slice: call01
-            tests: tests::call01_voice::call01_realnet_voice_round_trip
-            voice: "1"
-          # Keep one legacy voice slice until the ID-02-IMPL-4 migration gate removes it.
-          - slice: call01-legacy
-            tests: tests::call01_voice::call01_realnet_legacy_voice_round_trip
-            voice: "1"
-          # s15 is a plain single-mesh slice: the object-v3 overlay would need
-          # provider-keyring material it does not supply, so it runs without
-          # RAMFLUX_OBJECT_V3 / RAMFLUX_CROSS_GATEWAY. Its call-signaling test
-          # is a voice acceptance test and runs with the voice overlay.
-          - slice: s15
-            plain: "1"
-            tests: >-
-              tests::mvp_s15_object_call_bot::mvp_s15_realnet_rf_object_put_get
-              tests::mvp_s15_object_call_bot::mvp_s15_realnet_object_store_persistence_after_daemon_restart
-              tests::mvp_s15_object_call_bot::mvp_s15_realnet_rf_bot
-          - slice: s15-call
-            tests: tests::mvp_s15_object_call_bot::mvp_s15_realnet_rf_call_signaling
-            voice: "1"
+      max-parallel: 16
+      matrix: ${{ fromJSON(needs.setup.outputs.matrix) }}
     steps:
       - name: Free disk space (only when short)
         # Hosted runner images vary in free space; deleting preinstalled SDKs
@@ -379,6 +348,14 @@ jobs:
       - name: Toolchain
         # Same components as rust-toolchain.toml, so rustup does not fetch them mid-test.
         run: rustup toolchain install "$RUST_TOOLCHAIN" --profile minimal --component rustfmt,clippy
+
+      - name: Optimize dependencies only
+        # Workspace members stay at opt-level 0; third-party crypto/SQLite code
+        # runs 5-10x faster, which dominates the daemon and service latency in
+        # the slices. Both jobs must set it so cargo fingerprints match.
+        run: |
+          mkdir -p ~/.cargo
+          printf '[profile.dev.package."*"]\nopt-level = 3\n' >> ~/.cargo/config.toml
 
       - name: Restore the product target from the build job
         uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830
