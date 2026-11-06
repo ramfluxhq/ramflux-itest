@@ -38,7 +38,7 @@ jobs:
       # runs its bootstrap/issue-certs/build-prod-images scripts, so check out
       # product and itest as siblings.
       - name: Checkout ramflux (product, pinned)
-        uses: actions/checkout@b9e0990d219a03df7633c93f6f005a8fecbcab22
+        uses: actions/checkout@f548e57e544e1ff5a4c46bf1e1b8685f8e4a348a
         with:
           repository: ramfluxhq/ramflux
           ref: 601593b7216e8325bad3e4c1be5a5e5b378d8063
@@ -46,14 +46,14 @@ jobs:
           persist-credentials: false
 
       - name: Checkout ramflux-itest (this repo)
-        uses: actions/checkout@b9e0990d219a03df7633c93f6f005a8fecbcab22
+        uses: actions/checkout@f548e57e544e1ff5a4c46bf1e1b8685f8e4a348a
         with:
           ref: ${{ github.sha }}
           path: ramflux-itest
           persist-credentials: false
 
       - name: Cache
-        uses: Swatinem/rust-cache@baf1a810e98b6a3001d0d7234864ed75a17c42fb
+        uses: Swatinem/rust-cache@c8037a86dde8214a8310e9f54a8fc61ab362aa31
         with:
           # Both workspaces build: the product node binaries
           # (build-prod-images.sh) and the itest test binary.
@@ -73,7 +73,7 @@ jobs:
             t22_production_measure_public_sdk_object -- --nocapture --test-threads=1
 
       - name: Upload measurement artifact
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: t22-production-measurement
           path: ramflux-itest/perf-artifacts/perf_t22_production_measure_*.json
